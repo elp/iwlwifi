@@ -65,9 +65,6 @@ enum ieee80211_sta_info_flags {
 					 HT_ADDBA_RECEIVED_MSK)
 #define HT_AGG_STATE_DEBUGFS_CTL	BIT(7)
 
-/* measurement report mode field - refuse to generate a report */
-#define MSR_REPORT_REFUSED       BIT(2)
-
 /**
  * struct tid_ampdu_tx - TID aggregation information (Tx).
  *
