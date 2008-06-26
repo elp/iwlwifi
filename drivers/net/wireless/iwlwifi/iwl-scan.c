@@ -838,7 +838,6 @@ static void iwl_bg_request_scan(struct work_struct *data)
 		 * MIMO is not used here, but value is required */
 		if ((priv->hw_rev & CSR_HW_REV_TYPE_MSK) == CSR_HW_REV_TYPE_4965)
 			rx_chain = 0x6;
-
 	} else {
 		IWL_WARNING("Invalid scan band count\n");
 		goto done;

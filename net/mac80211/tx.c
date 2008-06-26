@@ -1091,7 +1091,7 @@ static int ieee80211_tx(struct net_device *dev, struct sk_buff *skb)
 	struct ieee80211_tx_data tx;
 	ieee80211_tx_result res = TX_DROP, res_prepare;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	int ret, i;
+	int ret, i, retries = 0;
 	u16 queue;
 
 	queue = skb_get_queue_mapping(skb);
@@ -1189,6 +1189,13 @@ retry:
 		 */
 		if (!__netif_subqueue_stopped(local->mdev, queue)) {
 			clear_bit(queue, local->queues_pending);
+			retries++;
+			/*
+			 * Driver bug, it's rejecting packets but
+			 * not stopping queues.
+			 */
+			if (WARN_ON_ONCE(retries > 5))
+				goto drop;
 			goto retry;
 		}
 		store->skb = skb;
@@ -1567,7 +1574,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 	 * make it big enough for everything we may ever need.
 	 */
 
-	if (head_need > 0 || skb_header_cloned(skb)) {
+	if (head_need > 0 || skb_cloned(skb)) {
 		head_need += IEEE80211_ENCRYPT_HEADROOM;
 		head_need += local->tx_headroom;
 		head_need = max_t(int, 0, head_need);

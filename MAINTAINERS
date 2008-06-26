@@ -274,7 +274,7 @@ S:      Maintained
 
 AD1889 ALSA SOUND DRIVER
 P:     Kyle McMartin
-M:     kyle@parisc-linux.org
+M:     kyle@mcmartin.ca
 P:     Thibaut Varene
 M:     T-Bone@parisc-linux.org
 W:     http://wiki.parisc-linux.org/AD1889
@@ -1004,8 +1004,8 @@ L:	netdev@vger.kernel.org
 S:	Supported
 
 BROADCOM BNX2X 10 GIGABIT ETHERNET DRIVER
-P:	Eliezer Tamir
-M:	eliezert@broadcom.com
+P:	Eilon Greenstein
+M:	eilong@broadcom.com
 L:	netdev@vger.kernel.org
 S:	Supported
 
@@ -1211,6 +1211,7 @@ M:	pj@sgi.com
 M:	menage@google.com
 L:	linux-kernel@vger.kernel.org
 W:	http://www.bullopensource.org/cpuset/
+W:	http://oss.sgi.com/projects/cpusets/
 S:	Supported
 
 CRAMFS FILESYSTEM
@@ -1836,7 +1837,7 @@ S:	Maintained
 
 HARMONY SOUND DRIVER
 P:	Kyle McMartin
-M:	kyle@parisc-linux.org
+M:	kyle@mcmartin.ca
 L:	linux-parisc@vger.kernel.org
 S:	Maintained
 
@@ -3129,7 +3130,7 @@ S:	Maintained
 
 PARISC ARCHITECTURE
 P:	Kyle McMartin
-M:	kyle@parisc-linux.org
+M:	kyle@mcmartin.ca
 P:	Matthew Wilcox
 M:	matthew@wil.cx
 P:	Grant Grundler
@@ -3338,9 +3339,11 @@ L:	video4linux-list@redhat.com
 W:	http://www.isely.net/pvrusb2/
 S:	Maintained
 
-PXA2xx SUPPORT
-P:	Nicolas Pitre
-M:	nico@cam.org
+PXA2xx/PXA3xx SUPPORT
+P:	Eric Miao
+M:	eric.miao@marvell.com
+P:	Russell King
+M:	linux@arm.linux.org.uk
 L:	linux-arm-kernel@lists.arm.linux.org.uk	(subscribers-only)
 S:	Maintained
 
@@ -4032,7 +4035,7 @@ TULIP NETWORK DRIVERS
 P:	Grant Grundler
 M:	grundler@parisc-linux.org
 P:	Kyle McMartin
-M:	kyle@parisc-linux.org
+M:	kyle@mcmartin.ca
 L:	netdev@vger.kernel.org
 S:	Maintained
 
@@ -4437,10 +4440,10 @@ M:	johnpol@2ka.mipt.ru
 S:	Maintained
 
 W83791D HARDWARE MONITORING DRIVER
-P:	Charles Spirakis
-M:	bezaur@gmail.com
+P:	Marc Hulsman
+M:	m.hulsman@tudelft.nl
 L:	lm-sensors@lm-sensors.org
-S:	Odd Fixes
+S:	Maintained
 
 W83793 HARDWARE MONITORING DRIVER
 P:	Rudolf Marek
