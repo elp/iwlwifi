@@ -74,7 +74,7 @@ static void rt2x00lib_start_link_tuner(struct rt2x00_dev *rt2x00dev)
 
 	rt2x00lib_reset_link_tuner(rt2x00dev);
 
-	queue_delayed_work(rt2x00dev->hw->workqueue,
+	queue_delayed_work(rt2x00dev->workqueue,
 			   &rt2x00dev->link.work, LINK_TUNE_INTERVAL);
 }
 
@@ -136,14 +136,6 @@ void rt2x00lib_disable_radio(struct rt2x00_dev *rt2x00dev)
 {
 	if (!__test_and_clear_bit(DEVICE_ENABLED_RADIO, &rt2x00dev->flags))
 		return;
-
-	/*
-	 * Stop all scheduled work.
-	 */
-	if (work_pending(&rt2x00dev->intf_work))
-		cancel_work_sync(&rt2x00dev->intf_work);
-	if (work_pending(&rt2x00dev->filter_work))
-		cancel_work_sync(&rt2x00dev->filter_work);
 
 	/*
 	 * Stop the TX queues.
@@ -400,8 +392,8 @@ static void rt2x00lib_link_tuner(struct work_struct *work)
 	 * Increase tuner counter, and reschedule the next link tuner run.
 	 */
 	rt2x00dev->link.count++;
-	queue_delayed_work(rt2x00dev->hw->workqueue, &rt2x00dev->link.work,
-			   LINK_TUNE_INTERVAL);
+	queue_delayed_work(rt2x00dev->workqueue,
+			   &rt2x00dev->link.work, LINK_TUNE_INTERVAL);
 }
 
 static void rt2x00lib_packetfilter_scheduled(struct work_struct *work)
@@ -434,6 +426,15 @@ static void rt2x00lib_intf_scheduled_iter(void *data, u8 *mac,
 
 	spin_unlock(&intf->lock);
 
+	/*
+	 * It is possible the radio was disabled while the work had been
+	 * scheduled. If that happens we should return here immediately,
+	 * note that in the spinlock protected area above the delayed_flags
+	 * have been cleared correctly.
+	 */
+	if (!test_bit(DEVICE_ENABLED_RADIO, &rt2x00dev->flags))
+		return;
+
 	if (delayed_flags & DELAYED_UPDATE_BEACON) {
 		skb = ieee80211_beacon_get(rt2x00dev->hw, vif);
 		if (skb &&
@@ -442,7 +443,7 @@ static void rt2x00lib_intf_scheduled_iter(void *data, u8 *mac,
 	}
 
 	if (delayed_flags & DELAYED_CONFIG_ERP)
-		rt2x00lib_config_erp(rt2x00dev, intf, &intf->conf);
+		rt2x00lib_config_erp(rt2x00dev, intf, &conf);
 
 	if (delayed_flags & DELAYED_LED_ASSOC)
 		rt2x00leds_led_assoc(rt2x00dev, !!rt2x00dev->intf_associated);
@@ -468,11 +469,18 @@ static void rt2x00lib_intf_scheduled(struct work_struct *work)
 static void rt2x00lib_beacondone_iter(void *data, u8 *mac,
 				      struct ieee80211_vif *vif)
 {
+	struct rt2x00_dev *rt2x00dev = data;
 	struct rt2x00_intf *intf = vif_to_intf(vif);
 
 	if (vif->type != IEEE80211_IF_TYPE_AP &&
 	    vif->type != IEEE80211_IF_TYPE_IBSS)
 		return;
+
+	/*
+	 * Clean up the beacon skb.
+	 */
+	rt2x00queue_free_skb(rt2x00dev, intf->beacon->skb);
+	intf->beacon->skb = NULL;
 
 	spin_lock(&intf->lock);
 	intf->delayed_flags |= DELAYED_UPDATE_BEACON;
@@ -488,7 +496,7 @@ void rt2x00lib_beacondone(struct rt2x00_dev *rt2x00dev)
 						   rt2x00lib_beacondone_iter,
 						   rt2x00dev);
 
-	queue_work(rt2x00dev->hw->workqueue, &rt2x00dev->intf_work);
+	queue_work(rt2x00dev->workqueue, &rt2x00dev->intf_work);
 }
 EXPORT_SYMBOL_GPL(rt2x00lib_beacondone);
 
@@ -497,6 +505,12 @@ void rt2x00lib_txdone(struct queue_entry *entry,
 {
 	struct rt2x00_dev *rt2x00dev = entry->queue->rt2x00dev;
 	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(entry->skb);
+	enum data_queue_qid qid = skb_get_queue_mapping(entry->skb);
+
+	/*
+	 * Unmap the skb.
+	 */
+	rt2x00queue_unmap_skb(rt2x00dev, entry->skb);
 
 	/*
 	 * Send frame to debugfs immediately, after this call is completed
@@ -545,39 +559,77 @@ void rt2x00lib_txdone(struct queue_entry *entry,
 		ieee80211_tx_status_irqsafe(rt2x00dev->hw, entry->skb);
 	else
 		dev_kfree_skb_irq(entry->skb);
+
+	/*
+	 * Make this entry available for reuse.
+	 */
 	entry->skb = NULL;
+	entry->flags = 0;
+
+	rt2x00dev->ops->lib->init_txentry(rt2x00dev, entry);
+
+	__clear_bit(ENTRY_OWNER_DEVICE_DATA, &entry->flags);
+	rt2x00queue_index_inc(entry->queue, Q_INDEX_DONE);
+
+	/*
+	 * If the data queue was below the threshold before the txdone
+	 * handler we must make sure the packet queue in the mac80211 stack
+	 * is reenabled when the txdone handler has finished.
+	 */
+	if (!rt2x00queue_threshold(entry->queue))
+		ieee80211_wake_queue(rt2x00dev->hw, qid);
 }
 EXPORT_SYMBOL_GPL(rt2x00lib_txdone);
 
-void rt2x00lib_rxdone(struct queue_entry *entry,
-		      struct rxdone_entry_desc *rxdesc)
+void rt2x00lib_rxdone(struct rt2x00_dev *rt2x00dev,
+		      struct queue_entry *entry)
 {
-	struct rt2x00_dev *rt2x00dev = entry->queue->rt2x00dev;
+	struct rxdone_entry_desc rxdesc;
+	struct sk_buff *skb;
 	struct ieee80211_rx_status *rx_status = &rt2x00dev->rx_status;
-	unsigned int header_size = ieee80211_get_hdrlen_from_skb(entry->skb);
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_hdr *hdr;
 	const struct rt2x00_rate *rate;
+	unsigned int header_size;
 	unsigned int align;
 	unsigned int i;
 	int idx = -1;
-	u16 fc;
+
+	/*
+	 * Allocate a new sk_buffer. If no new buffer available, drop the
+	 * received frame and reuse the existing buffer.
+	 */
+	skb = rt2x00queue_alloc_rxskb(rt2x00dev, entry);
+	if (!skb)
+		return;
+
+	/*
+	 * Unmap the skb.
+	 */
+	rt2x00queue_unmap_skb(rt2x00dev, entry->skb);
+
+	/*
+	 * Extract the RXD details.
+	 */
+	memset(&rxdesc, 0, sizeof(rxdesc));
+	rt2x00dev->ops->lib->fill_rxdone(entry, &rxdesc);
 
 	/*
 	 * The data behind the ieee80211 header must be
 	 * aligned on a 4 byte boundary.
 	 */
+	header_size = ieee80211_get_hdrlen_from_skb(entry->skb);
 	align = ((unsigned long)(entry->skb->data + header_size)) & 3;
 
 	if (align) {
 		skb_push(entry->skb, align);
 		/* Move entire frame in 1 command */
 		memmove(entry->skb->data, entry->skb->data + align,
-			rxdesc->size);
+			rxdesc.size);
 	}
 
 	/* Update data pointers, trim buffer to correct size */
-	skb_trim(entry->skb, rxdesc->size);
+	skb_trim(entry->skb, rxdesc.size);
 
 	/*
 	 * Update RX statistics.
@@ -586,10 +638,10 @@ void rt2x00lib_rxdone(struct queue_entry *entry,
 	for (i = 0; i < sband->n_bitrates; i++) {
 		rate = rt2x00_get_rate(sband->bitrates[i].hw_value);
 
-		if (((rxdesc->dev_flags & RXDONE_SIGNAL_PLCP) &&
-		     (rate->plcp == rxdesc->signal)) ||
-		    (!(rxdesc->dev_flags & RXDONE_SIGNAL_PLCP) &&
-		      (rate->bitrate == rxdesc->signal))) {
+		if (((rxdesc.dev_flags & RXDONE_SIGNAL_PLCP) &&
+		     (rate->plcp == rxdesc.signal)) ||
+		    (!(rxdesc.dev_flags & RXDONE_SIGNAL_PLCP) &&
+		      (rate->bitrate == rxdesc.signal))) {
 			idx = i;
 			break;
 		}
@@ -597,8 +649,8 @@ void rt2x00lib_rxdone(struct queue_entry *entry,
 
 	if (idx < 0) {
 		WARNING(rt2x00dev, "Frame received with unrecognized signal,"
-			"signal=0x%.2x, plcp=%d.\n", rxdesc->signal,
-			!!(rxdesc->dev_flags & RXDONE_SIGNAL_PLCP));
+			"signal=0x%.2x, plcp=%d.\n", rxdesc.signal,
+			!!(rxdesc.dev_flags & RXDONE_SIGNAL_PLCP));
 		idx = 0;
 	}
 
@@ -606,17 +658,17 @@ void rt2x00lib_rxdone(struct queue_entry *entry,
 	 * Only update link status if this is a beacon frame carrying our bssid.
 	 */
 	hdr = (struct ieee80211_hdr *)entry->skb->data;
-	fc = le16_to_cpu(hdr->frame_control);
-	if (is_beacon(fc) && (rxdesc->dev_flags & RXDONE_MY_BSS))
-		rt2x00lib_update_link_stats(&rt2x00dev->link, rxdesc->rssi);
+	if (ieee80211_is_beacon(hdr->frame_control) &&
+	    (rxdesc.dev_flags & RXDONE_MY_BSS))
+		rt2x00lib_update_link_stats(&rt2x00dev->link, rxdesc.rssi);
 
 	rt2x00dev->link.qual.rx_success++;
 
 	rx_status->rate_idx = idx;
 	rx_status->qual =
-	    rt2x00lib_calculate_link_signal(rt2x00dev, rxdesc->rssi);
-	rx_status->signal = rxdesc->rssi;
-	rx_status->flag = rxdesc->flags;
+	    rt2x00lib_calculate_link_signal(rt2x00dev, rxdesc.rssi);
+	rx_status->signal = rxdesc.rssi;
+	rx_status->flag = rxdesc.flags;
 	rx_status->antenna = rt2x00dev->link.ant.active.rx;
 
 	/*
@@ -625,7 +677,16 @@ void rt2x00lib_rxdone(struct queue_entry *entry,
 	 */
 	rt2x00debug_dump_frame(rt2x00dev, DUMP_FRAME_RXDONE, entry->skb);
 	ieee80211_rx_irqsafe(rt2x00dev->hw, entry->skb, rx_status);
-	entry->skb = NULL;
+
+	/*
+	 * Replace the skb with the freshly allocated one.
+	 */
+	entry->skb = skb;
+	entry->flags = 0;
+
+	rt2x00dev->ops->lib->init_rxentry(rt2x00dev, entry);
+
+	rt2x00queue_index_inc(entry->queue, Q_INDEX);
 }
 EXPORT_SYMBOL_GPL(rt2x00lib_rxdone);
 
@@ -1003,6 +1064,10 @@ int rt2x00lib_probe_dev(struct rt2x00_dev *rt2x00dev)
 	/*
 	 * Initialize configuration work.
 	 */
+	rt2x00dev->workqueue = create_singlethread_workqueue("rt2x00lib");
+	if (!rt2x00dev->workqueue)
+		goto exit;
+
 	INIT_WORK(&rt2x00dev->intf_work, rt2x00lib_intf_scheduled);
 	INIT_WORK(&rt2x00dev->filter_work, rt2x00lib_packetfilter_scheduled);
 	INIT_DELAYED_WORK(&rt2x00dev->link.work, rt2x00lib_link_tuner);
@@ -1061,6 +1126,13 @@ void rt2x00lib_remove_dev(struct rt2x00_dev *rt2x00dev)
 	rt2x00debug_deregister(rt2x00dev);
 	rt2x00rfkill_free(rt2x00dev);
 	rt2x00leds_unregister(rt2x00dev);
+
+	/*
+	 * Stop all queued work. Note that most tasks will already be halted
+	 * during rt2x00lib_disable_radio() and rt2x00lib_uninitialize().
+	 */
+	flush_workqueue(rt2x00dev->workqueue);
+	destroy_workqueue(rt2x00dev->workqueue);
 
 	/*
 	 * Free ieee80211_hw memory.
