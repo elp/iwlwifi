@@ -559,7 +559,7 @@ void iwl_rx_statistics(struct iwl_priv *priv,
 {
 	int change;
 	struct iwl_rx_packet *pkt = (struct iwl_rx_packet *)rxb->skb->data;
-       
+
 	IWL_DEBUG_RX("Statistics notification received (%d vs %d).\n",
 		     (int)sizeof(priv->statistics), pkt->len);
 

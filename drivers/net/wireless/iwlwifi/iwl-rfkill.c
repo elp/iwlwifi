@@ -50,7 +50,7 @@ static int iwl_rfkill_soft_rf_kill(void *data, enum rfkill_state state)
 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
 		return 0;
 
-	IWL_DEBUG_RF_KILL("we recieved soft RFKILL set to state %d\n", state);
+	IWL_DEBUG_RF_KILL("we received soft RFKILL set to state %d\n", state);
 	mutex_lock(&priv->mutex);
 
 	switch (state) {
@@ -101,13 +101,13 @@ int iwl_rfkill_init(struct iwl_priv *priv)
 	ret = rfkill_register(priv->rfkill_mngr.rfkill);
 	if (ret) {
 		IWL_ERROR("Unable to register rfkill: %d\n", ret);
-		goto freed_rfkill;
+		goto free_rfkill;
 	}
 
 	IWL_DEBUG_RF_KILL("RFKILL initialization complete.\n");
 	return ret;
 
-freed_rfkill:
+free_rfkill:
 	if (priv->rfkill_mngr.rfkill != NULL)
 		rfkill_free(priv->rfkill_mngr.rfkill);
 	priv->rfkill_mngr.rfkill = NULL;
@@ -120,6 +120,7 @@ EXPORT_SYMBOL(iwl_rfkill_init);
 
 void iwl_rfkill_unregister(struct iwl_priv *priv)
 {
+
 	if (priv->rfkill_mngr.rfkill)
 		rfkill_unregister(priv->rfkill_mngr.rfkill);
 
@@ -130,7 +131,6 @@ EXPORT_SYMBOL(iwl_rfkill_unregister);
 /* set rf-kill to the right state. */
 void iwl_rfkill_set_hw_state(struct iwl_priv *priv)
 {
-
 	if (!priv->rfkill_mngr.rfkill)
 		return;
 
