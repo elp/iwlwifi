@@ -537,10 +537,20 @@ static inline int iwl3945_is_init(struct iwl3945_priv *priv)
 	return test_bit(STATUS_INIT, &priv->status);
 }
 
+static inline int iwl3945_is_rfkill_sw(struct iwl3945_priv *priv)
+{
+	return test_bit(STATUS_RF_KILL_SW, &priv->status);
+}
+
+static inline int iwl3945_is_rfkill_hw(struct iwl3945_priv *priv)
+{
+	return test_bit(STATUS_RF_KILL_HW, &priv->status);
+}
+
 static inline int iwl3945_is_rfkill(struct iwl3945_priv *priv)
 {
-	return test_bit(STATUS_RF_KILL_HW, &priv->status) ||
-	       test_bit(STATUS_RF_KILL_SW, &priv->status);
+	return iwl3945_is_rfkill_hw(priv) ||
+		iwl3945_is_rfkill_sw(priv);
 }
 
 static inline int iwl3945_is_ready_rf(struct iwl3945_priv *priv)
@@ -5903,12 +5913,11 @@ static int __iwl3945_up(struct iwl3945_priv *priv)
 	else {
 		set_bit(STATUS_RF_KILL_HW, &priv->status);
 		if (!test_bit(STATUS_IN_SUSPEND, &priv->status)) {
-			iwl3945_rfkill_set_hw_state(priv);
 			IWL_WARNING("Radio disabled by HW RF Kill switch\n");
 			return -ENODEV;
 		}
 	}
-	iwl3945_rfkill_set_hw_state(priv);
+
 	iwl3945_write32(priv, CSR_INT, 0xFFFFFFFF);
 
 	rc = iwl3945_hw_nic_init(priv);
@@ -6033,8 +6042,8 @@ static void iwl3945_bg_rf_kill(struct work_struct *work)
 				    "wireless networking to work.\n");
 	}
 
-	iwl3945_rfkill_set_hw_state(priv);
 	mutex_unlock(&priv->mutex);
+	iwl3945_rfkill_set_hw_state(priv);
 }
 
 static void iwl3945_bg_set_monitor(struct work_struct *work)
@@ -6288,6 +6297,7 @@ static void iwl3945_bg_up(struct work_struct *data)
 	mutex_lock(&priv->mutex);
 	__iwl3945_up(priv);
 	mutex_unlock(&priv->mutex);
+	iwl3945_rfkill_set_hw_state(priv);
 }
 
 static void iwl3945_bg_restart(struct work_struct *data)
@@ -6505,6 +6515,8 @@ static int iwl3945_mac_start(struct ieee80211_hw *hw)
 	ret = __iwl3945_up(priv);
 
 	mutex_unlock(&priv->mutex);
+
+	iwl3945_rfkill_set_hw_state(priv);
 
 	if (ret)
 		goto out_release_irq;
@@ -8151,7 +8163,7 @@ static int iwl3945_rfkill_soft_rf_kill(void *data, enum rfkill_state state)
 	struct iwl3945_priv *priv = data;
 	int err = 0;
 
-	if (!priv->rfkill_mngr.rfkill)
+	if (!priv->rfkill)
 	return 0;
 
 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
@@ -8162,20 +8174,20 @@ static int iwl3945_rfkill_soft_rf_kill(void *data, enum rfkill_state state)
 
 	switch (state) {
 	case RFKILL_STATE_UNBLOCKED:
-		iwl3945_radio_kill_sw(priv, 0);
-		/* if HW rf-kill is set dont allow ON state */
-		if (iwl3945_is_rfkill(priv))
+		if (iwl3945_is_rfkill_hw(priv)) {
 			err = -EBUSY;
+			goto out_unlock;
+		}
+		iwl3945_radio_kill_sw(priv, 0);
 		break;
 	case RFKILL_STATE_SOFT_BLOCKED:
 		iwl3945_radio_kill_sw(priv, 1);
-		if (!iwl3945_is_rfkill(priv))
-			err = -EBUSY;
 		break;
 	default:
 		IWL_WARNING("we recieved unexpected RFKILL state %d\n", state);
 		break;
 	}
+out_unlock:
 	mutex_unlock(&priv->mutex);
 
 	return err;
@@ -8189,23 +8201,23 @@ int iwl3945_rfkill_init(struct iwl3945_priv *priv)
 	BUG_ON(device == NULL);
 
 	IWL_DEBUG_RF_KILL("Initializing RFKILL.\n");
-	priv->rfkill_mngr.rfkill = rfkill_allocate(device, RFKILL_TYPE_WLAN);
-	if (!priv->rfkill_mngr.rfkill) {
+	priv->rfkill = rfkill_allocate(device, RFKILL_TYPE_WLAN);
+	if (!priv->rfkill) {
 		IWL_ERROR("Unable to allocate rfkill device.\n");
 		ret = -ENOMEM;
 		goto error;
 	}
 
-	priv->rfkill_mngr.rfkill->name = priv->cfg->name;
-	priv->rfkill_mngr.rfkill->data = priv;
-	priv->rfkill_mngr.rfkill->state = RFKILL_STATE_ON;
-	priv->rfkill_mngr.rfkill->toggle_radio = iwl3945_rfkill_soft_rf_kill;
-	priv->rfkill_mngr.rfkill->user_claim_unsupported = 1;
+	priv->rfkill->name = priv->cfg->name;
+	priv->rfkill->data = priv;
+	priv->rfkill->state = RFKILL_STATE_UNBLOCKED;
+	priv->rfkill->toggle_radio = iwl3945_rfkill_soft_rf_kill;
+	priv->rfkill->user_claim_unsupported = 1;
 
-	priv->rfkill_mngr.rfkill->dev.class->suspend = NULL;
-	priv->rfkill_mngr.rfkill->dev.class->resume = NULL;
+	priv->rfkill->dev.class->suspend = NULL;
+	priv->rfkill->dev.class->resume = NULL;
 
-	ret = rfkill_register(priv->rfkill_mngr.rfkill);
+	ret = rfkill_register(priv->rfkill);
 	if (ret) {
 		IWL_ERROR("Unable to register rfkill: %d\n", ret);
 		goto freed_rfkill;
@@ -8215,9 +8227,9 @@ int iwl3945_rfkill_init(struct iwl3945_priv *priv)
 	return ret;
 
 freed_rfkill:
-	if (priv->rfkill_mngr.rfkill != NULL)
-		rfkill_free(priv->rfkill_mngr.rfkill);
-	priv->rfkill_mngr.rfkill = NULL;
+	if (priv->rfkill != NULL)
+		rfkill_free(priv->rfkill);
+	priv->rfkill = NULL;
 
 error:
 	IWL_DEBUG_RF_KILL("RFKILL initialization complete.\n");
@@ -8226,23 +8238,28 @@ error:
 
 void iwl3945_rfkill_unregister(struct iwl3945_priv *priv)
 {
-	if (priv->rfkill_mngr.rfkill)
-		rfkill_unregister(priv->rfkill_mngr.rfkill);
+	if (priv->rfkill)
+		rfkill_unregister(priv->rfkill);
 
-	priv->rfkill_mngr.rfkill = NULL;
+	priv->rfkill = NULL;
 }
 
 /* set rf-kill to the right state. */
 void iwl3945_rfkill_set_hw_state(struct iwl3945_priv *priv)
 {
 
-	if (!priv->rfkill_mngr.rfkill)
+	if (!priv->rfkill)
 		return;
 
-	if (!iwl3945_is_rfkill(priv))
-		priv->rfkill_mngr.rfkill->state = RFKILL_STATE_ON;
+	if (iwl3945_is_rfkill_hw(priv)) {
+		rfkill_force_state(priv->rfkill, RFKILL_STATE_HARD_BLOCKED);
+		return;
+	}
+
+	if (!iwl3945_is_rfkill_sw(priv))
+		rfkill_force_state(priv->rfkill, RFKILL_STATE_UNBLOCKED);
 	else
-		priv->rfkill_mngr.rfkill->state = RFKILL_STATE_OFF;
+		rfkill_force_state(priv->rfkill, RFKILL_STATE_SOFT_BLOCKED);
 }
 #endif
 
