@@ -666,8 +666,7 @@ struct iwl4965_rxon_assoc_cmd {
 	__le16 reserved;
 } __attribute__ ((packed));
 
-
-
+#define IWL_CONN_LISTEN_INTERVAL	(0xA)
 
 /*
  * REPLY_RXON_TIMING = 0x14 (command, has simple generic response)
