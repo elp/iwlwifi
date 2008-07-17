@@ -828,7 +828,6 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u8 tid)
 	struct ieee80211_local *local = hw_to_local(hw);
 	struct sta_info *sta;
 	u8 *state;
-	int agg_queue;
 	DECLARE_MAC_BUF(mac);
 
 	if (tid >= STA_TID_NUM) {
@@ -870,8 +869,6 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u8 tid)
 	if (*state & HT_AGG_STATE_INITIATOR_MSK)
 		ieee80211_send_delba(sta->sdata->dev, ra, tid,
 			WLAN_BACK_INITIATOR, WLAN_REASON_QSTA_NOT_USE);
-
-	agg_queue = sta->tid_to_tx_q[tid];
 
 	/* avoid ordering issues: we are the only one that can modify
 	 * the content of the qdiscs */
