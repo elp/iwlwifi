@@ -2701,7 +2701,7 @@ static void ieee80211_rx_bss_info(struct net_device *dev,
 		bss->dtim_period = tim_ie->dtim_period;
 	}
 
-	/* set default value for bugy APs */
+	/* set default value for buggy APs */
 	if (!elems->tim || bss->dtim_period == 0)
 		bss->dtim_period = 1;
 

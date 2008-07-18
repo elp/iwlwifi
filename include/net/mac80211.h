@@ -796,6 +796,9 @@ enum ieee80211_hw_flags {
  * @max_signal: Maximum value for signal (rssi) in RX information, used
  *     only when @IEEE80211_HW_SIGNAL_UNSPEC or @IEEE80211_HW_SIGNAL_DB
  *
+ * @max_listen_interval: max listen interval in units of beacon interval
+ *     that HW supports
+ *
  * @queues: number of available hardware transmit queues for
  *	data packets. WMM/QoS requires at least four, these
  *	queues need to have configurable access parameters.
@@ -823,7 +826,9 @@ struct ieee80211_hw {
 	unsigned int extra_tx_headroom;
 	int channel_change_time;
 	int vif_data_size;
-	u16 queues, ampdu_queues;
+	u16 queues;
+	u16 ampdu_queues;
+	u16 max_listen_interval;
 	s8 max_signal;
 };
 
