@@ -639,6 +639,7 @@ static void iwl_activate_qos(struct iwl_priv *priv, u8 force)
 }
 
 #define MAX_UCODE_BEACON_INTERVAL	4096
+#define INTEL_CONN_LISTEN_INTERVAL	__constant_cpu_to_le16(0xA)
 
 static __le16 iwl4965_adjust_beacon_interval(u16 beacon_val)
 {
@@ -668,8 +669,7 @@ static void iwl4965_setup_rxon_timing(struct iwl_priv *priv)
 	priv->rxon_timing.timestamp.dw[0] =
 				cpu_to_le32(priv->timestamp & 0xFFFFFFFF);
 
-	priv->rxon_timing.listen_interval =
-		cpu_to_le16(priv->hw->conf.listen_interval);
+	priv->rxon_timing.listen_interval = INTEL_CONN_LISTEN_INTERVAL;
 
 	tsf = priv->timestamp;
 
@@ -3164,7 +3164,6 @@ static void iwl4965_bss_info_changed(struct ieee80211_hw *hw,
 		if (bss_conf->assoc) {
 			priv->assoc_id = bss_conf->aid;
 			priv->beacon_int = bss_conf->beacon_int;
-			priv->power_data.dtim_period = bss_conf->dtim_period;
 			priv->timestamp = bss_conf->timestamp;
 			priv->assoc_capability = bss_conf->assoc_capability;
 			priv->next_scan_jiffies = jiffies +
