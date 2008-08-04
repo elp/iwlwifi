@@ -3101,7 +3101,22 @@ static void prism2_clear_set_tim_queue(local_info_t *local)
  * This is a natural nesting, which needs a split lock type.
  */
 static struct lock_class_key hostap_netdev_xmit_lock_key;
+static struct lock_class_key hostap_netdev_addr_lock_key;
 
+static void prism2_set_lockdep_class_one(struct net_device *dev,
+					 struct netdev_queue *txq,
+					 void *_unused)
+{
+	lockdep_set_class(&txq->_xmit_lock,
+			  &hostap_netdev_xmit_lock_key);
+}
+
+static void prism2_set_lockdep_class(struct net_device *dev)
+{
+	lockdep_set_class(&dev->addr_list_lock,
+			  &hostap_netdev_addr_lock_key);
+	netdev_for_each_tx_queue(dev, prism2_set_lockdep_class_one, NULL);
+}
 
 static struct net_device *
 prism2_init_local_data(struct prism2_helper_functions *funcs, int card_idx,
@@ -3268,7 +3283,7 @@ while (0)
 	if (ret >= 0)
 		ret = register_netdevice(dev);
 
-	lockdep_set_class(&dev->_xmit_lock, &hostap_netdev_xmit_lock_key);
+	prism2_set_lockdep_class(dev);
 	rtnl_unlock();
 	if (ret < 0) {
 		printk(KERN_WARNING "%s: register netdevice failed!\n",

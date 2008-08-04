@@ -297,9 +297,7 @@ static ssize_t lbs_rtap_set(struct device *dev,
 			lbs_add_rtap(priv);
 		}
 		priv->monitormode = monitor_mode;
-	}
-
-	else {
+	} else {
 		if (!priv->monitormode)
 			return strlen(buf);
 		priv->monitormode = 0;
@@ -593,7 +591,7 @@ static int lbs_add_mcast_addrs(struct cmd_ds_mac_multicast_adr *cmd,
 	if ((dev->flags & (IFF_UP|IFF_MULTICAST)) != (IFF_UP|IFF_MULTICAST))
 		return nr_addrs;
 
-	netif_tx_lock_bh(dev);
+	netif_addr_lock_bh(dev);
 	for (mc_list = dev->mc_list; mc_list; mc_list = mc_list->next) {
 		if (mac_in_list(cmd->maclist, nr_addrs, mc_list->dmi_addr)) {
 			lbs_deb_net("mcast address %s:%s skipped\n", dev->name,
@@ -608,7 +606,7 @@ static int lbs_add_mcast_addrs(struct cmd_ds_mac_multicast_adr *cmd,
 			    print_mac(mac, mc_list->dmi_addr));
 		i++;
 	}
-	netif_tx_unlock_bh(dev);
+	netif_addr_unlock_bh(dev);
 	if (mc_list)
 		return -EOVERFLOW;
 
@@ -1242,8 +1240,6 @@ int lbs_start_card(struct lbs_private *priv)
 		lbs_pr_err("cannot register ethX device\n");
 		goto done;
 	}
-	if (device_create_file(&dev->dev, &dev_attr_lbs_rtap))
-		lbs_pr_err("cannot register lbs_rtap attribute\n");
 
 	lbs_update_channel(priv);
 
@@ -1275,6 +1271,13 @@ int lbs_start_card(struct lbs_private *priv)
 
 			if (device_create_file(&dev->dev, &dev_attr_lbs_mesh))
 				lbs_pr_err("cannot register lbs_mesh attribute\n");
+
+			/* While rtap isn't related to mesh, only mesh-enabled
+			 * firmware implements the rtap functionality via
+			 * CMD_802_11_MONITOR_MODE.
+			 */
+			if (device_create_file(&dev->dev, &dev_attr_lbs_rtap))
+				lbs_pr_err("cannot register lbs_rtap attribute\n");
 		}
 	}
 
@@ -1306,9 +1309,9 @@ void lbs_stop_card(struct lbs_private *priv)
 	netif_carrier_off(priv->dev);
 
 	lbs_debugfs_remove_one(priv);
-	device_remove_file(&dev->dev, &dev_attr_lbs_rtap);
 	if (priv->mesh_tlv) {
 		device_remove_file(&dev->dev, &dev_attr_lbs_mesh);
+		device_remove_file(&dev->dev, &dev_attr_lbs_rtap);
 	}
 
 	/* Flush pending command nodes */

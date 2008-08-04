@@ -607,7 +607,6 @@ void ieee80211_sta_tx(struct net_device *dev, struct sk_buff *skb,
 		      int encrypt)
 {
 	struct ieee80211_sub_if_data *sdata;
-	struct ieee80211_tx_info *info;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	skb->dev = sdata->local->mdev;
@@ -615,11 +614,8 @@ void ieee80211_sta_tx(struct net_device *dev, struct sk_buff *skb,
 	skb_set_network_header(skb, 0);
 	skb_set_transport_header(skb, 0);
 
-	info = IEEE80211_SKB_CB(skb);
-	memset(info, 0, sizeof(struct ieee80211_tx_info));
-	info->control.ifindex = sdata->dev->ifindex;
-	if (!encrypt)
-		info->flags |= IEEE80211_TX_CTL_DO_NOT_ENCRYPT;
+	skb->iif = sdata->dev->ifindex;
+	skb->do_not_encrypt = !encrypt;
 
 	dev_queue_xmit(skb);
 }
@@ -3316,6 +3312,7 @@ void ieee80211_start_mesh(struct net_device *dev)
 	ifsta = &sdata->u.sta;
 	ifsta->state = IEEE80211_MESH_UP;
 	ieee80211_sta_timer((unsigned long)sdata);
+	ieee80211_if_config(sdata, IEEE80211_IFCC_BEACON);
 }
 #endif
 
@@ -3666,11 +3663,21 @@ static int ieee80211_sta_find_ibss(struct net_device *dev,
 		       "%s\n", print_mac(mac, bssid),
 		       print_mac(mac2, ifsta->bssid));
 #endif /* CONFIG_MAC80211_IBSS_DEBUG */
-	if (found && memcmp(ifsta->bssid, bssid, ETH_ALEN) != 0 &&
-	    (bss = ieee80211_rx_bss_get(dev, bssid,
-					local->hw.conf.channel->center_freq,
-					ifsta->ssid, ifsta->ssid_len))) {
+
+	if (found && memcmp(ifsta->bssid, bssid, ETH_ALEN) != 0) {
 		int ret;
+		int search_freq;
+
+		if (ifsta->flags & IEEE80211_STA_AUTO_CHANNEL_SEL)
+			search_freq = bss->freq;
+		else
+			search_freq = local->hw.conf.channel->center_freq;
+
+		bss = ieee80211_rx_bss_get(dev, bssid, search_freq,
+					   ifsta->ssid, ifsta->ssid_len);
+		if (!bss)
+			goto dont_join;
+
 		printk(KERN_DEBUG "%s: Selected IBSS BSSID %s"
 		       " based on configured SSID\n",
 		       dev->name, print_mac(mac, bssid));
@@ -3678,6 +3685,8 @@ static int ieee80211_sta_find_ibss(struct net_device *dev,
 		ieee80211_rx_bss_put(local, bss);
 		return ret;
 	}
+
+dont_join:
 #ifdef CONFIG_MAC80211_IBSS_DEBUG
 	printk(KERN_DEBUG "   did not try to join ibss\n");
 #endif /* CONFIG_MAC80211_IBSS_DEBUG */
@@ -3882,6 +3891,7 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw)
 
 
 	netif_tx_lock_bh(local->mdev);
+	netif_addr_lock(local->mdev);
 	local->filter_flags &= ~FIF_BCN_PRBRESP_PROMISC;
 	local->ops->configure_filter(local_to_hw(local),
 				     FIF_BCN_PRBRESP_PROMISC,
@@ -3889,6 +3899,7 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw)
 				     local->mdev->mc_count,
 				     local->mdev->mc_list);
 
+	netif_addr_unlock(local->mdev);
 	netif_tx_unlock_bh(local->mdev);
 
 	rcu_read_lock();
@@ -4075,14 +4086,14 @@ static int ieee80211_sta_start_scan(struct net_device *dev,
 	local->scan_band = IEEE80211_BAND_2GHZ;
 	local->scan_dev = dev;
 
-	netif_tx_lock_bh(local->mdev);
+	netif_addr_lock_bh(local->mdev);
 	local->filter_flags |= FIF_BCN_PRBRESP_PROMISC;
 	local->ops->configure_filter(local_to_hw(local),
 				     FIF_BCN_PRBRESP_PROMISC,
 				     &local->filter_flags,
 				     local->mdev->mc_count,
 				     local->mdev->mc_list);
-	netif_tx_unlock_bh(local->mdev);
+	netif_addr_unlock_bh(local->mdev);
 
 	/* TODO: start scan as soon as all nullfunc frames are ACKed */
 	queue_delayed_work(local->hw.workqueue, &local->scan_work,

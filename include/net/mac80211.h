@@ -208,8 +208,6 @@ struct ieee80211_bss_conf {
  * These flags are used with the @flags member of &ieee80211_tx_info.
  *
  * @IEEE80211_TX_CTL_REQ_TX_STATUS: request TX status callback for this frame.
- * @IEEE80211_TX_CTL_DO_NOT_ENCRYPT: send this frame without encryption;
- *	e.g., for EAPOL frame
  * @IEEE80211_TX_CTL_USE_RTS_CTS: use RTS-CTS before sending frame
  * @IEEE80211_TX_CTL_USE_CTS_PROTECT: use CTS protection for the frame (e.g.,
  *	for combined 802.11g / 802.11b networks)
@@ -222,7 +220,6 @@ struct ieee80211_bss_conf {
  * @IEEE80211_TX_CTL_SHORT_PREAMBLE: TBD
  * @IEEE80211_TX_CTL_LONG_RETRY_LIMIT: this frame should be send using the
  *	through set_retry_limit configured long retry value
- * @IEEE80211_TX_CTL_EAPOL_FRAME: internal to mac80211
  * @IEEE80211_TX_CTL_SEND_AFTER_DTIM: send this frame after DTIM beacon
  * @IEEE80211_TX_CTL_AMPDU: this frame should be sent as part of an A-MPDU
  * @IEEE80211_TX_CTL_OFDM_HT: this frame can be sent in HT OFDM rates. number
@@ -255,7 +252,6 @@ struct ieee80211_bss_conf {
  */
 enum mac80211_tx_control_flags {
 	IEEE80211_TX_CTL_REQ_TX_STATUS		= BIT(0),
-	IEEE80211_TX_CTL_DO_NOT_ENCRYPT		= BIT(1),
 	IEEE80211_TX_CTL_USE_RTS_CTS		= BIT(2),
 	IEEE80211_TX_CTL_USE_CTS_PROTECT	= BIT(3),
 	IEEE80211_TX_CTL_NO_ACK			= BIT(4),
@@ -265,7 +261,6 @@ enum mac80211_tx_control_flags {
 	IEEE80211_TX_CTL_FIRST_FRAGMENT		= BIT(8),
 	IEEE80211_TX_CTL_SHORT_PREAMBLE		= BIT(9),
 	IEEE80211_TX_CTL_LONG_RETRY_LIMIT	= BIT(10),
-	IEEE80211_TX_CTL_EAPOL_FRAME		= BIT(11),
 	IEEE80211_TX_CTL_SEND_AFTER_DTIM	= BIT(12),
 	IEEE80211_TX_CTL_AMPDU			= BIT(13),
 	IEEE80211_TX_CTL_OFDM_HT		= BIT(14),
@@ -325,7 +320,6 @@ struct ieee80211_tx_info {
 			struct ieee80211_vif *vif;
 			struct ieee80211_key_conf *hw_key;
 			unsigned long jiffies;
-			int ifindex;
 			u16 aid;
 			s8 rts_cts_rate_idx, alt_retry_rate_idx;
 			u8 retry_limit;
@@ -369,6 +363,7 @@ static inline struct ieee80211_tx_info *IEEE80211_SKB_CB(struct sk_buff *skb)
  * @RX_FLAG_TSFT: The timestamp passed in the RX status (@mactime field)
  *	is valid. This is useful in monitor mode and necessary for beacon frames
  *	to enable IBSS merging.
+ * @RX_FLAG_SHORTPRE: Short preamble was used for this frame
  */
 enum mac80211_rx_flags {
 	RX_FLAG_MMIC_ERROR	= 1<<0,
@@ -379,6 +374,7 @@ enum mac80211_rx_flags {
 	RX_FLAG_FAILED_FCS_CRC	= 1<<5,
 	RX_FLAG_FAILED_PLCP_CRC = 1<<6,
 	RX_FLAG_TSFT		= 1<<7,
+	RX_FLAG_SHORTPRE	= 1<<8
 };
 
 /**
@@ -750,7 +746,6 @@ enum ieee80211_tkip_key_type {
  * 	Measurement, Channel Switch, Quieting, TPC
  */
 enum ieee80211_hw_flags {
-	IEEE80211_HW_HOST_GEN_BEACON_TEMPLATE		= 1<<0,
 	IEEE80211_HW_RX_INCLUDES_FCS			= 1<<1,
 	IEEE80211_HW_HOST_BROADCAST_PS_BUFFERING	= 1<<2,
 	IEEE80211_HW_2GHZ_SHORT_SLOT_INCAPABLE		= 1<<3,
@@ -856,20 +851,12 @@ static inline void SET_IEEE80211_PERM_ADDR(struct ieee80211_hw *hw, u8 *addr)
 
 static inline int ieee80211_num_regular_queues(struct ieee80211_hw *hw)
 {
-#ifdef CONFIG_MAC80211_QOS
 	return hw->queues;
-#else
-	return 1;
-#endif
 }
 
 static inline int ieee80211_num_queues(struct ieee80211_hw *hw)
 {
-#ifdef CONFIG_MAC80211_QOS
 	return hw->queues + hw->ampdu_queues;
-#else
-	return 1;
-#endif
 }
 
 static inline struct ieee80211_rate *
@@ -1626,6 +1613,16 @@ void ieee80211_wake_queue(struct ieee80211_hw *hw, int queue);
  * Drivers should use this function instead of netif_stop_queue.
  */
 void ieee80211_stop_queue(struct ieee80211_hw *hw, int queue);
+
+/**
+ * ieee80211_queue_stopped - test status of the queue
+ * @hw: pointer as obtained from ieee80211_alloc_hw().
+ * @queue: queue number (counted from zero).
+ *
+ * Drivers should use this function instead of netif_stop_queue.
+ */
+
+int ieee80211_queue_stopped(struct ieee80211_hw *hw, int queue);
 
 /**
  * ieee80211_stop_queues - stop all queues

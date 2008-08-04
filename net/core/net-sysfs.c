@@ -242,11 +242,11 @@ static ssize_t netstat_show(const struct device *d,
 			offset % sizeof(unsigned long) != 0);
 
 	read_lock(&dev_base_lock);
-	if (dev_isalive(dev) && dev->get_stats &&
-	    (stats = (*dev->get_stats)(dev)))
+	if (dev_isalive(dev)) {
+		stats = dev->get_stats(dev);
 		ret = sprintf(buf, fmt_ulong,
 			      *(unsigned long *)(((u8 *) stats) + offset));
-
+	}
 	read_unlock(&dev_base_lock);
 	return ret;
 }
@@ -457,8 +457,7 @@ int netdev_register_kobject(struct net_device *net)
 	strlcpy(dev->bus_id, net->name, BUS_ID_SIZE);
 
 #ifdef CONFIG_SYSFS
-	if (net->get_stats)
-		*groups++ = &netstat_group;
+	*groups++ = &netstat_group;
 
 #ifdef CONFIG_WIRELESS_EXT_SYSFS
 	if (net->wireless_handlers && net->wireless_handlers->get_wireless_stats)
@@ -468,6 +467,19 @@ int netdev_register_kobject(struct net_device *net)
 
 	return device_add(dev);
 }
+
+int netdev_class_create_file(struct class_attribute *class_attr)
+{
+	return class_create_file(&net_class, class_attr);
+}
+
+void netdev_class_remove_file(struct class_attribute *class_attr)
+{
+	class_remove_file(&net_class, class_attr);
+}
+
+EXPORT_SYMBOL(netdev_class_create_file);
+EXPORT_SYMBOL(netdev_class_remove_file);
 
 void netdev_initialize_kobject(struct net_device *net)
 {

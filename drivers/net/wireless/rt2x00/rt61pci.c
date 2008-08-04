@@ -926,7 +926,7 @@ static char *rt61pci_get_firmware_name(struct rt2x00_dev *rt2x00dev)
 	return fw_name;
 }
 
-static u16 rt61pci_get_firmware_crc(void *data, const size_t len)
+static u16 rt61pci_get_firmware_crc(const void *data, const size_t len)
 {
 	u16 crc;
 
@@ -943,7 +943,7 @@ static u16 rt61pci_get_firmware_crc(void *data, const size_t len)
 	return crc;
 }
 
-static int rt61pci_load_firmware(struct rt2x00_dev *rt2x00dev, void *data,
+static int rt61pci_load_firmware(struct rt2x00_dev *rt2x00dev, const void *data,
 				 const size_t len)
 {
 	int i;
@@ -1002,6 +1002,11 @@ static int rt61pci_load_firmware(struct rt2x00_dev *rt2x00dev, void *data,
 		ERROR(rt2x00dev, "MCU Control register not ready.\n");
 		return -EBUSY;
 	}
+
+	/*
+	 * Hardware needs another millisecond before it is ready.
+	 */
+	msleep(1);
 
 	/*
 	 * Reset MAC and BBP registers.
@@ -1544,7 +1549,8 @@ static void rt61pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 	rt2x00_set_field32(&word, TXD_W1_CWMIN, txdesc->cw_min);
 	rt2x00_set_field32(&word, TXD_W1_CWMAX, txdesc->cw_max);
 	rt2x00_set_field32(&word, TXD_W1_IV_OFFSET, IEEE80211_HEADER);
-	rt2x00_set_field32(&word, TXD_W1_HW_SEQUENCE, 1);
+	rt2x00_set_field32(&word, TXD_W1_HW_SEQUENCE,
+			   test_bit(ENTRY_TXD_GENERATE_SEQ, &txdesc->flags));
 	rt2x00_set_field32(&word, TXD_W1_BUFFER_COUNT, 1);
 	rt2x00_desc_write(txd, 1, word);
 
@@ -2278,7 +2284,6 @@ static void rt61pci_probe_hw_mode(struct rt2x00_dev *rt2x00dev)
 	 * Initialize all hw fields.
 	 */
 	rt2x00dev->hw->flags =
-	    IEEE80211_HW_HOST_GEN_BEACON_TEMPLATE |
 	    IEEE80211_HW_HOST_BROADCAST_PS_BUFFERING |
 	    IEEE80211_HW_SIGNAL_DBM;
 	rt2x00dev->hw->extra_tx_headroom = 0;

@@ -114,7 +114,7 @@ static int ieee80211_master_open(struct net_device *dev)
 	if (res)
 		return res;
 
-	netif_start_queue(local->mdev);
+	netif_tx_start_all_queues(local->mdev);
 
 	return 0;
 }
@@ -291,9 +291,9 @@ static int ieee80211_open(struct net_device *dev)
 		if (sdata->u.mntr_flags & MONITOR_FLAG_OTHER_BSS)
 			local->fif_other_bss++;
 
-		netif_tx_lock_bh(local->mdev);
+		netif_addr_lock_bh(local->mdev);
 		ieee80211_configure_filter(local);
-		netif_tx_unlock_bh(local->mdev);
+		netif_addr_unlock_bh(local->mdev);
 		break;
 	case IEEE80211_IF_TYPE_STA:
 	case IEEE80211_IF_TYPE_IBSS:
@@ -375,7 +375,7 @@ static int ieee80211_open(struct net_device *dev)
 		queue_work(local->hw.workqueue, &ifsta->work);
 	}
 
-	netif_start_queue(dev);
+	netif_tx_start_all_queues(dev);
 
 	return 0;
  err_del_interface:
@@ -400,7 +400,7 @@ static int ieee80211_stop(struct net_device *dev)
 	/*
 	 * Stop TX on this interface first.
 	 */
-	netif_stop_queue(dev);
+	netif_tx_stop_all_queues(dev);
 
 	/*
 	 * Now delete all active aggregation sessions.
@@ -490,9 +490,9 @@ static int ieee80211_stop(struct net_device *dev)
 		if (sdata->u.mntr_flags & MONITOR_FLAG_OTHER_BSS)
 			local->fif_other_bss--;
 
-		netif_tx_lock_bh(local->mdev);
+		netif_addr_lock_bh(local->mdev);
 		ieee80211_configure_filter(local);
-		netif_tx_unlock_bh(local->mdev);
+		netif_addr_unlock_bh(local->mdev);
 		break;
 	case IEEE80211_IF_TYPE_MESH_POINT:
 	case IEEE80211_IF_TYPE_STA:
@@ -618,10 +618,6 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 			(unsigned long)&sta->timer_to_tid[tid];
 	init_timer(&sta->ampdu_mlme.tid_tx[tid]->addba_resp_timer);
 
-	/* ensure that TX flow won't interrupt us
-	 * until the end of the call to requeue function */
-	spin_lock_bh(&local->mdev->queue_lock);
-
 	/* create a new queue for this aggregation */
 	ret = ieee80211_ht_agg_queue_add(local, sta, tid);
 
@@ -648,7 +644,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 		/* No need to requeue the packets in the agg queue, since we
 		 * held the tx lock: no packet could be enqueued to the newly
 		 * allocated queue */
-		 ieee80211_ht_agg_queue_remove(local, sta, tid, 0);
+		ieee80211_ht_agg_queue_remove(local, sta, tid, 0);
 #ifdef CONFIG_MAC80211_HT_DEBUG
 		printk(KERN_DEBUG "BA request denied - HW unavailable for"
 					" tid %d\n", tid);
@@ -659,7 +655,6 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 
 	/* Will put all the packets in the new SW queue */
 	ieee80211_requeue(local, ieee802_1d_to_ac[tid]);
-	spin_unlock_bh(&local->mdev->queue_lock);
 	spin_unlock_bh(&sta->lock);
 
 	/* send an addBA request */
@@ -685,7 +680,6 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 err_unlock_queue:
 	kfree(sta->ampdu_mlme.tid_tx[tid]);
 	sta->ampdu_mlme.tid_tx[tid] = NULL;
-	spin_unlock_bh(&local->mdev->queue_lock);
 	ret = -EBUSY;
 err_unlock_sta:
 	spin_unlock_bh(&sta->lock);
@@ -812,6 +806,7 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u8 tid)
 	struct ieee80211_local *local = hw_to_local(hw);
 	struct sta_info *sta;
 	u8 *state;
+	int agg_queue;
 	DECLARE_MAC_BUF(mac);
 
 	if (tid >= STA_TID_NUM) {
@@ -840,8 +835,9 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u8 tid)
 	state = &sta->ampdu_mlme.tid_state_tx[tid];
 
 	/* NOTE: no need to use sta->lock in this state check, as
-	 * ieee80211_stop_tx_ba_session will let only
-	 * one stop call to pass through per sta/tid */
+	 * ieee80211_stop_tx_ba_session will let only one stop call to
+	 * pass through per sta/tid
+	 */
 	if ((*state & HT_AGG_STATE_REQ_STOP_BA_MSK) == 0) {
 #ifdef CONFIG_MAC80211_HT_DEBUG
 		printk(KERN_DEBUG "unexpected callback to A-MPDU stop\n");
@@ -854,18 +850,16 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u8 tid)
 		ieee80211_send_delba(sta->sdata->dev, ra, tid,
 			WLAN_BACK_INITIATOR, WLAN_REASON_QSTA_NOT_USE);
 
-	/* avoid ordering issues: we are the only one that can modify
-	 * the content of the qdiscs */
-	spin_lock_bh(&local->mdev->queue_lock);
-	/* remove the queue for this aggregation */
-	ieee80211_ht_agg_queue_remove(local, sta, tid, 1);
-	spin_unlock_bh(&local->mdev->queue_lock);
+	agg_queue = sta->tid_to_tx_q[tid];
 
-	/* we just requeued the all the frames that were in the removed
-	 * queue, and since we might miss a softirq we do netif_schedule.
-	 * ieee80211_wake_queue is not used here as this queue is not
-	 * necessarily stopped */
-	netif_schedule(local->mdev);
+	ieee80211_ht_agg_queue_remove(local, sta, tid, 1);
+
+	/* We just requeued the all the frames that were in the
+	 * removed queue, and since we might miss a softirq we do
+	 * netif_schedule_queue.  ieee80211_wake_queue is not used
+	 * here as this queue is not necessarily stopped
+	 */
+	netif_schedule_queue(netdev_get_tx_queue(local->mdev, agg_queue));
 	spin_lock_bh(&sta->lock);
 	*state = HT_AGG_STATE_IDLE;
 	sta->ampdu_mlme.addba_req_num[tid] = 0;
@@ -1239,18 +1233,12 @@ static void ieee80211_tasklet_handler(unsigned long data)
 /* Remove added headers (e.g., QoS control), encryption header/MIC, etc. to
  * make a prepared TX frame (one that has been given to hw) to look like brand
  * new IEEE 802.11 frame that is ready to go through TX processing again.
- * Also, tx_packet_data in cb is restored from tx_control. */
+ */
 static void ieee80211_remove_tx_extra(struct ieee80211_local *local,
 				      struct ieee80211_key *key,
 				      struct sk_buff *skb)
 {
 	int hdrlen, iv_len, mic_len;
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-
-	info->flags &=	IEEE80211_TX_CTL_REQ_TX_STATUS |
-			IEEE80211_TX_CTL_DO_NOT_ENCRYPT |
-			IEEE80211_TX_CTL_REQUEUE |
-			IEEE80211_TX_CTL_EAPOL_FRAME;
 
 	hdrlen = ieee80211_get_hdrlen_from_skb(skb);
 
@@ -1653,26 +1641,18 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	 * We use the number of queues for feature tests (QoS, HT) internally
 	 * so restrict them appropriately.
 	 */
-#ifdef CONFIG_MAC80211_QOS
 	if (hw->queues > IEEE80211_MAX_QUEUES)
 		hw->queues = IEEE80211_MAX_QUEUES;
 	if (hw->ampdu_queues > IEEE80211_MAX_AMPDU_QUEUES)
 		hw->ampdu_queues = IEEE80211_MAX_AMPDU_QUEUES;
 	if (hw->queues < 4)
 		hw->ampdu_queues = 0;
-#else
-	hw->queues = 1;
-	hw->ampdu_queues = 0;
-#endif
 
 	mdev = alloc_netdev_mq(sizeof(struct wireless_dev),
 			       "wmaster%d", ether_setup,
 			       ieee80211_num_queues(hw));
 	if (!mdev)
 		goto fail_mdev_alloc;
-
-	if (ieee80211_num_queues(hw) > 1)
-		mdev->features |= NETIF_F_MULTI_QUEUE;
 
 	mwdev = netdev_priv(mdev);
 	mdev->ieee80211_ptr = mwdev;
@@ -1750,12 +1730,12 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	result = ieee80211_wep_init(local);
 
 	if (result < 0) {
-		printk(KERN_DEBUG "%s: Failed to initialize wep\n",
-		       wiphy_name(local->hw.wiphy));
+		printk(KERN_DEBUG "%s: Failed to initialize wep: %d\n",
+		       wiphy_name(local->hw.wiphy), result);
 		goto fail_wep;
 	}
 
-	ieee80211_install_qdisc(local->mdev);
+	local->mdev->select_queue = ieee80211_select_queue;
 
 	/* add one default STA interface */
 	result = ieee80211_if_add(local, "wlan%d", NULL,
@@ -1853,23 +1833,11 @@ static int __init ieee80211_init(void)
 
 	ret = rc80211_pid_init();
 	if (ret)
-		goto out;
-
-	ret = ieee80211_wme_register();
-	if (ret) {
-		printk(KERN_DEBUG "ieee80211_init: failed to "
-		       "initialize WME (err=%d)\n", ret);
-		goto out_cleanup_pid;
-	}
+		return ret;
 
 	ieee80211_debugfs_netdev_init();
 
 	return 0;
-
- out_cleanup_pid:
-	rc80211_pid_exit();
- out:
-	return ret;
 }
 
 static void __exit ieee80211_exit(void)
@@ -1885,7 +1853,6 @@ static void __exit ieee80211_exit(void)
 	if (mesh_allocated)
 		ieee80211s_stop();
 
-	ieee80211_wme_unregister();
 	ieee80211_debugfs_netdev_exit();
 }
 
