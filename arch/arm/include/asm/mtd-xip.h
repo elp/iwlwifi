@@ -10,15 +10,13 @@
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
- *
- * $Id: xip.h,v 1.2 2004/12/01 15:49:10 nico Exp $
  */
 
 #ifndef __ARM_MTD_XIP_H__
 #define __ARM_MTD_XIP_H__
 
-#include <asm/hardware.h>
-#include <asm/arch/mtd-xip.h>
+#include <mach/hardware.h>
+#include <mach/mtd-xip.h>
 
 /* fill instruction prefetch */
 #define xip_iprefetch() 	do { asm volatile (".rep 8; nop; .endr"); } while (0)

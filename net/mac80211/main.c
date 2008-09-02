@@ -187,8 +187,14 @@ static int ieee80211_open(struct net_device *dev)
 	u32 changed = 0;
 	int res;
 	bool need_hw_reconfig = 0;
+	u8 null_addr[ETH_ALEN] = {0};
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	/* fail early if user set an invalid address */
+	if (compare_ether_addr(dev->dev_addr, null_addr) &&
+	    !is_valid_ether_addr(dev->dev_addr))
+		return -EADDRNOTAVAIL;
 
 	/* we hold the RTNL here so can safely walk the list */
 	list_for_each_entry(nsdata, &local->interfaces, list) {
@@ -270,6 +276,36 @@ static int ieee80211_open(struct net_device *dev)
 		ieee80211_led_radio(local, local->hw.conf.radio_enabled);
 	}
 
+	/*
+	 * Check all interfaces and copy the hopefully now-present
+	 * MAC address to those that have the special null one.
+	 */
+	list_for_each_entry(nsdata, &local->interfaces, list) {
+		struct net_device *ndev = nsdata->dev;
+
+		/*
+		 * No need to check netif_running since we do not allow
+		 * it to start up with this invalid address.
+		 */
+		if (compare_ether_addr(null_addr, ndev->dev_addr) == 0)
+			memcpy(ndev->dev_addr,
+			       local->hw.wiphy->perm_addr,
+			       ETH_ALEN);
+	}
+
+	if (compare_ether_addr(null_addr, local->mdev->dev_addr) == 0)
+		memcpy(local->mdev->dev_addr, local->hw.wiphy->perm_addr,
+		       ETH_ALEN);
+
+	/*
+	 * Validate the MAC address for this device.
+	 */
+	if (!is_valid_ether_addr(dev->dev_addr)) {
+		if (!local->open_count && local->ops->stop)
+			local->ops->stop(local_to_hw(local));
+		return -EADDRNOTAVAIL;
+	}
+
 	switch (sdata->vif.type) {
 	case IEEE80211_IF_TYPE_VLAN:
 		/* no need to tell driver */
@@ -311,8 +347,8 @@ static int ieee80211_open(struct net_device *dev)
 			goto err_stop;
 
 		if (ieee80211_vif_is_mesh(&sdata->vif))
-			ieee80211_start_mesh(sdata->dev);
-		changed |= ieee80211_reset_erp_info(dev);
+			ieee80211_start_mesh(sdata);
+		changed |= ieee80211_reset_erp_info(sdata);
 		ieee80211_bss_info_change_notify(sdata, changed);
 		ieee80211_enable_keys(sdata);
 
@@ -412,7 +448,7 @@ static int ieee80211_stop(struct net_device *dev)
 
 	list_for_each_entry_rcu(sta, &local->sta_list, list) {
 		if (sta->sdata == sdata)
-			ieee80211_sta_tear_down_BA_sessions(dev, sta->addr);
+			ieee80211_sta_tear_down_BA_sessions(sdata, sta->addr);
 	}
 
 	rcu_read_unlock();
@@ -562,7 +598,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 	struct ieee80211_local *local = hw_to_local(hw);
 	struct sta_info *sta;
 	struct ieee80211_sub_if_data *sdata;
-	u16 start_seq_num = 0;
+	u16 start_seq_num;
 	u8 *state;
 	int ret;
 	DECLARE_MAC_BUF(mac);
@@ -642,6 +678,9 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 	 * call back right away, it must see that the flow has begun */
 	*state |= HT_ADDBA_REQUESTED_MSK;
 
+	/* This is slightly racy because the queue isn't stopped */
+	start_seq_num = sta->tid_seq[tid];
+
 	if (local->ops->ampdu_action)
 		ret = local->ops->ampdu_action(hw, IEEE80211_AMPDU_TX_START,
 						ra, tid, &start_seq_num);
@@ -670,7 +709,7 @@ int ieee80211_start_tx_ba_session(struct ieee80211_hw *hw, u8 *ra, u16 tid)
 	sta->ampdu_mlme.tid_tx[tid]->ssn = start_seq_num;
 
 
-	ieee80211_send_addba_request(sta->sdata->dev, ra, tid,
+	ieee80211_send_addba_request(sta->sdata, ra, tid,
 			 sta->ampdu_mlme.tid_tx[tid]->dialog_token,
 			 sta->ampdu_mlme.tid_tx[tid]->ssn,
 			 0x40, 5000);
@@ -853,7 +892,7 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_hw *hw, u8 *ra, u8 tid)
 	}
 
 	if (*state & HT_AGG_STATE_INITIATOR_MSK)
-		ieee80211_send_delba(sta->sdata->dev, ra, tid,
+		ieee80211_send_delba(sta->sdata, ra, tid,
 			WLAN_BACK_INITIATOR, WLAN_REASON_QSTA_NOT_USE);
 
 	agg_queue = sta->tid_to_tx_q[tid];
@@ -975,6 +1014,8 @@ void ieee80211_if_setup(struct net_device *dev)
 	dev->open = ieee80211_open;
 	dev->stop = ieee80211_stop;
 	dev->destructor = free_netdev;
+	/* we will validate the address ourselves in ->open */
+	dev->validate_addr = NULL;
 }
 
 /* everything else */
@@ -1162,10 +1203,8 @@ void ieee80211_bss_info_change_notify(struct ieee80211_sub_if_data *sdata,
 					     changed);
 }
 
-u32 ieee80211_reset_erp_info(struct net_device *dev)
+u32 ieee80211_reset_erp_info(struct ieee80211_sub_if_data *sdata)
 {
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
-
 	sdata->bss_conf.use_cts_prot = 0;
 	sdata->bss_conf.use_short_preamble = 0;
 	return BSS_CHANGED_ERP_CTS_PROT | BSS_CHANGED_ERP_PREAMBLE;
@@ -1244,9 +1283,10 @@ static void ieee80211_remove_tx_extra(struct ieee80211_local *local,
 				      struct ieee80211_key *key,
 				      struct sk_buff *skb)
 {
-	int hdrlen, iv_len, mic_len;
+	unsigned int hdrlen, iv_len, mic_len;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 
-	hdrlen = ieee80211_get_hdrlen_from_skb(skb);
+	hdrlen = ieee80211_hdrlen(hdr->frame_control);
 
 	if (!key)
 		goto no_key;
@@ -1268,24 +1308,20 @@ static void ieee80211_remove_tx_extra(struct ieee80211_local *local,
 		goto no_key;
 	}
 
-	if (skb->len >= mic_len &&
+	if (skb->len >= hdrlen + mic_len &&
 	    !(key->flags & KEY_FLAG_UPLOADED_TO_HARDWARE))
 		skb_trim(skb, skb->len - mic_len);
-	if (skb->len >= iv_len && skb->len > hdrlen) {
+	if (skb->len >= hdrlen + iv_len) {
 		memmove(skb->data + iv_len, skb->data, hdrlen);
-		skb_pull(skb, iv_len);
+		hdr = (struct ieee80211_hdr *)skb_pull(skb, iv_len);
 	}
 
 no_key:
-	{
-		struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
-		u16 fc = le16_to_cpu(hdr->frame_control);
-		if ((fc & 0x8C) == 0x88) /* QoS Control Field */ {
-			fc &= ~IEEE80211_STYPE_QOS_DATA;
-			hdr->frame_control = cpu_to_le16(fc);
-			memmove(skb->data + 2, skb->data, hdrlen - 2);
-			skb_pull(skb, 2);
-		}
+	if (ieee80211_is_data_qos(hdr->frame_control)) {
+		hdr->frame_control &= ~cpu_to_le16(IEEE80211_STYPE_QOS_DATA);
+		memmove(skb->data + IEEE80211_QOS_CTL_LEN, skb->data,
+			hdrlen - IEEE80211_QOS_CTL_LEN);
+		skb_pull(skb, IEEE80211_QOS_CTL_LEN);
 	}
 }
 
@@ -1403,7 +1439,7 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 			tid = qc[0] & 0xf;
 			ssn = ((le16_to_cpu(hdr->seq_ctrl) + 0x10)
 						& IEEE80211_SCTL_SEQ);
-			ieee80211_send_bar(sta->sdata->dev, hdr->addr1,
+			ieee80211_send_bar(sta->sdata, hdr->addr1,
 					   tid, ssn);
 		}
 	}

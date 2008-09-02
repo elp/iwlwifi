@@ -40,7 +40,6 @@
  *
  */
 
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/hardirq.h>
@@ -626,7 +625,6 @@ ath5k_pci_suspend(struct pci_dev *pdev, pm_message_t state)
 	ath5k_stop_hw(sc);
 
 	free_irq(pdev->irq, sc);
-	pci_disable_msi(pdev);
 	pci_save_state(pdev);
 	pci_disable_device(pdev);
 	pci_set_power_state(pdev, PCI_D3hot);
@@ -655,12 +653,10 @@ ath5k_pci_resume(struct pci_dev *pdev)
 	 */
 	pci_write_config_byte(pdev, 0x41, 0);
 
-	pci_enable_msi(pdev);
-
 	err = request_irq(pdev->irq, ath5k_intr, IRQF_SHARED, "ath", sc);
 	if (err) {
 		ATH5K_ERR(sc, "request_irq failed\n");
-		goto err_msi;
+		goto err_no_irq;
 	}
 
 	err = ath5k_init(sc);
@@ -681,8 +677,7 @@ ath5k_pci_resume(struct pci_dev *pdev)
 	return 0;
 err_irq:
 	free_irq(pdev->irq, sc);
-err_msi:
-	pci_disable_msi(pdev);
+err_no_irq:
 	pci_disable_device(pdev);
 	return err;
 }
@@ -1545,7 +1540,7 @@ ath5k_rx_decrypted(struct ath5k_softc *sc, struct ath5k_desc *ds,
 		struct sk_buff *skb, struct ath5k_rx_status *rs)
 {
 	struct ieee80211_hdr *hdr = (void *)skb->data;
-	unsigned int keyix, hlen = ieee80211_get_hdrlen_from_skb(skb);
+	unsigned int keyix, hlen;
 
 	if (!(rs->rs_status & AR5K_RXERR_DECRYPT) &&
 			rs->rs_keyix != AR5K_RXKEYIX_INVALID)
@@ -1554,6 +1549,7 @@ ath5k_rx_decrypted(struct ath5k_softc *sc, struct ath5k_desc *ds,
 	/* Apparently when a default key is used to decrypt the packet
 	   the hw does not set the index used to decrypt.  In such cases
 	   get the index from the packet. */
+	hlen = ieee80211_hdrlen(hdr->frame_control);
 	if (ieee80211_has_protected(hdr->frame_control) &&
 	    !(rs->rs_status & AR5K_RXERR_DECRYPT) &&
 	    skb->len >= hlen + 4) {
@@ -1767,12 +1763,10 @@ accept:
 		rxs.rate_idx = ath5k_hw_to_driver_rix(sc, rs.rs_rate);
 		rxs.flag |= ath5k_rx_decrypted(sc, ds, skb, &rs);
 
-#if 0		/* add rxs.flag SHORTPRE once it is in mac80211 */
-		if (rs.rs_rate >= ATH5K_RATE_CODE_2M &&
-		    rs.rs_rate <= ATH5K_RATE_CODE_11M &&
-		    rs.rs_rate & AR5K_SET_SHORT_PREAMBLE)
+		if (rxs.rate_idx >= 0 && rs.rs_rate ==
+		    sc->curband->bitrates[rxs.rate_idx].hw_value_short)
 			rxs.flag |= RX_FLAG_SHORTPRE;
-#endif
+
 		ath5k_debug_dump_skb(sc, skb, "RX  ", 0);
 
 		/* check beacons in IBSS mode */

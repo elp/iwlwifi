@@ -404,11 +404,11 @@ ieee80211_rx_h_passive_scan(struct ieee80211_rx_data *rx)
 	struct sk_buff *skb = rx->skb;
 
 	if (unlikely(local->sta_hw_scanning))
-		return ieee80211_sta_rx_scan(rx->dev, skb, rx->status);
+		return ieee80211_sta_rx_scan(rx->sdata, skb, rx->status);
 
 	if (unlikely(local->sta_sw_scanning)) {
 		/* drop all the other packets during a software scan anyway */
-		if (ieee80211_sta_rx_scan(rx->dev, skb, rx->status)
+		if (ieee80211_sta_rx_scan(rx->sdata, skb, rx->status)
 		    != RX_QUEUED)
 			dev_kfree_skb(skb);
 		return RX_QUEUED;
@@ -466,7 +466,7 @@ ieee80211_rx_mesh_check(struct ieee80211_rx_data *rx)
 
 	if (ieee80211_is_data(hdr->frame_control) &&
 	    is_multicast_ether_addr(hdr->addr1) &&
-	    mesh_rmc_check(hdr->addr4, msh_h_get(hdr, hdrlen), rx->dev))
+	    mesh_rmc_check(hdr->addr4, msh_h_get(hdr, hdrlen), rx->sdata))
 		return RX_DROP_MONITOR;
 #undef msh_h_get
 
@@ -821,7 +821,7 @@ ieee80211_reassemble_add(struct ieee80211_sub_if_data *sdata,
 
 static inline struct ieee80211_fragment_entry *
 ieee80211_reassemble_find(struct ieee80211_sub_if_data *sdata,
-			  u16 fc, unsigned int frag, unsigned int seq,
+			  unsigned int frag, unsigned int seq,
 			  int rx_queue, struct ieee80211_hdr *hdr)
 {
 	struct ieee80211_fragment_entry *entry;
@@ -830,7 +830,6 @@ ieee80211_reassemble_find(struct ieee80211_sub_if_data *sdata,
 	idx = sdata->fragment_next;
 	for (i = 0; i < IEEE80211_FRAGMENT_MAX; i++) {
 		struct ieee80211_hdr *f_hdr;
-		u16 f_fc;
 
 		idx--;
 		if (idx < 0)
@@ -842,10 +841,13 @@ ieee80211_reassemble_find(struct ieee80211_sub_if_data *sdata,
 		    entry->last_frag + 1 != frag)
 			continue;
 
-		f_hdr = (struct ieee80211_hdr *) entry->skb_list.next->data;
-		f_fc = le16_to_cpu(f_hdr->frame_control);
+		f_hdr = (struct ieee80211_hdr *)entry->skb_list.next->data;
 
-		if ((fc & IEEE80211_FCTL_FTYPE) != (f_fc & IEEE80211_FCTL_FTYPE) ||
+		/*
+		 * Check ftype and addresses are equal, else check next fragment
+		 */
+		if (((hdr->frame_control ^ f_hdr->frame_control) &
+		     cpu_to_le16(IEEE80211_FCTL_FTYPE)) ||
 		    compare_ether_addr(hdr->addr1, f_hdr->addr1) != 0 ||
 		    compare_ether_addr(hdr->addr2, f_hdr->addr2) != 0)
 			continue;
@@ -865,16 +867,18 @@ ieee80211_rx_h_defragment(struct ieee80211_rx_data *rx)
 {
 	struct ieee80211_hdr *hdr;
 	u16 sc;
+	__le16 fc;
 	unsigned int frag, seq;
 	struct ieee80211_fragment_entry *entry;
 	struct sk_buff *skb;
 	DECLARE_MAC_BUF(mac);
 
-	hdr = (struct ieee80211_hdr *) rx->skb->data;
+	hdr = (struct ieee80211_hdr *)rx->skb->data;
+	fc = hdr->frame_control;
 	sc = le16_to_cpu(hdr->seq_ctrl);
 	frag = sc & IEEE80211_SCTL_FRAG;
 
-	if (likely((!(rx->fc & IEEE80211_FCTL_MOREFRAGS) && frag == 0) ||
+	if (likely((!ieee80211_has_morefrags(fc) && frag == 0) ||
 		   (rx->skb)->len < 24 ||
 		   is_multicast_ether_addr(hdr->addr1))) {
 		/* not fragmented */
@@ -889,7 +893,7 @@ ieee80211_rx_h_defragment(struct ieee80211_rx_data *rx)
 		entry = ieee80211_reassemble_add(rx->sdata, frag, seq,
 						 rx->queue, &(rx->skb));
 		if (rx->key && rx->key->conf.alg == ALG_CCMP &&
-		    (rx->fc & IEEE80211_FCTL_PROTECTED)) {
+		    ieee80211_has_protected(fc)) {
 			/* Store CCMP PN so that we can verify that the next
 			 * fragment has a sequential PN value. */
 			entry->ccmp = 1;
@@ -903,8 +907,7 @@ ieee80211_rx_h_defragment(struct ieee80211_rx_data *rx)
 	/* This is a fragment for a frame that should already be pending in
 	 * fragment cache. Add this fragment to the end of the pending entry.
 	 */
-	entry = ieee80211_reassemble_find(rx->sdata, rx->fc, frag, seq,
-					  rx->queue, hdr);
+	entry = ieee80211_reassemble_find(rx->sdata, frag, seq, rx->queue, hdr);
 	if (!entry) {
 		I802_DEBUG_INC(rx->local->rx_handlers_drop_defrag);
 		return RX_DROP_MONITOR;
@@ -929,11 +932,11 @@ ieee80211_rx_h_defragment(struct ieee80211_rx_data *rx)
 		memcpy(entry->last_pn, pn, CCMP_PN_LEN);
 	}
 
-	skb_pull(rx->skb, ieee80211_get_hdrlen(rx->fc));
+	skb_pull(rx->skb, ieee80211_hdrlen(fc));
 	__skb_queue_tail(&entry->skb_list, rx->skb);
 	entry->last_frag = frag;
 	entry->extra_len += rx->skb->len;
-	if (rx->fc & IEEE80211_FCTL_MOREFRAGS) {
+	if (ieee80211_has_morefrags(fc)) {
 		rx->skb = NULL;
 		return RX_QUEUED;
 	}
@@ -973,10 +976,9 @@ ieee80211_rx_h_ps_poll(struct ieee80211_rx_data *rx)
 	struct sk_buff *skb;
 	int no_pending_pkts;
 	DECLARE_MAC_BUF(mac);
+	__le16 fc = ((struct ieee80211_hdr *)rx->skb->data)->frame_control;
 
-	if (likely(!rx->sta ||
-		   (rx->fc & IEEE80211_FCTL_FTYPE) != IEEE80211_FTYPE_CTL ||
-		   (rx->fc & IEEE80211_FCTL_STYPE) != IEEE80211_STYPE_PSPOLL ||
+	if (likely(!rx->sta || !ieee80211_is_pspoll(fc) ||
 		   !(rx->flags & IEEE80211_RX_RA_MATCH)))
 		return RX_CONTINUE;
 
@@ -1055,7 +1057,6 @@ ieee80211_rx_h_remove_qos_control(struct ieee80211_rx_data *rx)
 		ieee80211_hdrlen(hdr->frame_control) - IEEE80211_QOS_CTL_LEN);
 	hdr = (struct ieee80211_hdr *)skb_pull(rx->skb, IEEE80211_QOS_CTL_LEN);
 	/* change frame type to non QOS */
-	rx->fc &= ~IEEE80211_STYPE_QOS_DATA;
 	hdr->frame_control &= ~cpu_to_le16(IEEE80211_STYPE_QOS_DATA);
 
 	return RX_CONTINUE;
@@ -1072,7 +1073,7 @@ ieee80211_802_1x_port_control(struct ieee80211_rx_data *rx)
 }
 
 static int
-ieee80211_drop_unencrypted(struct ieee80211_rx_data *rx)
+ieee80211_drop_unencrypted(struct ieee80211_rx_data *rx, __le16 fc)
 {
 	/*
 	 * Pass through unencrypted frames if the hardware has
@@ -1082,9 +1083,8 @@ ieee80211_drop_unencrypted(struct ieee80211_rx_data *rx)
 		return 0;
 
 	/* Drop unencrypted frames if key is set. */
-	if (unlikely(!(rx->fc & IEEE80211_FCTL_PROTECTED) &&
-		     (rx->fc & IEEE80211_FCTL_FTYPE) == IEEE80211_FTYPE_DATA &&
-		     (rx->fc & IEEE80211_FCTL_STYPE) != IEEE80211_STYPE_NULLFUNC &&
+	if (unlikely(!ieee80211_has_protected(fc) &&
+		     !ieee80211_is_nullfunc(fc) &&
 		     (rx->key || rx->sdata->drop_unencrypted)))
 		return -EACCES;
 
@@ -1096,7 +1096,7 @@ ieee80211_data_to_8023(struct ieee80211_rx_data *rx)
 {
 	struct net_device *dev = rx->dev;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) rx->skb->data;
-	u16 fc, hdrlen, ethertype;
+	u16 hdrlen, ethertype;
 	u8 *payload;
 	u8 dst[ETH_ALEN];
 	u8 src[ETH_ALEN] __aligned(2);
@@ -1107,12 +1107,10 @@ ieee80211_data_to_8023(struct ieee80211_rx_data *rx)
 	DECLARE_MAC_BUF(mac3);
 	DECLARE_MAC_BUF(mac4);
 
-	fc = rx->fc;
-
-	if (unlikely(!WLAN_FC_DATA_PRESENT(fc)))
+	if (unlikely(!ieee80211_is_data_present(hdr->frame_control)))
 		return -1;
 
-	hdrlen = ieee80211_get_hdrlen(fc);
+	hdrlen = ieee80211_hdrlen(hdr->frame_control);
 
 	if (ieee80211_vif_is_mesh(&sdata->vif))
 		hdrlen += ieee80211_get_mesh_hdrlen(
@@ -1127,41 +1125,28 @@ ieee80211_data_to_8023(struct ieee80211_rx_data *rx)
 	 *   1     0   BSSID SA    DA    n/a
 	 *   1     1   RA    TA    DA    SA
 	 */
+	memcpy(dst, ieee80211_get_DA(hdr), ETH_ALEN);
+	memcpy(src, ieee80211_get_SA(hdr), ETH_ALEN);
 
-	switch (fc & (IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS)) {
-	case IEEE80211_FCTL_TODS:
-		/* BSSID SA DA */
-		memcpy(dst, hdr->addr3, ETH_ALEN);
-		memcpy(src, hdr->addr2, ETH_ALEN);
-
+	switch (hdr->frame_control &
+		cpu_to_le16(IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS)) {
+	case __constant_cpu_to_le16(IEEE80211_FCTL_TODS):
 		if (unlikely(sdata->vif.type != IEEE80211_IF_TYPE_AP &&
 			     sdata->vif.type != IEEE80211_IF_TYPE_VLAN))
 			return -1;
 		break;
-	case (IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS):
-		/* RA TA DA SA */
-		memcpy(dst, hdr->addr3, ETH_ALEN);
-		memcpy(src, hdr->addr4, ETH_ALEN);
-
-		 if (unlikely(sdata->vif.type != IEEE80211_IF_TYPE_WDS &&
+	case __constant_cpu_to_le16(IEEE80211_FCTL_TODS | IEEE80211_FCTL_FROMDS):
+		if (unlikely(sdata->vif.type != IEEE80211_IF_TYPE_WDS &&
 			     sdata->vif.type != IEEE80211_IF_TYPE_MESH_POINT))
 			return -1;
 		break;
-	case IEEE80211_FCTL_FROMDS:
-		/* DA BSSID SA */
-		memcpy(dst, hdr->addr1, ETH_ALEN);
-		memcpy(src, hdr->addr3, ETH_ALEN);
-
+	case __constant_cpu_to_le16(IEEE80211_FCTL_FROMDS):
 		if (sdata->vif.type != IEEE80211_IF_TYPE_STA ||
 		    (is_multicast_ether_addr(dst) &&
 		     !compare_ether_addr(src, dev->dev_addr)))
 			return -1;
 		break;
-	case 0:
-		/* DA SA BSSID */
-		memcpy(dst, hdr->addr1, ETH_ALEN);
-		memcpy(src, hdr->addr2, ETH_ALEN);
-
+	case __constant_cpu_to_le16(0):
 		if (sdata->vif.type != IEEE80211_IF_TYPE_IBSS)
 			return -1;
 		break;
@@ -1198,7 +1183,7 @@ ieee80211_data_to_8023(struct ieee80211_rx_data *rx)
 /*
  * requires that rx->skb is a frame with ethernet header
  */
-static bool ieee80211_frame_allowed(struct ieee80211_rx_data *rx)
+static bool ieee80211_frame_allowed(struct ieee80211_rx_data *rx, __le16 fc)
 {
 	static const u8 pae_group_addr[ETH_ALEN] __aligned(2)
 		= { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x03 };
@@ -1214,7 +1199,7 @@ static bool ieee80211_frame_allowed(struct ieee80211_rx_data *rx)
 		return true;
 
 	if (ieee80211_802_1x_port_control(rx) ||
-	    ieee80211_drop_unencrypted(rx))
+	    ieee80211_drop_unencrypted(rx, fc))
 		return false;
 
 	return true;
@@ -1284,20 +1269,21 @@ ieee80211_rx_h_amsdu(struct ieee80211_rx_data *rx)
 {
 	struct net_device *dev = rx->dev;
 	struct ieee80211_local *local = rx->local;
-	u16 fc, ethertype;
+	u16 ethertype;
 	u8 *payload;
 	struct sk_buff *skb = rx->skb, *frame = NULL;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	__le16 fc = hdr->frame_control;
 	const struct ethhdr *eth;
 	int remaining, err;
 	u8 dst[ETH_ALEN];
 	u8 src[ETH_ALEN];
 	DECLARE_MAC_BUF(mac);
 
-	fc = rx->fc;
-	if (unlikely((fc & IEEE80211_FCTL_FTYPE) != IEEE80211_FTYPE_DATA))
+	if (unlikely(!ieee80211_is_data(fc)))
 		return RX_CONTINUE;
 
-	if (unlikely(!WLAN_FC_DATA_PRESENT(fc)))
+	if (unlikely(!ieee80211_is_data_present(fc)))
 		return RX_DROP_MONITOR;
 
 	if (!(rx->flags & IEEE80211_RX_AMSDU))
@@ -1379,7 +1365,7 @@ ieee80211_rx_h_amsdu(struct ieee80211_rx_data *rx)
 			memcpy(skb_push(frame, ETH_ALEN), dst, ETH_ALEN);
 		}
 
-		if (!ieee80211_frame_allowed(rx)) {
+		if (!ieee80211_frame_allowed(rx, fc)) {
 			if (skb == frame) /* last frame */
 				return RX_DROP_UNUSABLE;
 			dev_kfree_skb(frame);
@@ -1453,21 +1439,21 @@ static ieee80211_rx_result debug_noinline
 ieee80211_rx_h_data(struct ieee80211_rx_data *rx)
 {
 	struct net_device *dev = rx->dev;
-	u16 fc;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)rx->skb->data;
+	__le16 fc = hdr->frame_control;
 	int err;
 
-	fc = rx->fc;
-	if (unlikely((fc & IEEE80211_FCTL_FTYPE) != IEEE80211_FTYPE_DATA))
+	if (unlikely(!ieee80211_is_data(hdr->frame_control)))
 		return RX_CONTINUE;
 
-	if (unlikely(!WLAN_FC_DATA_PRESENT(fc)))
+	if (unlikely(!ieee80211_is_data_present(hdr->frame_control)))
 		return RX_DROP_MONITOR;
 
 	err = ieee80211_data_to_8023(rx);
 	if (unlikely(err))
 		return RX_DROP_UNUSABLE;
 
-	if (!ieee80211_frame_allowed(rx))
+	if (!ieee80211_frame_allowed(rx, fc))
 		return RX_DROP_MONITOR;
 
 	rx->skb->dev = dev;
@@ -1537,7 +1523,7 @@ ieee80211_rx_h_mgmt(struct ieee80211_rx_data *rx)
 	     sdata->vif.type == IEEE80211_IF_TYPE_IBSS ||
 	     sdata->vif.type == IEEE80211_IF_TYPE_MESH_POINT) &&
 	    !(sdata->flags & IEEE80211_SDATA_USERSPACE_MLME))
-		ieee80211_sta_rx_mgmt(rx->dev, rx->skb, rx->status);
+		ieee80211_sta_rx_mgmt(sdata, rx->skb, rx->status);
 	else
 		return RX_DROP_MONITOR;
 
@@ -1584,7 +1570,7 @@ static void ieee80211_rx_michael_mic_report(struct net_device *dev,
 	    !ieee80211_is_auth(hdr->frame_control))
 		goto ignore;
 
-	mac80211_ev_michael_mic_failure(rx->dev, keyidx, hdr);
+	mac80211_ev_michael_mic_failure(rx->sdata, keyidx, hdr);
  ignore:
 	dev_kfree_skb(rx->skb);
 	rx->skb = NULL;
@@ -1758,7 +1744,7 @@ static int prepare_for_handlers(struct ieee80211_sub_if_data *sdata,
 			return 0;
 		if (ieee80211_is_beacon(hdr->frame_control)) {
 			if (!rx->sta)
-				rx->sta = ieee80211_ibss_add_sta(sdata->dev,
+				rx->sta = ieee80211_ibss_add_sta(sdata,
 						rx->skb, bssid, hdr->addr2,
 						BIT(rx->status->rate_idx));
 			return 1;
@@ -1774,7 +1760,7 @@ static int prepare_for_handlers(struct ieee80211_sub_if_data *sdata,
 				return 0;
 			rx->flags &= ~IEEE80211_RX_RA_MATCH;
 		} else if (!rx->sta)
-			rx->sta = ieee80211_ibss_add_sta(sdata->dev, rx->skb,
+			rx->sta = ieee80211_ibss_add_sta(sdata, rx->skb,
 						bssid, hdr->addr2,
 						BIT(rx->status->rate_idx));
 		break;
@@ -1832,23 +1818,20 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_hdr *hdr;
 	struct ieee80211_rx_data rx;
-	u16 type;
 	int prepares;
 	struct ieee80211_sub_if_data *prev = NULL;
 	struct sk_buff *skb_new;
 	u8 *bssid;
 
-	hdr = (struct ieee80211_hdr *) skb->data;
+	hdr = (struct ieee80211_hdr *)skb->data;
 	memset(&rx, 0, sizeof(rx));
 	rx.skb = skb;
 	rx.local = local;
 
 	rx.status = status;
 	rx.rate = rate;
-	rx.fc = le16_to_cpu(hdr->frame_control);
-	type = rx.fc & IEEE80211_FCTL_FTYPE;
 
-	if (type == IEEE80211_FTYPE_DATA || type == IEEE80211_FTYPE_MGMT)
+	if (ieee80211_is_data(hdr->frame_control) || ieee80211_is_mgmt(hdr->frame_control))
 		local->dot11ReceivedFragmentCount++;
 
 	rx.sta = sta_info_get(local, hdr->addr2);
@@ -1909,14 +1892,12 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 				       prev->dev->name);
 			continue;
 		}
-		rx.fc = le16_to_cpu(hdr->frame_control);
 		ieee80211_invoke_rx_handlers(prev, &rx, skb_new);
 		prev = sdata;
 	}
-	if (prev) {
-		rx.fc = le16_to_cpu(hdr->frame_control);
+	if (prev)
 		ieee80211_invoke_rx_handlers(prev, &rx, skb);
-	} else
+	else
 		dev_kfree_skb(skb);
 }
 
@@ -2085,7 +2066,7 @@ static u8 ieee80211_rx_reorder_ampdu(struct ieee80211_local *local,
 	/* if this mpdu is fragmented - terminate rx aggregation session */
 	sc = le16_to_cpu(hdr->seq_ctrl);
 	if (sc & IEEE80211_SCTL_FRAG) {
-		ieee80211_sta_stop_rx_ba_session(sta->sdata->dev, sta->addr,
+		ieee80211_sta_stop_rx_ba_session(sta->sdata, sta->addr,
 			tid, 0, WLAN_REASON_QSTA_REQUIRE_SETUP);
 		ret = 1;
 		goto end_reorder;

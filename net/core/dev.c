@@ -1339,19 +1339,23 @@ static void dev_queue_xmit_nit(struct sk_buff *skb, struct net_device *dev)
 }
 
 
+static inline void __netif_reschedule(struct Qdisc *q)
+{
+	struct softnet_data *sd;
+	unsigned long flags;
+
+	local_irq_save(flags);
+	sd = &__get_cpu_var(softnet_data);
+	q->next_sched = sd->output_queue;
+	sd->output_queue = q;
+	raise_softirq_irqoff(NET_TX_SOFTIRQ);
+	local_irq_restore(flags);
+}
+
 void __netif_schedule(struct Qdisc *q)
 {
-	if (!test_and_set_bit(__QDISC_STATE_SCHED, &q->state)) {
-		struct softnet_data *sd;
-		unsigned long flags;
-
-		local_irq_save(flags);
-		sd = &__get_cpu_var(softnet_data);
-		q->next_sched = sd->output_queue;
-		sd->output_queue = q;
-		raise_softirq_irqoff(NET_TX_SOFTIRQ);
-		local_irq_restore(flags);
-	}
+	if (!test_and_set_bit(__QDISC_STATE_SCHED, &q->state))
+		__netif_reschedule(q);
 }
 EXPORT_SYMBOL(__netif_schedule);
 
@@ -1800,9 +1804,13 @@ gso:
 
 		spin_lock(root_lock);
 
-		rc = qdisc_enqueue_root(skb, q);
-		qdisc_run(q);
-
+		if (unlikely(test_bit(__QDISC_STATE_DEACTIVATED, &q->state))) {
+			kfree_skb(skb);
+			rc = NET_XMIT_DROP;
+		} else {
+			rc = qdisc_enqueue_root(skb, q);
+			qdisc_run(q);
+		}
 		spin_unlock(root_lock);
 
 		goto out;
@@ -1939,22 +1947,6 @@ int netif_rx_ni(struct sk_buff *skb)
 
 EXPORT_SYMBOL(netif_rx_ni);
 
-static inline struct net_device *skb_bond(struct sk_buff *skb)
-{
-	struct net_device *dev = skb->dev;
-
-	if (dev->master) {
-		if (skb_bond_should_drop(skb)) {
-			kfree_skb(skb);
-			return NULL;
-		}
-		skb->dev = dev->master;
-	}
-
-	return dev;
-}
-
-
 static void net_tx_action(struct softirq_action *h)
 {
 	struct softnet_data *sd = &__get_cpu_var(softnet_data);
@@ -1990,15 +1982,17 @@ static void net_tx_action(struct softirq_action *h)
 
 			head = head->next_sched;
 
-			smp_mb__before_clear_bit();
-			clear_bit(__QDISC_STATE_SCHED, &q->state);
-
 			root_lock = qdisc_lock(q);
 			if (spin_trylock(root_lock)) {
+				smp_mb__before_clear_bit();
+				clear_bit(__QDISC_STATE_SCHED,
+					  &q->state);
 				qdisc_run(q);
 				spin_unlock(root_lock);
 			} else {
-				__netif_schedule(q);
+				if (!test_bit(__QDISC_STATE_DEACTIVATED,
+					      &q->state))
+					__netif_reschedule(q);
 			}
 		}
 	}
@@ -2100,7 +2094,8 @@ static int ing_filter(struct sk_buff *skb)
 	q = rxq->qdisc;
 	if (q != &noop_qdisc) {
 		spin_lock(qdisc_lock(q));
-		result = qdisc_enqueue_root(skb, q);
+		if (likely(!test_bit(__QDISC_STATE_DEACTIVATED, &q->state)))
+			result = qdisc_enqueue_root(skb, q);
 		spin_unlock(qdisc_lock(q));
 	}
 
@@ -2181,6 +2176,7 @@ int netif_receive_skb(struct sk_buff *skb)
 {
 	struct packet_type *ptype, *pt_prev;
 	struct net_device *orig_dev;
+	struct net_device *null_or_orig;
 	int ret = NET_RX_DROP;
 	__be16 type;
 
@@ -2194,10 +2190,14 @@ int netif_receive_skb(struct sk_buff *skb)
 	if (!skb->iif)
 		skb->iif = skb->dev->ifindex;
 
-	orig_dev = skb_bond(skb);
-
-	if (!orig_dev)
-		return NET_RX_DROP;
+	null_or_orig = NULL;
+	orig_dev = skb->dev;
+	if (orig_dev->master) {
+		if (skb_bond_should_drop(skb))
+			null_or_orig = orig_dev; /* deliver only exact match */
+		else
+			skb->dev = orig_dev->master;
+	}
 
 	__get_cpu_var(netdev_rx_stat).total++;
 
@@ -2221,7 +2221,8 @@ int netif_receive_skb(struct sk_buff *skb)
 #endif
 
 	list_for_each_entry_rcu(ptype, &ptype_all, list) {
-		if (!ptype->dev || ptype->dev == skb->dev) {
+		if (ptype->dev == null_or_orig || ptype->dev == skb->dev ||
+		    ptype->dev == orig_dev) {
 			if (pt_prev)
 				ret = deliver_skb(skb, pt_prev, orig_dev);
 			pt_prev = ptype;
@@ -2246,7 +2247,8 @@ ncls:
 	list_for_each_entry_rcu(ptype,
 			&ptype_base[ntohs(type) & PTYPE_HASH_MASK], list) {
 		if (ptype->type == type &&
-		    (!ptype->dev || ptype->dev == skb->dev)) {
+		    (ptype->dev == null_or_orig || ptype->dev == skb->dev ||
+		     ptype->dev == orig_dev)) {
 			if (pt_prev)
 				ret = deliver_skb(skb, pt_prev, orig_dev);
 			pt_prev = ptype;

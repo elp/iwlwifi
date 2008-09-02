@@ -1,5 +1,5 @@
-#ifndef PRISM54_H
-#define PRISM54_H
+#ifndef P54_H
+#define P54_H
 
 /*
  * Shared defines for all mac80211 Prism54 code
@@ -66,7 +66,7 @@ struct p54_common {
 	unsigned int tx_hdr_len;
 	void *cached_vdcf;
 	unsigned int fw_var;
-	struct ieee80211_tx_queue_stats tx_stats[4];
+	struct ieee80211_tx_queue_stats tx_stats[8];
 };
 
 int p54_rx(struct ieee80211_hw *dev, struct sk_buff *skb);
@@ -76,4 +76,4 @@ void p54_fill_eeprom_readback(struct p54_control_hdr *hdr);
 struct ieee80211_hw *p54_init_common(size_t priv_data_len);
 void p54_free_common(struct ieee80211_hw *dev);
 
-#endif /* PRISM54_H */
+#endif /* P54_H */

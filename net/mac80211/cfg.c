@@ -66,13 +66,16 @@ static int ieee80211_add_iface(struct wiphy *wiphy, char *name,
 static int ieee80211_del_iface(struct wiphy *wiphy, int ifindex)
 {
 	struct net_device *dev;
+	struct ieee80211_sub_if_data *sdata;
 
 	/* we're under RTNL */
 	dev = __dev_get_by_index(&init_net, ifindex);
 	if (!dev)
 		return -ENODEV;
 
-	ieee80211_if_remove(dev);
+	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	ieee80211_if_remove(sdata);
 
 	return 0;
 }
@@ -671,6 +674,11 @@ static void sta_apply_parameters(struct ieee80211_local *local,
 		sta->supp_rates[local->oper_channel->band] = rates;
 	}
 
+	if (params->ht_capa) {
+		ieee80211_ht_cap_ie_to_ht_info(params->ht_capa,
+					       &sta->ht_info);
+	}
+
 	if (ieee80211_vif_is_mesh(&sdata->vif) && params->plink_action) {
 		switch (params->plink_action) {
 		case PLINK_ACTION_OPEN:
@@ -842,13 +850,13 @@ static int ieee80211_add_mpath(struct wiphy *wiphy, struct net_device *dev,
 		return -ENOENT;
 	}
 
-	err = mesh_path_add(dst, dev);
+	err = mesh_path_add(dst, sdata);
 	if (err) {
 		rcu_read_unlock();
 		return err;
 	}
 
-	mpath = mesh_path_lookup(dst, dev);
+	mpath = mesh_path_lookup(dst, sdata);
 	if (!mpath) {
 		rcu_read_unlock();
 		return -ENXIO;
@@ -862,10 +870,12 @@ static int ieee80211_add_mpath(struct wiphy *wiphy, struct net_device *dev,
 static int ieee80211_del_mpath(struct wiphy *wiphy, struct net_device *dev,
 				 u8 *dst)
 {
-	if (dst)
-		return mesh_path_del(dst, dev);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 
-	mesh_path_flush(dev);
+	if (dst)
+		return mesh_path_del(dst, sdata);
+
+	mesh_path_flush(sdata);
 	return 0;
 }
 
@@ -897,7 +907,7 @@ static int ieee80211_change_mpath(struct wiphy *wiphy,
 		return -ENOENT;
 	}
 
-	mpath = mesh_path_lookup(dst, dev);
+	mpath = mesh_path_lookup(dst, sdata);
 	if (!mpath) {
 		rcu_read_unlock();
 		return -ENOENT;
@@ -965,7 +975,7 @@ static int ieee80211_get_mpath(struct wiphy *wiphy, struct net_device *dev,
 		return -ENOTSUPP;
 
 	rcu_read_lock();
-	mpath = mesh_path_lookup(dst, dev);
+	mpath = mesh_path_lookup(dst, sdata);
 	if (!mpath) {
 		rcu_read_unlock();
 		return -ENOENT;
@@ -993,7 +1003,7 @@ static int ieee80211_dump_mpath(struct wiphy *wiphy, struct net_device *dev,
 		return -ENOTSUPP;
 
 	rcu_read_lock();
-	mpath = mesh_path_lookup_by_idx(idx, dev);
+	mpath = mesh_path_lookup_by_idx(idx, sdata);
 	if (!mpath) {
 		rcu_read_unlock();
 		return -ENOENT;
@@ -1004,6 +1014,42 @@ static int ieee80211_dump_mpath(struct wiphy *wiphy, struct net_device *dev,
 	return 0;
 }
 #endif
+
+static int ieee80211_change_bss(struct wiphy *wiphy,
+				struct net_device *dev,
+				struct bss_parameters *params)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata;
+	u32 changed = 0;
+
+	if (dev == local->mdev)
+		return -EOPNOTSUPP;
+
+	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	if (sdata->vif.type != IEEE80211_IF_TYPE_AP)
+		return -EINVAL;
+
+	if (params->use_cts_prot >= 0) {
+		sdata->bss_conf.use_cts_prot = params->use_cts_prot;
+		changed |= BSS_CHANGED_ERP_CTS_PROT;
+	}
+	if (params->use_short_preamble >= 0) {
+		sdata->bss_conf.use_short_preamble =
+			params->use_short_preamble;
+		changed |= BSS_CHANGED_ERP_PREAMBLE;
+	}
+	if (params->use_short_slot_time >= 0) {
+		sdata->bss_conf.use_short_slot =
+			params->use_short_slot_time;
+		changed |= BSS_CHANGED_ERP_SLOT;
+	}
+
+	ieee80211_bss_info_change_notify(sdata, changed);
+
+	return 0;
+}
 
 struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
@@ -1028,4 +1074,5 @@ struct cfg80211_ops mac80211_config_ops = {
 	.get_mpath = ieee80211_get_mpath,
 	.dump_mpath = ieee80211_dump_mpath,
 #endif
+	.change_bss = ieee80211_change_bss,
 };

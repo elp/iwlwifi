@@ -157,7 +157,6 @@ that only one external action is invoked at a time.
 #include <linux/stringify.h>
 #include <linux/tcp.h>
 #include <linux/types.h>
-#include <linux/version.h>
 #include <linux/time.h>
 #include <linux/firmware.h>
 #include <linux/acpi.h>
@@ -212,7 +211,7 @@ static u32 ipw2100_debug_level = IPW_DL_NONE;
 do { \
 	if (ipw2100_debug_level & (level)) { \
 		printk(KERN_DEBUG "ipw2100: %c %s ", \
-                       in_interrupt() ? 'I' : 'U',  __FUNCTION__); \
+                       in_interrupt() ? 'I' : 'U',  __func__); \
 		printk(message); \
 	} \
 } while (0)

@@ -37,27 +37,6 @@
 #include <net/ip_vs.h>
 
 
-static int
-ip_vs_nq_init_svc(struct ip_vs_service *svc)
-{
-	return 0;
-}
-
-
-static int
-ip_vs_nq_done_svc(struct ip_vs_service *svc)
-{
-	return 0;
-}
-
-
-static int
-ip_vs_nq_update_svc(struct ip_vs_service *svc)
-{
-	return 0;
-}
-
-
 static inline unsigned int
 ip_vs_nq_dest_overhead(struct ip_vs_dest *dest)
 {
@@ -136,16 +115,13 @@ static struct ip_vs_scheduler ip_vs_nq_scheduler =
 	.name =			"nq",
 	.refcnt =		ATOMIC_INIT(0),
 	.module =		THIS_MODULE,
-	.init_service =		ip_vs_nq_init_svc,
-	.done_service =		ip_vs_nq_done_svc,
-	.update_service =	ip_vs_nq_update_svc,
+	.n_list =		LIST_HEAD_INIT(ip_vs_nq_scheduler.n_list),
 	.schedule =		ip_vs_nq_schedule,
 };
 
 
 static int __init ip_vs_nq_init(void)
 {
-	INIT_LIST_HEAD(&ip_vs_nq_scheduler.n_list);
 	return register_ip_vs_scheduler(&ip_vs_nq_scheduler);
 }
 
