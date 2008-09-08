@@ -10,7 +10,7 @@
 
 #ifdef CONFIG_IP_DCCP_TFRC_DEBUG
 int tfrc_debug;
-module_param(tfrc_debug, bool, 0644);
+module_param(tfrc_debug, bool, 0444);
 MODULE_PARM_DESC(tfrc_debug, "Enable debug messages");
 #endif
 

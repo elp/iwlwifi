@@ -1,5 +1,5 @@
 /*
- * ip_vs_proto_ah_esp.c:	AH/ESP IPSec load balancing support for IPVS
+ * ip_vs_proto_esp.c:	ESP IPSec load balancing support for IPVS
  *
  * Authors:	Julian Anastasov <ja@ssi.bg>, February 2002
  *		Wensong Zhang <wensong@linuxvirtualserver.org>
@@ -39,11 +39,11 @@ struct isakmp_hdr {
 
 
 static struct ip_vs_conn *
-ah_esp_conn_in_get(const struct sk_buff *skb,
-		   struct ip_vs_protocol *pp,
-		   const struct iphdr *iph,
-		   unsigned int proto_off,
-		   int inverse)
+esp_conn_in_get(const struct sk_buff *skb,
+		struct ip_vs_protocol *pp,
+		const struct iphdr *iph,
+		unsigned int proto_off,
+		int inverse)
 {
 	struct ip_vs_conn *cp;
 
@@ -79,8 +79,8 @@ ah_esp_conn_in_get(const struct sk_buff *skb,
 
 
 static struct ip_vs_conn *
-ah_esp_conn_out_get(const struct sk_buff *skb, struct ip_vs_protocol *pp,
-		    const struct iphdr *iph, unsigned int proto_off, int inverse)
+esp_conn_out_get(const struct sk_buff *skb, struct ip_vs_protocol *pp,
+		 const struct iphdr *iph, unsigned int proto_off, int inverse)
 {
 	struct ip_vs_conn *cp;
 
@@ -112,12 +112,11 @@ ah_esp_conn_out_get(const struct sk_buff *skb, struct ip_vs_protocol *pp,
 
 
 static int
-ah_esp_conn_schedule(struct sk_buff *skb,
-		     struct ip_vs_protocol *pp,
-		     int *verdict, struct ip_vs_conn **cpp)
+esp_conn_schedule(struct sk_buff *skb, struct ip_vs_protocol *pp,
+		  int *verdict, struct ip_vs_conn **cpp)
 {
 	/*
-	 * AH/ESP is only related traffic. Pass the packet to IP stack.
+	 * ESP is only related traffic. Pass the packet to IP stack.
 	 */
 	*verdict = NF_ACCEPT;
 	return 0;
@@ -125,8 +124,8 @@ ah_esp_conn_schedule(struct sk_buff *skb,
 
 
 static void
-ah_esp_debug_packet(struct ip_vs_protocol *pp, const struct sk_buff *skb,
-		    int offset, const char *msg)
+esp_debug_packet(struct ip_vs_protocol *pp, const struct sk_buff *skb,
+		 int offset, const char *msg)
 {
 	char buf[256];
 	struct iphdr _iph, *ih;
@@ -143,53 +142,28 @@ ah_esp_debug_packet(struct ip_vs_protocol *pp, const struct sk_buff *skb,
 }
 
 
-static void ah_esp_init(struct ip_vs_protocol *pp)
+static void esp_init(struct ip_vs_protocol *pp)
 {
 	/* nothing to do now */
 }
 
 
-static void ah_esp_exit(struct ip_vs_protocol *pp)
+static void esp_exit(struct ip_vs_protocol *pp)
 {
 	/* nothing to do now */
 }
 
 
-#ifdef CONFIG_IP_VS_PROTO_AH
-struct ip_vs_protocol ip_vs_protocol_ah = {
-	.name =			"AH",
-	.protocol =		IPPROTO_AH,
-	.num_states =		1,
-	.dont_defrag =		1,
-	.init =			ah_esp_init,
-	.exit =			ah_esp_exit,
-	.conn_schedule =	ah_esp_conn_schedule,
-	.conn_in_get =		ah_esp_conn_in_get,
-	.conn_out_get =		ah_esp_conn_out_get,
-	.snat_handler =		NULL,
-	.dnat_handler =		NULL,
-	.csum_check =		NULL,
-	.state_transition =	NULL,
-	.register_app =		NULL,
-	.unregister_app =	NULL,
-	.app_conn_bind =	NULL,
-	.debug_packet =		ah_esp_debug_packet,
-	.timeout_change =	NULL,		/* ISAKMP */
-	.set_state_timeout =	NULL,
-};
-#endif
-
-#ifdef CONFIG_IP_VS_PROTO_ESP
 struct ip_vs_protocol ip_vs_protocol_esp = {
 	.name =			"ESP",
 	.protocol =		IPPROTO_ESP,
 	.num_states =		1,
 	.dont_defrag =		1,
-	.init =			ah_esp_init,
-	.exit =			ah_esp_exit,
-	.conn_schedule =	ah_esp_conn_schedule,
-	.conn_in_get =		ah_esp_conn_in_get,
-	.conn_out_get =		ah_esp_conn_out_get,
+	.init =			esp_init,
+	.exit =			esp_exit,
+	.conn_schedule =	esp_conn_schedule,
+	.conn_in_get =		esp_conn_in_get,
+	.conn_out_get =		esp_conn_out_get,
 	.snat_handler =		NULL,
 	.dnat_handler =		NULL,
 	.csum_check =		NULL,
@@ -197,7 +171,6 @@ struct ip_vs_protocol ip_vs_protocol_esp = {
 	.register_app =		NULL,
 	.unregister_app =	NULL,
 	.app_conn_bind =	NULL,
-	.debug_packet =		ah_esp_debug_packet,
+	.debug_packet =		esp_debug_packet,
 	.timeout_change =	NULL,		/* ISAKMP */
 };
-#endif
