@@ -3083,6 +3083,7 @@ static int sctp_setsockopt_hmac_ident(struct sock *sk,
 				    int optlen)
 {
 	struct sctp_hmacalgo *hmacs;
+	u32 idents;
 	int err;
 
 	if (optlen < sizeof(struct sctp_hmacalgo))
@@ -3097,8 +3098,9 @@ static int sctp_setsockopt_hmac_ident(struct sock *sk,
 		goto out;
 	}
 
-	if (hmacs->shmac_num_idents == 0 ||
-	    hmacs->shmac_num_idents > SCTP_AUTH_NUM_HMACS) {
+	idents = hmacs->shmac_num_idents;
+	if (idents == 0 || idents > SCTP_AUTH_NUM_HMACS ||
+	    (idents * sizeof(u16)) > (optlen - sizeof(struct sctp_hmacalgo))) {
 		err = -EINVAL;
 		goto out;
 	}
@@ -3132,6 +3134,11 @@ static int sctp_setsockopt_auth_key(struct sock *sk,
 
 	if (copy_from_user(authkey, optval, optlen)) {
 		ret = -EFAULT;
+		goto out;
+	}
+
+	if (authkey->sca_keylength > optlen - sizeof(struct sctp_authkey)) {
+		ret = -EINVAL;
 		goto out;
 	}
 
