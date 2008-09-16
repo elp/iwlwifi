@@ -26,10 +26,10 @@ int __lbs_cmd(struct lbs_private *priv, uint16_t command,
 	      int (*callback)(struct lbs_private *, unsigned long, struct cmd_header *),
 	      unsigned long callback_arg);
 
-int lbs_power_adapt_cfg(struct lbs_private *priv, int enable, int8_t p0,
+int lbs_set_power_adapt_cfg(struct lbs_private *priv, int enable, int8_t p0,
 		int8_t p1, int8_t p2);
 
-int lbs_tpc_cfg(struct lbs_private *priv, int enable, int8_t p0, int8_t p1,
+int lbs_set_tpc_cfg(struct lbs_private *priv, int enable, int8_t p0, int8_t p1,
 		int8_t p2, int usesnr);
 
 int lbs_cmd_copyback(struct lbs_private *priv, unsigned long extra,
@@ -72,5 +72,9 @@ int lbs_get_tx_power(struct lbs_private *priv, s16 *curlevel, s16 *minlevel,
 int lbs_set_tx_power(struct lbs_private *priv, s16 dbm);
 
 int lbs_set_radio(struct lbs_private *priv, u8 preamble, u8 radio_on);
+
+int lbs_set_snmp_mib(struct lbs_private *priv, u32 oid, u16 val);
+
+int lbs_get_snmp_mib(struct lbs_private *priv, u32 oid, u16 *out_val);
 
 #endif /* _LBS_CMD_H */
