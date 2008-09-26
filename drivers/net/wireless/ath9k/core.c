@@ -532,7 +532,8 @@ int ath_vap_attach(struct ath_softc *sc,
 	avp->av_opmode = opmode;
 	avp->av_bslot = -1;
 
-	ath9k_hw_set_tsfadjust(sc->sc_ah, 1);
+	if (opmode == ATH9K_M_HOSTAP)
+		ath9k_hw_set_tsfadjust(sc->sc_ah, 1);
 
 	sc->sc_vaps[if_id] = avp;
 	sc->sc_nvaps++;
@@ -675,6 +676,12 @@ int ath_open(struct ath_softc *sc, struct ath9k_channel *initial_chan)
 	if (ah->ah_caps.hw_caps & ATH9K_HW_CAP_HT)
 		sc->sc_imask |= ATH9K_INT_CST;
 
+	/* Note: We disable MIB interrupts for now as we don't yet
+	 * handle processing ANI, otherwise you will get an interrupt
+	 * storm after about 7 hours of usage making the system unusable
+	 * with huge latency. Once we do have ANI processing included
+	 * we can re-enable this interrupt. */
+#if 0
 	/*
 	 * Enable MIB interrupts when there are hardware phy counters.
 	 * Note we only do this (at the moment) for station mode.
@@ -683,6 +690,7 @@ int ath_open(struct ath_softc *sc, struct ath9k_channel *initial_chan)
 	    ((sc->sc_ah->ah_opmode == ATH9K_M_STA) ||
 	     (sc->sc_ah->ah_opmode == ATH9K_M_IBSS)))
 		sc->sc_imask |= ATH9K_INT_MIB;
+#endif
 	/*
 	 * Some hardware processes the TIM IE and fires an
 	 * interrupt when the TIM bit is set.  For hardware

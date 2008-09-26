@@ -3177,7 +3177,7 @@ static void iwl4965_bss_info_changed(struct ieee80211_hw *hw,
 			priv->assoc_capability = bss_conf->assoc_capability;
 
 			/* we have just associated, don't start scan too early
-			 * leave time for EAPOL echange complete
+			 * leave time for EAPOL exchange to complete
 			 */
 			priv->next_scan_jiffies = jiffies +
 					IWL_DELAY_NEXT_SCAN_AFTER_ASSOC;
