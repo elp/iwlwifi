@@ -17,13 +17,6 @@
 #include "rate.h"
 #include "mesh.h"
 
-struct ieee80211_hw *wiphy_to_hw(struct wiphy *wiphy)
-{
-	struct ieee80211_local *local = wiphy_priv(wiphy);
-	return &local->hw;
-}
-EXPORT_SYMBOL(wiphy_to_hw);
-
 static bool nl80211_type_check(enum nl80211_iftype type)
 {
 	switch (type) {
@@ -401,8 +394,8 @@ static int ieee80211_config_beacon(struct ieee80211_sub_if_data *sdata,
 	 */
 	if (params->interval) {
 		sdata->local->hw.conf.beacon_int = params->interval;
-		if (ieee80211_hw_config(sdata->local))
-			return -EINVAL;
+		ieee80211_hw_config(sdata->local,
+				    IEEE80211_CONF_CHANGE_BEACON_INTERVAL);
 		/*
 		 * We updated some parameter so if below bails out
 		 * it's not an error.
@@ -641,10 +634,9 @@ static void sta_apply_parameters(struct ieee80211_local *local,
 		sta->sta.supp_rates[local->oper_channel->band] = rates;
 	}
 
-	if (params->ht_capa) {
-		ieee80211_ht_cap_ie_to_ht_info(params->ht_capa,
-					       &sta->sta.ht_info);
-	}
+	if (params->ht_capa)
+		ieee80211_ht_cap_ie_to_sta_ht_cap(params->ht_capa,
+						  &sta->sta.ht_cap);
 
 	if (ieee80211_vif_is_mesh(&sdata->vif) && params->plink_action) {
 		switch (params->plink_action) {

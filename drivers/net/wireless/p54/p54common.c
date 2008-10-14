@@ -183,7 +183,7 @@ int p54_parse_firmware(struct ieee80211_hw *dev, const struct firmware *fw)
 			priv->headroom = desc->headroom;
 			priv->tailroom = desc->tailroom;
 			if (le32_to_cpu(bootrec->len) == 11)
-				priv->rx_mtu = le16_to_cpu(bootrec->rx_mtu);
+				priv->rx_mtu = le16_to_cpu(desc->rx_mtu);
 			else
 				priv->rx_mtu = (size_t)
 					0x620 - priv->tx_hdr_len;
@@ -479,7 +479,6 @@ static int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
 	printk(KERN_ERR "p54: eeprom parse failed!\n");
 	return err;
 }
-EXPORT_SYMBOL_GPL(p54_parse_eeprom);
 
 static int p54_rssi_to_dbm(struct ieee80211_hw *dev, int rssi)
 {
@@ -865,19 +864,6 @@ static int p54_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 	if (padding)
 		txhdr->align[0] = padding;
 
-	/* FIXME: The sequence that follows is needed for this driver to
-	 * work with mac80211 since "mac80211: fix TX sequence numbers".
-	 * As with the temporary code in rt2x00, changes will be needed
-	 * to get proper sequence numbers on beacons. In addition, this
-	 * patch places the sequence number in the hardware state, which
-	 * limits us to a single virtual state.
-	 */
-	if (info->flags & IEEE80211_TX_CTL_ASSIGN_SEQ) {
-		if (info->flags & IEEE80211_TX_CTL_FIRST_FRAGMENT)
-			priv->seqno += 0x10;
-		ieee80211hdr->seq_ctrl &= cpu_to_le16(IEEE80211_SCTL_FRAG);
-		ieee80211hdr->seq_ctrl |= cpu_to_le16(priv->seqno);
-	}
 	/* modifies skb->cb and with it info, so must be last! */
 	p54_assign_address(dev, skb, hdr, skb->len);
 
@@ -910,12 +896,10 @@ static int p54_set_filter(struct ieee80211_hw *dev, u16 filter_type,
 		memset(filter->bssid, ~0, ETH_ALEN);
 	else
 		memcpy(filter->bssid, bssid, ETH_ALEN);
-
 	filter->rx_antenna = priv->rx_antenna;
-
 	if (priv->fw_var < 0x500) {
 		data_len = P54_TX_CONTROL_FILTER_V1_LEN;
-		filter->v1.basic_rate_mask = cpu_to_le32(0x15F);
+		filter->v1.basic_rate_mask = cpu_to_le32(0x15f);
 		filter->v1.rx_addr = cpu_to_le32(priv->rx_end);
 		filter->v1.max_rx = cpu_to_le16(priv->rx_mtu);
 		filter->v1.rxhw = cpu_to_le16(priv->rxhw);
@@ -927,7 +911,6 @@ static int p54_set_filter(struct ieee80211_hw *dev, u16 filter_type,
 		filter->v2.rxhw = cpu_to_le16(priv->rxhw);
 		filter->v2.timer = cpu_to_le16(1000);
 	}
-
 	hdr->len = cpu_to_le16(data_len);
 	p54_assign_address(dev, NULL, hdr, sizeof(*hdr) + data_len);
 	priv->tx(dev, hdr, sizeof(*hdr) + data_len, 1);
@@ -1097,7 +1080,7 @@ static void p54_set_vdcf(struct ieee80211_hw *dev)
 
 	vdcf = (struct p54_tx_control_vdcf *) hdr->data;
 
-	if (dev->conf.flags & IEEE80211_CONF_SHORT_SLOT_TIME) {
+	if (priv->use_short_slot) {
 		vdcf->slottime = 9;
 		vdcf->magic1 = 0x10;
 		vdcf->magic2 = 0x00;
@@ -1144,7 +1127,6 @@ static int p54_start(struct ieee80211_hw *dev)
 		priv->mode = NL80211_IFTYPE_MONITOR;
 
 	p54_init_vdcf(dev);
-
 	mod_timer(&priv->stats_timer, jiffies + HZ);
 	return err;
 }
@@ -1205,14 +1187,14 @@ static void p54_remove_interface(struct ieee80211_hw *dev,
 	p54_set_filter(dev, 0, NULL);
 }
 
-static int p54_config(struct ieee80211_hw *dev, struct ieee80211_conf *conf)
+static int p54_config(struct ieee80211_hw *dev, u32 changed)
 {
 	int ret;
 	struct p54_common *priv = dev->priv;
+	struct ieee80211_conf *conf = &dev->conf;
 
 	mutex_lock(&priv->conf_mutex);
-	priv->rx_antenna = (conf->antenna_sel_rx == 0) ?
-		2 : conf->antenna_sel_tx - 1;
+	priv->rx_antenna = 2; /* automatic */
 	priv->output_power = conf->power_level << 2;
 	ret = p54_set_freq(dev, cpu_to_le16(conf->channel->center_freq));
 	p54_set_vdcf(dev);
@@ -1360,6 +1342,19 @@ static int p54_get_tx_stats(struct ieee80211_hw *dev,
 	return 0;
 }
 
+static void p54_bss_info_changed(struct ieee80211_hw *dev,
+				 struct ieee80211_vif *vif,
+				 struct ieee80211_bss_conf *info,
+				 u32 changed)
+{
+	struct p54_common *priv = dev->priv;
+
+	if (changed & BSS_CHANGED_ERP_SLOT) {
+		priv->use_short_slot = info->use_short_slot;
+		p54_set_vdcf(dev);
+	}
+}
+
 static const struct ieee80211_ops p54_ops = {
 	.tx			= p54_tx,
 	.start			= p54_start,
@@ -1368,6 +1363,7 @@ static const struct ieee80211_ops p54_ops = {
 	.remove_interface	= p54_remove_interface,
 	.config			= p54_config,
 	.config_interface	= p54_config_interface,
+	.bss_info_changed	= p54_bss_info_changed,
 	.configure_filter	= p54_configure_filter,
 	.conf_tx		= p54_conf_tx,
 	.get_stats		= p54_get_stats,
@@ -1391,10 +1387,14 @@ struct ieee80211_hw *p54_init_common(size_t priv_data_len)
 		     IEEE80211_HW_SIGNAL_DBM |
 		     IEEE80211_HW_NOISE_DBM;
 
+	/*
+	 * XXX: when this driver gets support for any mode that
+	 *	requires beacons (AP, MESH, IBSS) then it must
+	 *	implement IEEE80211_TX_CTL_ASSIGN_SEQ.
+	 */
 	dev->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);
 
 	dev->channel_change_time = 1000;	/* TODO: find actual value */
-
 	priv->tx_stats[0].limit = 1;
 	priv->tx_stats[1].limit = 1;
 	priv->tx_stats[2].limit = 1;

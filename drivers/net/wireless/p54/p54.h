@@ -67,7 +67,6 @@ struct p54_common {
 	int (*open)(struct ieee80211_hw *dev);
 	void (*stop)(struct ieee80211_hw *dev);
 	int mode;
-	u16 seqno;
 	u16 rx_mtu;
 	u8 headroom;
 	u8 tailroom;
@@ -81,6 +80,7 @@ struct p54_common {
 	unsigned int output_limit_len;
 	struct pda_pa_curve_data *curve_data;
 	unsigned int filter_flags;
+	bool use_short_slot;
 	u16 rxhw;
 	u8 version;
 	u8 rx_antenna;

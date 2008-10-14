@@ -438,6 +438,8 @@ struct ieee80211_sub_if_data {
 	struct ieee80211_key *keys[NUM_DEFAULT_KEYS];
 	struct ieee80211_key *default_key;
 
+	u16 sequence_number;
+
 	/* BSS configuration for this interface. */
 	struct ieee80211_bss_conf bss_conf;
 
@@ -727,8 +729,6 @@ struct ieee80211_local {
 		struct dentry *rcdir;
 		struct dentry *rcname;
 		struct dentry *frequency;
-		struct dentry *antenna_sel_tx;
-		struct dentry *antenna_sel_rx;
 		struct dentry *rts_threshold;
 		struct dentry *fragmentation_threshold;
 		struct dentry *short_retry_limit;
@@ -816,8 +816,8 @@ struct ieee802_11_elems {
 	u8 *ext_supp_rates;
 	u8 *wmm_info;
 	u8 *wmm_param;
-	u8 *ht_cap_elem;
-	u8 *ht_info_elem;
+	struct ieee80211_ht_cap *ht_cap_elem;
+	struct ieee80211_ht_info *ht_info_elem;
 	u8 *mesh_config;
 	u8 *mesh_id;
 	u8 *peer_link;
@@ -844,8 +844,6 @@ struct ieee802_11_elems {
 	u8 ext_supp_rates_len;
 	u8 wmm_info_len;
 	u8 wmm_param_len;
-	u8 ht_cap_elem_len;
-	u8 ht_info_elem_len;
 	u8 mesh_config_len;
 	u8 mesh_id_len;
 	u8 peer_link_len;
@@ -871,11 +869,6 @@ static inline struct ieee80211_hw *local_to_hw(
 	return &local->hw;
 }
 
-struct sta_attribute {
-	struct attribute attr;
-	ssize_t (*show)(const struct sta_info *, char *buf);
-	ssize_t (*store)(struct sta_info *, const char *buf, size_t count);
-};
 
 static inline int ieee80211_bssid_match(const u8 *raddr, const u8 *addr)
 {
@@ -884,12 +877,9 @@ static inline int ieee80211_bssid_match(const u8 *raddr, const u8 *addr)
 }
 
 
-int ieee80211_hw_config(struct ieee80211_local *local);
+int ieee80211_hw_config(struct ieee80211_local *local, u32 changed);
 int ieee80211_if_config(struct ieee80211_sub_if_data *sdata, u32 changed);
 void ieee80211_tx_set_protected(struct ieee80211_tx_data *tx);
-u32 ieee80211_handle_ht(struct ieee80211_local *local, int enable_ht,
-			struct ieee80211_ht_info *req_ht_cap,
-			struct ieee80211_ht_bss_info *req_bss_cap);
 void ieee80211_bss_info_change_notify(struct ieee80211_sub_if_data *sdata,
 				      u32 changed);
 void ieee80211_configure_filter(struct ieee80211_local *local);
@@ -970,11 +960,14 @@ int ieee80211_monitor_start_xmit(struct sk_buff *skb, struct net_device *dev);
 int ieee80211_subif_start_xmit(struct sk_buff *skb, struct net_device *dev);
 
 /* HT */
-int ieee80211_ht_cap_ie_to_ht_info(struct ieee80211_ht_cap *ht_cap_ie,
-				   struct ieee80211_ht_info *ht_info);
-int ieee80211_ht_addt_info_ie_to_ht_bss_info(
-			struct ieee80211_ht_addt_info *ht_add_info_ie,
+void ieee80211_ht_cap_ie_to_sta_ht_cap(struct ieee80211_ht_cap *ht_cap_ie,
+				       struct ieee80211_sta_ht_cap *ht_cap);
+void ieee80211_ht_info_ie_to_ht_bss_info(
+			struct ieee80211_ht_info *ht_add_info_ie,
 			struct ieee80211_ht_bss_info *bss_info);
+u32 ieee80211_handle_ht(struct ieee80211_local *local,
+			struct ieee80211_sta_ht_cap *req_ht_cap,
+			struct ieee80211_ht_bss_info *req_bss_cap);
 void ieee80211_send_bar(struct ieee80211_sub_if_data *sdata, u8 *ra, u16 tid, u16 ssn);
 
 void ieee80211_sta_stop_rx_ba_session(struct ieee80211_sub_if_data *sdata, u8 *da,

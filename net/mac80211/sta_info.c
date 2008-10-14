@@ -294,7 +294,7 @@ int sta_info_insert(struct sta_info *sta)
 	}
 
 	if (WARN_ON(compare_ether_addr(sta->sta.addr, sdata->dev->dev_addr) == 0 ||
-	            is_multicast_ether_addr(sta->sta.addr))) {
+		    is_multicast_ether_addr(sta->sta.addr))) {
 		err = -EINVAL;
 		goto out_free;
 	}
@@ -635,7 +635,12 @@ static void sta_info_debugfs_add_work(struct work_struct *work)
 
 		spin_lock_irqsave(&local->sta_lock, flags);
 		list_for_each_entry(tmp, &local->sta_list, list) {
-			if (!tmp->debugfs.dir) {
+			/*
+			 * debugfs.add_has_run will be set by
+			 * ieee80211_sta_debugfs_add regardless
+			 * of what else it does.
+			 */
+			if (!tmp->debugfs.add_has_run) {
 				sta = tmp;
 				__sta_info_pin(sta);
 				break;
@@ -825,7 +830,7 @@ void ieee80211_sta_expire(struct ieee80211_sub_if_data *sdata,
 }
 
 struct ieee80211_sta *ieee80211_find_sta(struct ieee80211_hw *hw,
-                                         const u8 *addr)
+					 const u8 *addr)
 {
 	struct sta_info *sta = sta_info_get(hw_to_local(hw), addr);
 

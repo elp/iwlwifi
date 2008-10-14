@@ -529,12 +529,12 @@ void ieee802_11_parse_elems(u8 *start, size_t len,
 			elems->ext_supp_rates_len = elen;
 			break;
 		case WLAN_EID_HT_CAPABILITY:
-			elems->ht_cap_elem = pos;
-			elems->ht_cap_elem_len = elen;
+			if (elen >= sizeof(struct ieee80211_ht_cap))
+				elems->ht_cap_elem = (void *)pos;
 			break;
-		case WLAN_EID_HT_EXTRA_INFO:
-			elems->ht_info_elem = pos;
-			elems->ht_info_elem_len = elen;
+		case WLAN_EID_HT_INFORMATION:
+			if (elen >= sizeof(struct ieee80211_ht_info))
+				elems->ht_info_elem = (void *)pos;
 			break;
 		case WLAN_EID_MESH_ID:
 			elems->mesh_id = pos;
@@ -638,17 +638,15 @@ int ieee80211_set_freq(struct ieee80211_sub_if_data *sdata, int freqMHz)
 
 	if (chan && !(chan->flags & IEEE80211_CHAN_DISABLED)) {
 		if (sdata->vif.type == NL80211_IFTYPE_ADHOC &&
-		    chan->flags & IEEE80211_CHAN_NO_IBSS) {
-			printk(KERN_DEBUG "%s: IBSS not allowed on frequency "
-				"%d MHz\n", sdata->dev->name, chan->center_freq);
+		    chan->flags & IEEE80211_CHAN_NO_IBSS)
 			return ret;
-		}
 		local->oper_channel = chan;
 
 		if (local->sw_scanning || local->hw_scanning)
 			ret = 0;
 		else
-			ret = ieee80211_hw_config(local);
+			ret = ieee80211_hw_config(
+				local, IEEE80211_CONF_CHANGE_CHANNEL);
 
 		rate_control_clear(local);
 	}

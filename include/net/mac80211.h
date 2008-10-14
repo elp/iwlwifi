@@ -180,14 +180,18 @@ enum ieee80211_bss_change {
  * @assoc: association status
  * @aid: association ID number, valid only when @assoc is true
  * @use_cts_prot: use CTS protection
- * @use_short_preamble: use 802.11b short preamble
- * @use_short_slot: use short slot time (only relevant for ERP)
+ * @use_short_preamble: use 802.11b short preamble;
+ *	if the hardware cannot handle this it must set the
+ *	IEEE80211_HW_2GHZ_SHORT_PREAMBLE_INCAPABLE hardware flag
+ * @use_short_slot: use short slot time (only relevant for ERP);
+ *	if the hardware cannot handle this it must set the
+ *	IEEE80211_HW_2GHZ_SHORT_SLOT_INCAPABLE hardware flag
  * @dtim_period: num of beacons before the next DTIM, for PSM
  * @timestamp: beacon timestamp
  * @beacon_int: beacon interval
  * @assoc_capability: capabilities taken from assoc resp
  * @assoc_ht: association in HT mode
- * @ht_conf: ht capabilities
+ * @ht_cap: ht capabilities
  * @ht_bss_conf: ht extended capabilities
  * @basic_rates: bitmap of basic rates, each bit stands for an
  *	index into the rate table configured by the driver in
@@ -208,7 +212,7 @@ struct ieee80211_bss_conf {
 	u64 basic_rates;
 	/* ht related data */
 	bool assoc_ht;
-	struct ieee80211_ht_info *ht_conf;
+	struct ieee80211_sta_ht_cap *ht_cap;
 	struct ieee80211_ht_bss_info *ht_bss_conf;
 };
 
@@ -320,7 +324,7 @@ struct ieee80211_tx_altrate {
  * @flags: transmit info flags, defined above
  * @band: TBD
  * @tx_rate_idx: TBD
- * @antenna_sel_tx: TBD
+ * @antenna_sel_tx: antenna to use, 0 for automatic diversity
  * @control: union for control data
  * @status: union for status data
  * @driver_data: array of driver_data pointers
@@ -442,21 +446,42 @@ struct ieee80211_rx_status {
  *
  * Flags to define PHY configuration options
  *
- * @IEEE80211_CONF_SHORT_SLOT_TIME: use 802.11g short slot time
  * @IEEE80211_CONF_RADIOTAP: add radiotap header at receive time (if supported)
  * @IEEE80211_CONF_SUPPORT_HT_MODE: use 802.11n HT capabilities (if supported)
  * @IEEE80211_CONF_PS: Enable 802.11 power save mode
  */
 enum ieee80211_conf_flags {
-	/*
-	 * TODO: IEEE80211_CONF_SHORT_SLOT_TIME will be removed once drivers
-	 * have been converted to use bss_info_changed() for slot time
-	 * configuration
-	 */
-	IEEE80211_CONF_SHORT_SLOT_TIME	= (1<<0),
-	IEEE80211_CONF_RADIOTAP		= (1<<1),
-	IEEE80211_CONF_SUPPORT_HT_MODE	= (1<<2),
-	IEEE80211_CONF_PS		= (1<<3),
+	IEEE80211_CONF_RADIOTAP		= (1<<0),
+	IEEE80211_CONF_SUPPORT_HT_MODE	= (1<<1),
+	IEEE80211_CONF_PS		= (1<<2),
+};
+
+/* XXX: remove all this once drivers stop trying to use it */
+static inline int __deprecated __IEEE80211_CONF_SHORT_SLOT_TIME(void)
+{
+	return 0;
+}
+#define IEEE80211_CONF_SHORT_SLOT_TIME (__IEEE80211_CONF_SHORT_SLOT_TIME())
+
+/**
+ * enum ieee80211_conf_changed - denotes which configuration changed
+ *
+ * @IEEE80211_CONF_CHANGE_RADIO_ENABLED: the value of radio_enabled changed
+ * @IEEE80211_CONF_CHANGE_BEACON_INTERVAL: the beacon interval changed
+ * @IEEE80211_CONF_CHANGE_LISTEN_INTERVAL: the listen interval changed
+ * @IEEE80211_CONF_CHANGE_RADIOTAP: the radiotap flag changed
+ * @IEEE80211_CONF_CHANGE_PS: the PS flag changed
+ * @IEEE80211_CONF_CHANGE_POWER: the TX power changed
+ * @IEEE80211_CONF_CHANGE_CHANNEL: the channel changed
+ */
+enum ieee80211_conf_changed {
+	IEEE80211_CONF_CHANGE_RADIO_ENABLED	= BIT(0),
+	IEEE80211_CONF_CHANGE_BEACON_INTERVAL	= BIT(1),
+	IEEE80211_CONF_CHANGE_LISTEN_INTERVAL	= BIT(2),
+	IEEE80211_CONF_CHANGE_RADIOTAP		= BIT(3),
+	IEEE80211_CONF_CHANGE_PS		= BIT(4),
+	IEEE80211_CONF_CHANGE_POWER		= BIT(5),
+	IEEE80211_CONF_CHANGE_CHANNEL		= BIT(6),
 };
 
 /**
@@ -465,33 +490,25 @@ enum ieee80211_conf_flags {
  * This struct indicates how the driver shall configure the hardware.
  *
  * @radio_enabled: when zero, driver is required to switch off the radio.
- *	TODO make a flag
  * @beacon_int: beacon interval (TODO make interface config)
  * @listen_interval: listen interval in units of beacon interval
  * @flags: configuration flags defined above
  * @power_level: requested transmit power (in dBm)
- * @max_antenna_gain: maximum antenna gain (in dBi)
- * @antenna_sel_tx: transmit antenna selection, 0: default/diversity,
- *	1/2: antenna 0/1
- * @antenna_sel_rx: receive antenna selection, like @antenna_sel_tx
- * @ht_conf: describes current self configuration of 802.11n HT capabilies
+ * @ht_cap: describes current self configuration of 802.11n HT capabilities
  * @ht_bss_conf: describes current BSS configuration of 802.11n HT parameters
  * @channel: the channel to tune to
  */
 struct ieee80211_conf {
-	int radio_enabled;
-
 	int beacon_int;
-	u16 listen_interval;
 	u32 flags;
 	int power_level;
-	int max_antenna_gain;
-	u8 antenna_sel_tx;
-	u8 antenna_sel_rx;
+
+	u16 listen_interval;
+	bool radio_enabled;
 
 	struct ieee80211_channel *channel;
 
-	struct ieee80211_ht_info ht_conf;
+	struct ieee80211_sta_ht_cap ht_cap;
 	struct ieee80211_ht_bss_info ht_bss_conf;
 };
 
@@ -684,7 +701,7 @@ enum set_key_cmd {
  * @addr: MAC address
  * @aid: AID we assigned to the station if we're an AP
  * @supp_rates: Bitmap of supported rates (per band)
- * @ht_info: HT capabilities of this STA
+ * @ht_cap: HT capabilities of this STA
  * @drv_priv: data area for driver use, will always be aligned to
  *	sizeof(void *), size is determined in hw information.
  */
@@ -692,7 +709,7 @@ struct ieee80211_sta {
 	u64 supp_rates[IEEE80211_NUM_BANDS];
 	u8 addr[ETH_ALEN];
 	u16 aid;
-	struct ieee80211_ht_info ht_info;
+	struct ieee80211_sta_ht_cap ht_cap;
 
 	/* must be last */
 	u8 drv_priv[0] __attribute__((__aligned__(sizeof(void *))));
@@ -866,8 +883,6 @@ struct ieee80211_hw {
 	u8 max_altrates;
 	u8 max_altrate_tries;
 };
-
-struct ieee80211_hw *wiphy_to_hw(struct wiphy *wiphy);
 
 /**
  * SET_IEEE80211_DEV - set device for 802.11 hardware
@@ -1218,7 +1233,7 @@ struct ieee80211_ops {
 			     struct ieee80211_if_init_conf *conf);
 	void (*remove_interface)(struct ieee80211_hw *hw,
 				 struct ieee80211_if_init_conf *conf);
-	int (*config)(struct ieee80211_hw *hw, struct ieee80211_conf *conf);
+	int (*config)(struct ieee80211_hw *hw, u32 changed);
 	int (*config_interface)(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
 				struct ieee80211_if_conf *conf);

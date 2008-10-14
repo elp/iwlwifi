@@ -238,20 +238,6 @@ static int rtl8187_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 			ep = epmap[skb_get_queue_mapping(skb)];
 	}
 
-	/* FIXME: The sequence that follows is needed for this driver to
-	 * work with mac80211 since "mac80211: fix TX sequence numbers".
-	 * As with the temporary code in rt2x00, changes will be needed
-	 * to get proper sequence numbers on beacons. In addition, this
-	 * patch places the sequence number in the hardware state, which
-	 * limits us to a single virtual state.
-	 */
-	if (info->flags & IEEE80211_TX_CTL_ASSIGN_SEQ) {
-		if (info->flags & IEEE80211_TX_CTL_FIRST_FRAGMENT)
-			priv->seqno += 0x10;
-		ieee80211hdr->seq_ctrl &= cpu_to_le16(IEEE80211_SCTL_FRAG);
-		ieee80211hdr->seq_ctrl |= cpu_to_le16(priv->seqno);
-	}
-
 	info->driver_data[0] = dev;
 	info->driver_data[1] = urb;
 
@@ -870,9 +856,10 @@ static void rtl8187_remove_interface(struct ieee80211_hw *dev,
 	mutex_unlock(&priv->conf_mutex);
 }
 
-static int rtl8187_config(struct ieee80211_hw *dev, struct ieee80211_conf *conf)
+static int rtl8187_config(struct ieee80211_hw *dev, u32 changed)
 {
 	struct rtl8187_priv *priv = dev->priv;
+	struct ieee80211_conf *conf = &dev->conf;
 	u32 reg;
 
 	mutex_lock(&priv->conf_mutex);
@@ -1184,6 +1171,10 @@ static int __devinit rtl8187_probe(struct usb_interface *intf,
 		dev->max_signal = 65;
 	}
 
+	/*
+	 * XXX: Once this driver supports anything that requires
+	 *	beacons it must implement IEEE80211_TX_CTL_ASSIGN_SEQ.
+	 */
 	dev->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);
 
 	if ((id->driver_info == DEVICE_RTL8187) && priv->is_rtl8187b)

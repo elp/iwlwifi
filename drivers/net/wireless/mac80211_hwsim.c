@@ -63,13 +63,13 @@ struct hwsim_sta_priv {
 static inline void hwsim_check_sta_magic(struct ieee80211_sta *sta)
 {
 	struct hwsim_sta_priv *sp = (void *)sta->drv_priv;
-	WARN_ON(sp->magic != HWSIM_VIF_MAGIC);
+	WARN_ON(sp->magic != HWSIM_STA_MAGIC);
 }
 
 static inline void hwsim_set_sta_magic(struct ieee80211_sta *sta)
 {
 	struct hwsim_sta_priv *sp = (void *)sta->drv_priv;
-	sp->magic = HWSIM_VIF_MAGIC;
+	sp->magic = HWSIM_STA_MAGIC;
 }
 
 static inline void hwsim_clear_sta_magic(struct ieee80211_sta *sta)
@@ -361,10 +361,10 @@ static void mac80211_hwsim_beacon(unsigned long arg)
 }
 
 
-static int mac80211_hwsim_config(struct ieee80211_hw *hw,
-				 struct ieee80211_conf *conf)
+static int mac80211_hwsim_config(struct ieee80211_hw *hw, u32 changed)
 {
 	struct mac80211_hwsim_data *data = hw->priv;
+	struct ieee80211_conf *conf = &hw->conf;
 
 	printk(KERN_DEBUG "%s:%s (freq=%d radio_enabled=%d beacon_int=%d)\n",
 	       wiphy_name(hw->wiphy), __func__,
@@ -566,19 +566,18 @@ static int __init init_mac80211_hwsim(void)
 		data->band.n_channels = ARRAY_SIZE(hwsim_channels);
 		data->band.bitrates = data->rates;
 		data->band.n_bitrates = ARRAY_SIZE(hwsim_rates);
-		data->band.ht_info.ht_supported = 1;
-		data->band.ht_info.cap = IEEE80211_HT_CAP_SUP_WIDTH |
+		data->band.ht_cap.ht_supported = true;
+		data->band.ht_cap.cap = IEEE80211_HT_CAP_SUP_WIDTH_20_40 |
 			IEEE80211_HT_CAP_GRN_FLD |
 			IEEE80211_HT_CAP_SGI_40 |
 			IEEE80211_HT_CAP_DSSSCCK40;
-		data->band.ht_info.ampdu_factor = 0x3;
-		data->band.ht_info.ampdu_density = 0x6;
-		memset(data->band.ht_info.supp_mcs_set, 0,
-		       sizeof(data->band.ht_info.supp_mcs_set));
-		data->band.ht_info.supp_mcs_set[0] = 0xff;
-		data->band.ht_info.supp_mcs_set[1] = 0xff;
-		data->band.ht_info.supp_mcs_set[12] =
-			IEEE80211_HT_CAP_MCS_TX_DEFINED;
+		data->band.ht_cap.ampdu_factor = 0x3;
+		data->band.ht_cap.ampdu_density = 0x6;
+		memset(&data->band.ht_cap.mcs, 0,
+		       sizeof(data->band.ht_cap.mcs));
+		data->band.ht_cap.mcs.rx_mask[0] = 0xff;
+		data->band.ht_cap.mcs.rx_mask[1] = 0xff;
+		data->band.ht_cap.mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
 		hw->wiphy->bands[IEEE80211_BAND_2GHZ] = &data->band;
 
 		err = ieee80211_register_hw(hw);

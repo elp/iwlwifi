@@ -553,7 +553,7 @@ static int iwl4965_send_beacon_cmd(struct iwl_priv *priv)
 static void iwl4965_ht_conf(struct iwl_priv *priv,
 			    struct ieee80211_bss_conf *bss_conf)
 {
-	struct ieee80211_ht_info *ht_conf = bss_conf->ht_conf;
+	struct ieee80211_sta_ht_cap *ht_conf = bss_conf->ht_cap;
 	struct ieee80211_ht_bss_info *ht_bss_conf = bss_conf->ht_bss_conf;
 	struct iwl_ht_info *iwl_conf = &priv->current_ht_config;
 
@@ -574,27 +574,27 @@ static void iwl4965_ht_conf(struct iwl_priv *priv,
 		!!(ht_conf->cap & IEEE80211_HT_CAP_MAX_AMSDU);
 
 	iwl_conf->supported_chan_width =
-		!!(ht_conf->cap & IEEE80211_HT_CAP_SUP_WIDTH);
+		!!(ht_conf->cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40);
 	iwl_conf->extension_chan_offset =
-		ht_bss_conf->bss_cap & IEEE80211_HT_IE_CHA_SEC_OFFSET;
+		ht_bss_conf->bss_cap & IEEE80211_HT_PARAM_CHA_SEC_OFFSET;
 	/* If no above or below channel supplied disable FAT channel */
-	if (iwl_conf->extension_chan_offset != IEEE80211_HT_IE_CHA_SEC_ABOVE &&
-	    iwl_conf->extension_chan_offset != IEEE80211_HT_IE_CHA_SEC_BELOW) {
-		iwl_conf->extension_chan_offset = IEEE80211_HT_IE_CHA_SEC_NONE;
+	if (iwl_conf->extension_chan_offset != IEEE80211_HT_PARAM_CHA_SEC_ABOVE &&
+	    iwl_conf->extension_chan_offset != IEEE80211_HT_PARAM_CHA_SEC_BELOW) {
+		iwl_conf->extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_NONE;
 		iwl_conf->supported_chan_width = 0;
 	}
 
 	iwl_conf->sm_ps = (u8)((ht_conf->cap & IEEE80211_HT_CAP_SM_PS) >> 2);
 
-	memcpy(iwl_conf->supp_mcs_set, ht_conf->supp_mcs_set, 16);
+	memcpy(&iwl_conf->mcs, &ht_conf->mcs, 16);
 
 	iwl_conf->control_channel = ht_bss_conf->primary_channel;
 	iwl_conf->tx_chan_width =
-		!!(ht_bss_conf->bss_cap & IEEE80211_HT_IE_CHA_WIDTH);
+		!!(ht_bss_conf->bss_cap & IEEE80211_HT_PARAM_CHAN_WIDTH_ANY);
 	iwl_conf->ht_protection =
-		ht_bss_conf->bss_op_mode & IEEE80211_HT_IE_HT_PROTECTION;
+		ht_bss_conf->bss_op_mode & IEEE80211_HT_OP_MODE_PROTECTION;
 	iwl_conf->non_GF_STA_present =
-		!!(ht_bss_conf->bss_op_mode & IEEE80211_HT_IE_NON_GF_STA_PRSNT);
+		!!(ht_bss_conf->bss_op_mode & IEEE80211_HT_OP_MODE_NON_GF_STA_PRSNT);
 
 	IWL_DEBUG_MAC80211("control channel %d\n", iwl_conf->control_channel);
 	IWL_DEBUG_MAC80211("leave\n");
@@ -2741,10 +2741,11 @@ static int iwl4965_mac_add_interface(struct ieee80211_hw *hw,
  * be set inappropriately and the driver currently sets the hardware up to
  * use it whenever needed.
  */
-static int iwl4965_mac_config(struct ieee80211_hw *hw, struct ieee80211_conf *conf)
+static int iwl4965_mac_config(struct ieee80211_hw *hw, u32 changed)
 {
 	struct iwl_priv *priv = hw->priv;
 	const struct iwl_channel_info *ch_info;
+	struct ieee80211_conf *conf = &hw->conf;
 	unsigned long flags;
 	int ret = 0;
 	u16 channel;

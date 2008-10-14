@@ -814,15 +814,6 @@ W:	http://www.thekelleys.org.uk/atmel
 W:	http://atmelwlandriver.sourceforge.net/
 S:	Maintained
 
-ATMEL USB WIRELESS DRIVER
-P:	Pavel Roskin
-M:	proski@gnu.org
-L:	linux-wireless@vger.kernel.org
-L:	at76c503a-user@lists.berlios.de
-L:	at76c503a-develop@lists.berlios.de
-W:	http://at76c503a.berlios.de/
-S:	Maintained
-
 AUDIT SUBSYSTEM
 P:	Al Viro
 M:	viro@zeniv.linux.org.uk
@@ -1207,9 +1198,7 @@ M:	hpa@zytor.com
 S:	Maintained
 
 CPUSETS
-P:	Paul Jackson
 P:	Paul Menage
-M:	pj@sgi.com
 M:	menage@google.com
 L:	linux-kernel@vger.kernel.org
 W:	http://www.bullopensource.org/cpuset/
@@ -2715,6 +2704,7 @@ MAN-PAGES: MANUAL PAGES FOR LINUX -- Sections 2, 3, 4, 5, and 7
 P:	Michael Kerrisk
 M:	mtk.manpages@gmail.com
 W:	http://www.kernel.org/doc/man-pages
+L:	linux-man@vger.kernel.org
 S:	Supported
 
 MARVELL LIBERTAS WIRELESS DRIVER
