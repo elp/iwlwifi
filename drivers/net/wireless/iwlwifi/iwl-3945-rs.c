@@ -424,7 +424,7 @@ static void rs_free_sta(void *priv, struct ieee80211_sta *sta,
 
 /*
  * get ieee prev rate from rate scale table.
- * for A and B mode we need to overright prev
+ * for A and B mode we need to override prev
  * value
  */
 static int rs_adjust_next_rate(struct iwl3945_priv *priv, int rate)
