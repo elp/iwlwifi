@@ -239,7 +239,7 @@ __le16 ieee80211_generic_frame_duration(struct ieee80211_hw *hw,
 	erp = 0;
 	if (vif) {
 		sdata = vif_to_sdata(vif);
-		short_preamble = sdata->bss_conf.use_short_preamble;
+		short_preamble = sdata->vif.bss_conf.use_short_preamble;
 		if (sdata->flags & IEEE80211_SDATA_OPERATING_GMODE)
 			erp = rate->flags & IEEE80211_RATE_ERP_G;
 	}
@@ -272,7 +272,7 @@ __le16 ieee80211_rts_duration(struct ieee80211_hw *hw,
 	erp = 0;
 	if (vif) {
 		sdata = vif_to_sdata(vif);
-		short_preamble = sdata->bss_conf.use_short_preamble;
+		short_preamble = sdata->vif.bss_conf.use_short_preamble;
 		if (sdata->flags & IEEE80211_SDATA_OPERATING_GMODE)
 			erp = rate->flags & IEEE80211_RATE_ERP_G;
 	}
@@ -312,7 +312,7 @@ __le16 ieee80211_ctstoself_duration(struct ieee80211_hw *hw,
 	erp = 0;
 	if (vif) {
 		sdata = vif_to_sdata(vif);
-		short_preamble = sdata->bss_conf.use_short_preamble;
+		short_preamble = sdata->vif.bss_conf.use_short_preamble;
 		if (sdata->flags & IEEE80211_SDATA_OPERATING_GMODE)
 			erp = rate->flags & IEEE80211_RATE_ERP_G;
 	}
@@ -647,8 +647,6 @@ int ieee80211_set_freq(struct ieee80211_sub_if_data *sdata, int freqMHz)
 		else
 			ret = ieee80211_hw_config(
 				local, IEEE80211_CONF_CHANGE_CHANNEL);
-
-		rate_control_clear(local);
 	}
 
 	return ret;

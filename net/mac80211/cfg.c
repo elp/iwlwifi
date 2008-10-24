@@ -582,6 +582,8 @@ static void sta_apply_parameters(struct ieee80211_local *local,
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
 
+	sband = local->hw.wiphy->bands[local->oper_channel->band];
+
 	/*
 	 * FIXME: updating the flags is racy when this function is
 	 *	  called from ieee80211_change_station(), this will
@@ -622,7 +624,6 @@ static void sta_apply_parameters(struct ieee80211_local *local,
 
 	if (params->supported_rates) {
 		rates = 0;
-		sband = local->hw.wiphy->bands[local->oper_channel->band];
 
 		for (i = 0; i < params->supported_rates_len; i++) {
 			int rate = (params->supported_rates[i] & 0x7f) * 5;
@@ -635,7 +636,8 @@ static void sta_apply_parameters(struct ieee80211_local *local,
 	}
 
 	if (params->ht_capa)
-		ieee80211_ht_cap_ie_to_sta_ht_cap(params->ht_capa,
+		ieee80211_ht_cap_ie_to_sta_ht_cap(sband,
+						  params->ht_capa,
 						  &sta->sta.ht_cap);
 
 	if (ieee80211_vif_is_mesh(&sdata->vif) && params->plink_action) {
@@ -949,6 +951,72 @@ static int ieee80211_dump_mpath(struct wiphy *wiphy, struct net_device *dev,
 	rcu_read_unlock();
 	return 0;
 }
+
+static int ieee80211_get_mesh_params(struct wiphy *wiphy,
+				struct net_device *dev,
+				struct mesh_config *conf)
+{
+	struct ieee80211_sub_if_data *sdata;
+	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	if (sdata->vif.type != NL80211_IFTYPE_MESH_POINT)
+		return -ENOTSUPP;
+	memcpy(conf, &(sdata->u.mesh.mshcfg), sizeof(struct mesh_config));
+	return 0;
+}
+
+static inline bool _chg_mesh_attr(enum nl80211_meshconf_params parm, u32 mask)
+{
+	return (mask >> (parm-1)) & 0x1;
+}
+
+static int ieee80211_set_mesh_params(struct wiphy *wiphy,
+				struct net_device *dev,
+				const struct mesh_config *nconf, u32 mask)
+{
+	struct mesh_config *conf;
+	struct ieee80211_sub_if_data *sdata;
+	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	if (sdata->vif.type != NL80211_IFTYPE_MESH_POINT)
+		return -ENOTSUPP;
+
+	/* Set the config options which we are interested in setting */
+	conf = &(sdata->u.mesh.mshcfg);
+	if (_chg_mesh_attr(NL80211_MESHCONF_RETRY_TIMEOUT, mask))
+		conf->dot11MeshRetryTimeout = nconf->dot11MeshRetryTimeout;
+	if (_chg_mesh_attr(NL80211_MESHCONF_CONFIRM_TIMEOUT, mask))
+		conf->dot11MeshConfirmTimeout = nconf->dot11MeshConfirmTimeout;
+	if (_chg_mesh_attr(NL80211_MESHCONF_HOLDING_TIMEOUT, mask))
+		conf->dot11MeshHoldingTimeout = nconf->dot11MeshHoldingTimeout;
+	if (_chg_mesh_attr(NL80211_MESHCONF_MAX_PEER_LINKS, mask))
+		conf->dot11MeshMaxPeerLinks = nconf->dot11MeshMaxPeerLinks;
+	if (_chg_mesh_attr(NL80211_MESHCONF_MAX_RETRIES, mask))
+		conf->dot11MeshMaxRetries = nconf->dot11MeshMaxRetries;
+	if (_chg_mesh_attr(NL80211_MESHCONF_TTL, mask))
+		conf->dot11MeshTTL = nconf->dot11MeshTTL;
+	if (_chg_mesh_attr(NL80211_MESHCONF_AUTO_OPEN_PLINKS, mask))
+		conf->auto_open_plinks = nconf->auto_open_plinks;
+	if (_chg_mesh_attr(NL80211_MESHCONF_HWMP_MAX_PREQ_RETRIES, mask))
+		conf->dot11MeshHWMPmaxPREQretries =
+			nconf->dot11MeshHWMPmaxPREQretries;
+	if (_chg_mesh_attr(NL80211_MESHCONF_PATH_REFRESH_TIME, mask))
+		conf->path_refresh_time = nconf->path_refresh_time;
+	if (_chg_mesh_attr(NL80211_MESHCONF_MIN_DISCOVERY_TIMEOUT, mask))
+		conf->min_discovery_timeout = nconf->min_discovery_timeout;
+	if (_chg_mesh_attr(NL80211_MESHCONF_HWMP_ACTIVE_PATH_TIMEOUT, mask))
+		conf->dot11MeshHWMPactivePathTimeout =
+			nconf->dot11MeshHWMPactivePathTimeout;
+	if (_chg_mesh_attr(NL80211_MESHCONF_HWMP_PREQ_MIN_INTERVAL, mask))
+		conf->dot11MeshHWMPpreqMinInterval =
+			nconf->dot11MeshHWMPpreqMinInterval;
+	if (_chg_mesh_attr(NL80211_MESHCONF_HWMP_NET_DIAM_TRVS_TIME,
+			   mask))
+		conf->dot11MeshHWMPnetDiameterTraversalTime =
+			nconf->dot11MeshHWMPnetDiameterTraversalTime;
+	return 0;
+}
+
 #endif
 
 static int ieee80211_change_bss(struct wiphy *wiphy,
@@ -964,16 +1032,16 @@ static int ieee80211_change_bss(struct wiphy *wiphy,
 		return -EINVAL;
 
 	if (params->use_cts_prot >= 0) {
-		sdata->bss_conf.use_cts_prot = params->use_cts_prot;
+		sdata->vif.bss_conf.use_cts_prot = params->use_cts_prot;
 		changed |= BSS_CHANGED_ERP_CTS_PROT;
 	}
 	if (params->use_short_preamble >= 0) {
-		sdata->bss_conf.use_short_preamble =
+		sdata->vif.bss_conf.use_short_preamble =
 			params->use_short_preamble;
 		changed |= BSS_CHANGED_ERP_PREAMBLE;
 	}
 	if (params->use_short_slot_time >= 0) {
-		sdata->bss_conf.use_short_slot =
+		sdata->vif.bss_conf.use_short_slot =
 			params->use_short_slot_time;
 		changed |= BSS_CHANGED_ERP_SLOT;
 	}
@@ -1005,6 +1073,8 @@ struct cfg80211_ops mac80211_config_ops = {
 	.change_mpath = ieee80211_change_mpath,
 	.get_mpath = ieee80211_get_mpath,
 	.dump_mpath = ieee80211_dump_mpath,
+	.set_mesh_params = ieee80211_set_mesh_params,
+	.get_mesh_params = ieee80211_get_mesh_params,
 #endif
 	.change_bss = ieee80211_change_bss,
 };

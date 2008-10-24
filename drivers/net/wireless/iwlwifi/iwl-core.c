@@ -88,26 +88,27 @@ EXPORT_SYMBOL(iwl_rates);
  * translate ucode response to mac80211 tx status control values
  */
 void iwl_hwrate_to_tx_control(struct iwl_priv *priv, u32 rate_n_flags,
-				  struct ieee80211_tx_info *control)
+				  struct ieee80211_tx_info *info)
 {
 	int rate_index;
+	struct ieee80211_tx_rate *r = &info->control.rates[0];
 
-	control->antenna_sel_tx =
+	info->antenna_sel_tx =
 		((rate_n_flags & RATE_MCS_ANT_ABC_MSK) >> RATE_MCS_ANT_POS);
 	if (rate_n_flags & RATE_MCS_HT_MSK)
-		control->flags |= IEEE80211_TX_CTL_OFDM_HT;
+		r->flags |= IEEE80211_TX_RC_MCS;
 	if (rate_n_flags & RATE_MCS_GF_MSK)
-		control->flags |= IEEE80211_TX_CTL_GREEN_FIELD;
+		r->flags |= IEEE80211_TX_RC_GREEN_FIELD;
 	if (rate_n_flags & RATE_MCS_FAT_MSK)
-		control->flags |= IEEE80211_TX_CTL_40_MHZ_WIDTH;
+		r->flags |= IEEE80211_TX_RC_40_MHZ_WIDTH;
 	if (rate_n_flags & RATE_MCS_DUP_MSK)
-		control->flags |= IEEE80211_TX_CTL_DUP_DATA;
+		r->flags |= IEEE80211_TX_RC_DUP_DATA;
 	if (rate_n_flags & RATE_MCS_SGI_MSK)
-		control->flags |= IEEE80211_TX_CTL_SHORT_GI;
+		r->flags |= IEEE80211_TX_RC_SHORT_GI;
 	rate_index = iwl_hwrate_to_plcp_idx(rate_n_flags);
-	if (control->band == IEEE80211_BAND_5GHZ)
+	if (info->band == IEEE80211_BAND_5GHZ)
 		rate_index -= IWL_FIRST_OFDM_RATE;
-	control->tx_rate_idx = rate_index;
+	r->idx = rate_index;
 }
 EXPORT_SYMBOL(iwl_hwrate_to_tx_control);
 
@@ -649,8 +650,8 @@ u8 iwl_is_fat_tx_allowed(struct iwl_priv *priv,
 	}
 
 	return iwl_is_channel_extension(priv, priv->band,
-					 iwl_ht_conf->control_channel,
-					 iwl_ht_conf->extension_chan_offset);
+					le16_to_cpu(priv->staging_rxon.channel),
+					iwl_ht_conf->extension_chan_offset);
 }
 EXPORT_SYMBOL(iwl_is_fat_tx_allowed);
 
@@ -675,13 +676,6 @@ void iwl_set_rxon_ht(struct iwl_priv *priv, struct iwl_ht_info *ht_info)
 		rxon->flags &= ~(RXON_FLG_CHANNEL_MODE_MIXED_MSK |
 				 RXON_FLG_CHANNEL_MODE_PURE_40_MSK);
 
-	if (le16_to_cpu(rxon->channel) != ht_info->control_channel) {
-		IWL_DEBUG_ASSOC("control diff than current %d %d\n",
-				le16_to_cpu(rxon->channel),
-				ht_info->control_channel);
-		return;
-	}
-
 	/* Note: control channel is opposite of extension channel */
 	switch (ht_info->extension_chan_offset) {
 	case IEEE80211_HT_PARAM_CHA_SEC_ABOVE:
@@ -704,14 +698,12 @@ void iwl_set_rxon_ht(struct iwl_priv *priv, struct iwl_ht_info *ht_info)
 
 	IWL_DEBUG_ASSOC("supported HT rate 0x%X 0x%X 0x%X "
 			"rxon flags 0x%X operation mode :0x%X "
-			"extension channel offset 0x%x "
-			"control chan %d\n",
+			"extension channel offset 0x%x\n",
 			ht_info->mcs.rx_mask[0],
 			ht_info->mcs.rx_mask[1],
 			ht_info->mcs.rx_mask[2],
 			le32_to_cpu(rxon->flags), ht_info->ht_protection,
-			ht_info->extension_chan_offset,
-			ht_info->control_channel);
+			ht_info->extension_chan_offset);
 	return;
 }
 EXPORT_SYMBOL(iwl_set_rxon_ht);

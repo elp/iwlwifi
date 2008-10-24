@@ -160,13 +160,13 @@ static void rtl8187_tx_cb(struct urb *urb)
 {
 	struct sk_buff *skb = (struct sk_buff *)urb->context;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	struct ieee80211_hw *hw = info->driver_data[0];
+	struct ieee80211_hw *hw = info->rate_driver_data[0];
 	struct rtl8187_priv *priv = hw->priv;
 
-	usb_free_urb(info->driver_data[1]);
+	usb_free_urb(info->rate_driver_data[1]);
 	skb_pull(skb, priv->is_rtl8187b ? sizeof(struct rtl8187b_tx_hdr) :
 					  sizeof(struct rtl8187_tx_hdr));
-	memset(&info->status, 0, sizeof(info->status));
+	ieee80211_tx_info_clear_status(info);
 	info->flags |= IEEE80211_TX_STAT_ACK;
 	ieee80211_tx_status_irqsafe(hw, skb);
 }
@@ -175,7 +175,6 @@ static int rtl8187_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 {
 	struct rtl8187_priv *priv = dev->priv;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	struct ieee80211_hdr *ieee80211hdr = (struct ieee80211_hdr *)skb->data;
 	unsigned int ep;
 	void *buf;
 	struct urb *urb;
@@ -195,12 +194,12 @@ static int rtl8187_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 	flags |= ieee80211_get_tx_rate(dev, info)->hw_value << 24;
 	if (ieee80211_has_morefrags(((struct ieee80211_hdr *)skb->data)->frame_control))
 		flags |= RTL818X_TX_DESC_FLAG_MOREFRAG;
-	if (info->flags & IEEE80211_TX_CTL_USE_RTS_CTS) {
+	if (info->control.rates[0].flags & IEEE80211_TX_RC_USE_RTS_CTS) {
 		flags |= RTL818X_TX_DESC_FLAG_RTS;
 		flags |= ieee80211_get_rts_cts_rate(dev, info)->hw_value << 19;
 		rts_dur = ieee80211_rts_duration(dev, priv->vif,
 						 skb->len, info);
-	} else if (info->flags & IEEE80211_TX_CTL_USE_CTS_PROTECT) {
+	} else if (info->control.rates[0].flags & IEEE80211_TX_RC_USE_CTS_PROTECT) {
 		flags |= RTL818X_TX_DESC_FLAG_CTS;
 		flags |= ieee80211_get_rts_cts_rate(dev, info)->hw_value << 19;
 	}
@@ -211,7 +210,7 @@ static int rtl8187_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 		hdr->flags = cpu_to_le32(flags);
 		hdr->len = 0;
 		hdr->rts_duration = rts_dur;
-		hdr->retry = cpu_to_le32(info->control.retry_limit << 8);
+		hdr->retry = cpu_to_le32((info->control.rates[0].count - 1) << 8);
 		buf = hdr;
 
 		ep = 2;
@@ -229,7 +228,7 @@ static int rtl8187_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 		memset(hdr, 0, sizeof(*hdr));
 		hdr->flags = cpu_to_le32(flags);
 		hdr->rts_duration = rts_dur;
-		hdr->retry = cpu_to_le32(info->control.retry_limit << 8);
+		hdr->retry = cpu_to_le32((info->control.rates[0].count - 1) << 8);
 		hdr->tx_duration =
 			ieee80211_generic_frame_duration(dev, priv->vif,
 							 skb->len, txrate);
@@ -241,8 +240,8 @@ static int rtl8187_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 			ep = epmap[skb_get_queue_mapping(skb)];
 	}
 
-	info->driver_data[0] = dev;
-	info->driver_data[1] = urb;
+	info->rate_driver_data[0] = dev;
+	info->rate_driver_data[1] = urb;
 
 	usb_fill_bulk_urb(urb, priv->udev, usb_sndbulkpipe(priv->udev, ep),
 			  buf, skb->len, rtl8187_tx_cb, skb);
@@ -878,22 +877,6 @@ static int rtl8187_config(struct ieee80211_hw *dev, u32 changed)
 	msleep(10);
 	rtl818x_iowrite32(priv, &priv->map->TX_CONF, reg);
 
-	if (!priv->is_rtl8187b) {
-		rtl818x_iowrite8(priv, &priv->map->SIFS, 0x22);
-
-		if (conf->flags & IEEE80211_CONF_SHORT_SLOT_TIME) {
-			rtl818x_iowrite8(priv, &priv->map->SLOT, 0x9);
-			rtl818x_iowrite8(priv, &priv->map->DIFS, 0x14);
-			rtl818x_iowrite8(priv, &priv->map->EIFS, 91 - 0x14);
-			rtl818x_iowrite8(priv, &priv->map->CW_VAL, 0x73);
-		} else {
-			rtl818x_iowrite8(priv, &priv->map->SLOT, 0x14);
-			rtl818x_iowrite8(priv, &priv->map->DIFS, 0x24);
-			rtl818x_iowrite8(priv, &priv->map->EIFS, 91 - 0x24);
-			rtl818x_iowrite8(priv, &priv->map->CW_VAL, 0xa5);
-		}
-	}
-
 	rtl818x_iowrite16(priv, &priv->map->ATIM_WND, 2);
 	rtl818x_iowrite16(priv, &priv->map->ATIMTR_INTERVAL, 100);
 	rtl818x_iowrite16(priv, &priv->map->BEACON_INTERVAL, 100);
@@ -926,6 +909,72 @@ static int rtl8187_config_interface(struct ieee80211_hw *dev,
 
 	mutex_unlock(&priv->conf_mutex);
 	return 0;
+}
+
+static void rtl8187_conf_erp(struct rtl8187_priv *priv, bool use_short_slot,
+			     bool use_short_preamble)
+{
+	if (priv->is_rtl8187b) {
+		u8 difs, eifs, slot_time;
+		u16 ack_timeout;
+
+		if (use_short_slot) {
+			slot_time = 0x9;
+			difs = 0x1c;
+			eifs = 0x53;
+		} else {
+			slot_time = 0x14;
+			difs = 0x32;
+			eifs = 0x5b;
+		}
+		rtl818x_iowrite8(priv, &priv->map->SIFS, 0xa);
+		rtl818x_iowrite8(priv, &priv->map->SLOT, slot_time);
+		rtl818x_iowrite8(priv, &priv->map->DIFS, difs);
+
+		/*
+		 * BRSR+1 on 8187B is in fact EIFS register
+		 * Value in units of 4 us
+		 */
+		rtl818x_iowrite8(priv, (u8 *)&priv->map->BRSR + 1, eifs);
+
+		/*
+		 * For 8187B, CARRIER_SENSE_COUNTER is in fact ack timeout
+		 * register. In units of 4 us like eifs register
+		 * ack_timeout = ack duration + plcp + difs + preamble
+		 */
+		ack_timeout = 112 + 48 + difs;
+		if (use_short_preamble)
+			ack_timeout += 72;
+		else
+			ack_timeout += 144;
+		rtl818x_iowrite8(priv, &priv->map->CARRIER_SENSE_COUNTER,
+				 DIV_ROUND_UP(ack_timeout, 4));
+	} else {
+		rtl818x_iowrite8(priv, &priv->map->SIFS, 0x22);
+		if (use_short_slot) {
+			rtl818x_iowrite8(priv, &priv->map->SLOT, 0x9);
+			rtl818x_iowrite8(priv, &priv->map->DIFS, 0x14);
+			rtl818x_iowrite8(priv, &priv->map->EIFS, 91 - 0x14);
+			rtl818x_iowrite8(priv, &priv->map->CW_VAL, 0x73);
+		} else {
+			rtl818x_iowrite8(priv, &priv->map->SLOT, 0x14);
+			rtl818x_iowrite8(priv, &priv->map->DIFS, 0x24);
+			rtl818x_iowrite8(priv, &priv->map->EIFS, 91 - 0x24);
+			rtl818x_iowrite8(priv, &priv->map->CW_VAL, 0xa5);
+		}
+	}
+}
+
+static void rtl8187_bss_info_changed(struct ieee80211_hw *dev,
+				     struct ieee80211_vif *vif,
+				     struct ieee80211_bss_conf *info,
+				     u32 changed)
+{
+	struct rtl8187_priv *priv = dev->priv;
+
+	if (changed & (BSS_CHANGED_ERP_SLOT | BSS_CHANGED_ERP_PREAMBLE))
+		rtl8187_conf_erp(priv, info->use_short_slot,
+				 info->use_short_preamble);
 }
 
 static void rtl8187_configure_filter(struct ieee80211_hw *dev,
@@ -968,6 +1017,7 @@ static const struct ieee80211_ops rtl8187_ops = {
 	.remove_interface	= rtl8187_remove_interface,
 	.config			= rtl8187_config,
 	.config_interface	= rtl8187_config_interface,
+	.bss_info_changed	= rtl8187_bss_info_changed,
 	.configure_filter	= rtl8187_configure_filter,
 };
 

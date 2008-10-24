@@ -1838,7 +1838,7 @@ void ath_rc_node_update(struct ieee80211_hw *hw, struct ath_rate_node *rc_priv)
 	struct ath_softc *sc = hw->priv;
 	u32 capflag = 0;
 
-	if (hw->conf.ht_cap.ht_supported) {
+	if (hw->conf.ht.enabled) {
 		capflag |= ATH_RC_HT_FLAG | ATH_RC_DS_FLAG;
 		if (sc->sc_ht_info.tx_chan_width == ATH9K_HT_MACMODE_2040)
 			capflag |= ATH_RC_CW40_FLAG;
@@ -1864,24 +1864,21 @@ static void ath_tx_status(void *priv, struct ieee80211_supported_band *sband,
 
 	hdr = (struct ieee80211_hdr *)skb->data;
 	fc = hdr->frame_control;
-	tx_info_priv = (struct ath_tx_info_priv *)tx_info->driver_data[0];
+	/* XXX: UGLY HACK!! */
+	tx_info_priv = (struct ath_tx_info_priv *)tx_info->control.vif;
 
 	spin_lock_bh(&sc->node_lock);
 	an = ath_node_find(sc, hdr->addr1);
 	spin_unlock_bh(&sc->node_lock);
 
-	if (!an || !priv_sta || !ieee80211_is_data(fc)) {
-		if (tx_info->driver_data[0] != NULL) {
-			kfree(tx_info->driver_data[0]);
-			tx_info->driver_data[0] = NULL;
-		}
+	if (tx_info_priv == NULL)
 		return;
-	}
-	if (tx_info->driver_data[0] != NULL) {
+
+	if (an && priv_sta && ieee80211_is_data(fc))
 		ath_rate_tx_complete(sc, an, priv_sta, tx_info_priv);
-		kfree(tx_info->driver_data[0]);
-		tx_info->driver_data[0] = NULL;
-	}
+
+	kfree(tx_info_priv);
+	tx_info->control.vif = NULL;
 }
 
 static void ath_tx_aggr_resp(struct ath_softc *sc,
@@ -1927,10 +1924,11 @@ static void ath_tx_aggr_resp(struct ath_softc *sc,
 	}
 }
 
-static void ath_get_rate(void *priv, struct ieee80211_supported_band *sband,
-			 struct ieee80211_sta *sta, void *priv_sta,
-			 struct sk_buff *skb, struct rate_selection *sel)
+static void ath_get_rate(void *priv, struct ieee80211_sta *sta, void *priv_sta,
+			 struct ieee80211_tx_rate_control *txrc)
 {
+	struct ieee80211_supported_band *sband = txrc->sband;
+	struct sk_buff *skb = txrc->skb;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ath_softc *sc = priv;
 	struct ieee80211_hw *hw = sc->hw;
@@ -1946,17 +1944,17 @@ static void ath_get_rate(void *priv, struct ieee80211_supported_band *sband,
 
 	DPRINTF(sc, ATH_DBG_RATE, "%s\n", __func__);
 
-	/* allocate driver private area of tx_info */
-	tx_info->driver_data[0] = kzalloc(sizeof(*tx_info_priv), GFP_ATOMIC);
-	ASSERT(tx_info->driver_data[0] != NULL);
-	tx_info_priv = (struct ath_tx_info_priv *)tx_info->driver_data[0];
+	/* allocate driver private area of tx_info, XXX: UGLY HACK! */
+	tx_info->control.vif = kzalloc(sizeof(*tx_info_priv), GFP_ATOMIC);
+	tx_info_priv = (struct ath_tx_info_priv *)tx_info->control.vif;
+	ASSERT(tx_info_priv != NULL);
 
 	lowest_idx = rate_lowest_index(sband, sta);
 	tx_info_priv->min_rate = (sband->bitrates[lowest_idx].bitrate * 2) / 10;
 	/* lowest rate for management and multicast/broadcast frames */
 	if (!ieee80211_is_data(fc) ||
 	    is_multicast_ether_addr(hdr->addr1) || !sta) {
-		sel->rate_idx = lowest_idx;
+		tx_info->control.rates[0].idx = lowest_idx;
 		return;
 	}
 
@@ -1967,8 +1965,10 @@ static void ath_get_rate(void *priv, struct ieee80211_supported_band *sband,
 			  tx_info_priv->rcs,
 			  &is_probe,
 			  false);
+#if 0
 	if (is_probe)
 		sel->probe_idx = ath_rc_priv->tx_ratectrl.probe_rate;
+#endif
 
 	/* Ratecontrol sometimes returns invalid rate index */
 	if (tx_info_priv->rcs[0].rix != 0xff)
@@ -1976,11 +1976,11 @@ static void ath_get_rate(void *priv, struct ieee80211_supported_band *sband,
 	else
 		tx_info_priv->rcs[0].rix = ath_rc_priv->prev_data_rix;
 
-	sel->rate_idx = tx_info_priv->rcs[0].rix;
+	tx_info->control.rates[0].idx = tx_info_priv->rcs[0].rix;
 
 	/* Check if aggregation has to be enabled for this tid */
 
-	if (hw->conf.ht_cap.ht_supported) {
+	if (hw->conf.ht.enabled) {
 		if (ieee80211_is_data_qos(fc)) {
 			qc = ieee80211_get_qos_ctl(hdr);
 			tid = qc[0] & 0xf;
@@ -2027,9 +2027,9 @@ static void ath_rate_init(void *priv, struct ieee80211_supported_band *sband,
 	DPRINTF(sc, ATH_DBG_RATE, "%s\n", __func__);
 
 	ath_setup_rates(sc, sband, sta, ath_rc_priv);
-	if (sc->hw->conf.flags & IEEE80211_CONF_SUPPORT_HT_MODE) {
+	if (sc->hw->conf.ht.enabled) {
 		for (i = 0; i < 77; i++) {
-			if (sc->hw->conf.ht_cap.mcs.rx_mask[i/8] & (1<<(i%8)))
+			if (sta->ht_cap.mcs.rx_mask[i/8] & (1<<(i%8)))
 				ath_rc_priv->neg_ht_rates.rs_rates[j++] = i;
 			if (j == ATH_RATE_MAX)
 				break;
@@ -2037,11 +2037,6 @@ static void ath_rate_init(void *priv, struct ieee80211_supported_band *sband,
 		ath_rc_priv->neg_ht_rates.rs_nrates = j;
 	}
 	ath_rc_node_update(sc->hw, priv_sta);
-}
-
-static void ath_rate_clear(void *priv)
-{
-	return;
 }
 
 static void *ath_rate_alloc(struct ieee80211_hw *hw, struct dentry *debugfsdir)
@@ -2093,7 +2088,6 @@ static struct rate_control_ops ath_rate_ops = {
 	.tx_status = ath_tx_status,
 	.get_rate = ath_get_rate,
 	.rate_init = ath_rate_init,
-	.clear = ath_rate_clear,
 	.alloc = ath_rate_alloc,
 	.free = ath_rate_free,
 	.alloc_sta = ath_rate_alloc_sta,

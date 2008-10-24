@@ -1934,7 +1934,7 @@ static int rt61pci_agc_to_rssi(struct rt2x00_dev *rt2x00dev, int rxd_w1)
 }
 
 static void rt61pci_fill_rxdone(struct queue_entry *entry,
-			        struct rxdone_entry_desc *rxdesc)
+				struct rxdone_entry_desc *rxdesc)
 {
 	struct rt2x00_dev *rt2x00dev = entry->queue->rt2x00dev;
 	struct queue_entry_priv_pci *entry_priv = entry->priv_data;
@@ -2726,7 +2726,6 @@ static const struct ieee80211_ops rt61pci_mac80211_ops = {
 	.configure_filter	= rt2x00mac_configure_filter,
 	.set_key		= rt2x00mac_set_key,
 	.get_stats		= rt2x00mac_get_stats,
-	.set_retry_limit	= rt61pci_set_retry_limit,
 	.bss_info_changed	= rt2x00mac_bss_info_changed,
 	.conf_tx		= rt61pci_conf_tx,
 	.get_tx_stats		= rt2x00mac_get_tx_stats,
@@ -2759,6 +2758,7 @@ static const struct rt2x00lib_ops rt61pci_rt2x00_ops = {
 	.config_intf		= rt61pci_config_intf,
 	.config_erp		= rt61pci_config_erp,
 	.config			= rt61pci_config,
+	.set_retry_limit	= rt61pci_set_retry_limit,
 };
 
 static const struct data_queue_desc rt61pci_queue_rx = {

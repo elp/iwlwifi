@@ -168,7 +168,9 @@ static void fill_min_rates(struct sk_buff *skb, struct ath_tx_control *txctl)
 
 	hdr = (struct ieee80211_hdr *)skb->data;
 	fc = hdr->frame_control;
-	tx_info_priv = (struct ath_tx_info_priv *)tx_info->driver_data[0];
+
+	/* XXX: HACK! */
+	tx_info_priv = (struct ath_tx_info_priv *)tx_info->control.vif;
 
 	if (ieee80211_is_mgmt(fc) || ieee80211_is_ctl(fc)) {
 		txctl->use_minrate = 1;
@@ -288,19 +290,23 @@ static int ath_tx_prepare(struct ath_softc *sc,
 
 	if (tx_info->flags & IEEE80211_TX_CTL_NO_ACK)
 		txctl->flags |= ATH9K_TXDESC_NOACK;
-	if (tx_info->flags & IEEE80211_TX_CTL_USE_RTS_CTS)
+
+	if (tx_info->control.rates[0].flags & IEEE80211_TX_RC_USE_RTS_CTS)
 		txctl->flags |= ATH9K_TXDESC_RTSENA;
 
 	/*
 	 * Setup for rate calculations.
 	 */
-	tx_info_priv = (struct ath_tx_info_priv *)tx_info->driver_data[0];
+
+	/* XXX: HACK! */
+	tx_info_priv = (struct ath_tx_info_priv *)tx_info->control.vif;
 	rcs = tx_info_priv->rcs;
 
 	if (ieee80211_is_data(fc) && !txctl->use_minrate) {
 
 		/* Enable HT only for DATA frames and not for EAPOL */
-		txctl->ht = (hw->conf.ht_cap.ht_supported &&
+		/* XXX why AMPDU only?? */
+		txctl->ht = (hw->conf.ht.enabled &&
 			    (tx_info->flags & IEEE80211_TX_CTL_AMPDU));
 
 		if (is_multicast_ether_addr(hdr->addr1)) {
@@ -854,7 +860,9 @@ static int ath_tx_send_normal(struct ath_softc *sc,
 
 	skb = (struct sk_buff *)bf->bf_mpdu;
 	tx_info = IEEE80211_SKB_CB(skb);
-	tx_info_priv = (struct ath_tx_info_priv *)tx_info->driver_data[0];
+
+	/* XXX: HACK! */
+	tx_info_priv = (struct ath_tx_info_priv *)tx_info->control.vif;
 	memcpy(bf->bf_rcs, tx_info_priv->rcs, 4 * sizeof(tx_info_priv->rcs[0]));
 
 	/* update starting sequence number for subsequent ADDBA request */
@@ -1248,8 +1256,9 @@ static int ath_tx_processq(struct ath_softc *sc, struct ath_txq *txq)
 		}
 		skb = bf->bf_mpdu;
 		tx_info = IEEE80211_SKB_CB(skb);
-		tx_info_priv = (struct ath_tx_info_priv *)
-			tx_info->driver_data[0];
+
+		/* XXX: HACK! */
+		tx_info_priv = (struct ath_tx_info_priv *) tx_info->control.vif;
 		if (ds->ds_txstat.ts_status & ATH9K_TXERR_FILT)
 			tx_info->flags |= IEEE80211_TX_STAT_TX_FILTERED;
 		if ((ds->ds_txstat.ts_status & ATH9K_TXERR_FILT) == 0 &&
@@ -1430,7 +1439,8 @@ static int ath_tx_send_ampdu(struct ath_softc *sc,
 
 	skb = (struct sk_buff *)bf->bf_mpdu;
 	tx_info = IEEE80211_SKB_CB(skb);
-	tx_info_priv = (struct ath_tx_info_priv *)tx_info->driver_data[0];
+	/* XXX: HACK! */
+	tx_info_priv = (struct ath_tx_info_priv *)tx_info->control.vif;
 	memcpy(bf->bf_rcs, tx_info_priv->rcs, 4 * sizeof(tx_info_priv->rcs[0]));
 
 	/* Add sub-frame to BAW */
@@ -1450,7 +1460,8 @@ static int ath_tx_send_ampdu(struct ath_softc *sc,
  */
 
 static u32 ath_lookup_rate(struct ath_softc *sc,
-				 struct ath_buf *bf)
+			   struct ath_buf *bf,
+			   struct ath_atx_tid *tid)
 {
 	const struct ath9k_rate_table *rt = sc->sc_currates;
 	struct sk_buff *skb;
@@ -1464,7 +1475,7 @@ static u32 ath_lookup_rate(struct ath_softc *sc,
 	skb = (struct sk_buff *)bf->bf_mpdu;
 	tx_info = IEEE80211_SKB_CB(skb);
 	tx_info_priv = (struct ath_tx_info_priv *)
-		tx_info->driver_data[0];
+		tx_info->control.vif; /* XXX: HACK! */
 	memcpy(bf->bf_rcs,
 		tx_info_priv->rcs, 4 * sizeof(tx_info_priv->rcs[0]));
 
@@ -1504,7 +1515,7 @@ static u32 ath_lookup_rate(struct ath_softc *sc,
 	 * The IE, however can hold upto 65536, which shows up here
 	 * as zero. Ignore 65536 since we  are constrained by hw.
 	 */
-	maxampdu = sc->sc_ht_info.maxampdu;
+	maxampdu = tid->an->maxampdu;
 	if (maxampdu)
 		aggr_limit = min(aggr_limit, maxampdu);
 
@@ -1518,6 +1529,7 @@ static u32 ath_lookup_rate(struct ath_softc *sc,
  */
 
 static int ath_compute_num_delims(struct ath_softc *sc,
+				  struct ath_atx_tid *tid,
 				  struct ath_buf *bf,
 				  u16 frmlen)
 {
@@ -1545,7 +1557,7 @@ static int ath_compute_num_delims(struct ath_softc *sc,
 	 * required minimum length for subframe. Take into account
 	 * whether high rate is 20 or 40Mhz and half or full GI.
 	 */
-	mpdudensity = sc->sc_ht_info.mpdudensity;
+	mpdudensity = tid->an->mpdudensity;
 
 	/*
 	 * If there is no mpdu density restriction, no further calculation
@@ -1619,7 +1631,7 @@ static enum ATH_AGGR_STATUS ath_tx_form_aggr(struct ath_softc *sc,
 		}
 
 		if (!rl) {
-			aggr_limit = ath_lookup_rate(sc, bf);
+			aggr_limit = ath_lookup_rate(sc, bf, tid);
 			rl = 1;
 			/*
 			 * Is rate dual stream
@@ -1657,7 +1669,7 @@ static enum ATH_AGGR_STATUS ath_tx_form_aggr(struct ath_softc *sc,
 		 * Get the delimiters needed to meet the MPDU
 		 * density for this node.
 		 */
-		ndelim = ath_compute_num_delims(sc, bf_first, bf->bf_frmlen);
+		ndelim = ath_compute_num_delims(sc, tid, bf_first, bf->bf_frmlen);
 
 		bpad = PADBYTES(al_delta) + (ndelim << 2);
 
@@ -1924,7 +1936,8 @@ static int ath_tx_start_dma(struct ath_softc *sc,
 
 	bf->bf_flags = txctl->flags;
 	bf->bf_keytype = txctl->keytype;
-	tx_info_priv = (struct ath_tx_info_priv *)tx_info->driver_data[0];
+	/* XXX: HACK! */
+	tx_info_priv = (struct ath_tx_info_priv *)tx_info->control.vif;
 	rcs = tx_info_priv->rcs;
 	bf->bf_rcs[0] = rcs[0];
 	bf->bf_rcs[1] = rcs[1];
@@ -2630,7 +2643,7 @@ void ath_tx_node_init(struct ath_softc *sc, struct ath_node *an)
 		struct ath_atx_ac *ac;
 		int tidno, acno;
 
-		sc->sc_ht_info.maxampdu = ATH_AMPDU_LIMIT_DEFAULT;
+		an->maxampdu = ATH_AMPDU_LIMIT_DEFAULT;
 
 		/*
 		 * Init per tid tx state
