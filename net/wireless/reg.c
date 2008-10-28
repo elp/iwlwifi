@@ -42,10 +42,12 @@
 #include "core.h"
 #include "reg.h"
 
-/* wiphy is set if this request's initiator is REGDOM_SET_BY_DRIVER */
+/*
+ * wiphy is set if this request's initiator is
+ * REGDOM_SET_BY_COUNTRY_IE or _DRIVER
+ */
 struct regulatory_request {
 	struct wiphy *wiphy;
-	int granted;
 	enum reg_set_by initiator;
 	char alpha2[2];
 };
@@ -296,96 +298,6 @@ static int call_crda(const char *alpha2)
 	return kobject_uevent_env(&reg_pdev->dev.kobj, KOBJ_CHANGE, envp);
 }
 
-/* This has the logic which determines when a new request
- * should be ignored. */
-static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
-	char *alpha2, struct ieee80211_regdomain *rd)
-{
-	/* All initial requests are respected */
-	if (!last_request)
-		return 0;
-
-	switch (set_by) {
-	case REGDOM_SET_BY_INIT:
-		return -EINVAL;
-	case REGDOM_SET_BY_CORE:
-		/* Always respect new wireless core hints, should only
-		 * come in for updating the world regulatory domain at init
-		 * anyway */
-		return 0;
-	case REGDOM_SET_BY_COUNTRY_IE:
-		if (last_request->initiator == REGDOM_SET_BY_COUNTRY_IE) {
-			if (last_request->wiphy != wiphy) {
-				/* Two cards with two APs claiming different
-				 * different Country IE alpha2s!
-				 * You're special!! */
-				if (!alpha2_equal(last_request->alpha2,
-						cfg80211_regdomain->alpha2)) {
-					/* XXX: Deal with conflict, consider
-					 * building a new one out of the
-					 * intersection */
-					WARN_ON(1);
-					return -EOPNOTSUPP;
-				}
-				return -EALREADY;
-			}
-			/* Two consecutive Country IE hints on the same wiphy */
-			if (!alpha2_equal(cfg80211_regdomain->alpha2, alpha2))
-				return 0;
-			return -EALREADY;
-		}
-		if (WARN_ON(!is_alpha2_set(alpha2) || !is_an_alpha2(alpha2)),
-				"Invalid Country IE regulatory hint passed "
-				"to the wireless core\n")
-			return -EINVAL;
-		/* We ignore Country IE hints for now, as we haven't yet
-		 * added the dot11MultiDomainCapabilityEnabled flag
-		 * for wiphys */
-		return 1;
-	case REGDOM_SET_BY_DRIVER:
-		BUG_ON(!wiphy);
-		if (last_request->initiator == REGDOM_SET_BY_DRIVER) {
-			/* Two separate drivers hinting different things,
-			 * this is possible if you have two devices present
-			 * on a system with different EEPROM regulatory
-			 * readings. XXX: Do intersection, we support only
-			 * the first regulatory hint for now */
-			if (last_request->wiphy != wiphy)
-				return -EALREADY;
-			if (rd)
-				return -EALREADY;
-			/* Driver should not be trying to hint different
-			 * regulatory domains! */
-			BUG_ON(!alpha2_equal(alpha2,
-					cfg80211_regdomain->alpha2));
-			return -EALREADY;
-		}
-		if (last_request->initiator == REGDOM_SET_BY_CORE)
-			return 0;
-		/* XXX: Handle intersection, and add the
-		 * dot11MultiDomainCapabilityEnabled flag to wiphy. For now
-		 * we assume the driver has this set to false, following the
-		 * 802.11d dot11MultiDomainCapabilityEnabled documentation */
-		if (last_request->initiator == REGDOM_SET_BY_COUNTRY_IE)
-			return 0;
-		return 0;
-	case REGDOM_SET_BY_USER:
-		if (last_request->initiator == REGDOM_SET_BY_USER ||
-		    last_request->initiator == REGDOM_SET_BY_CORE)
-			return 0;
-		/* Drivers can use their wiphy's reg_notifier()
-		 * to override any information */
-		if (last_request->initiator == REGDOM_SET_BY_DRIVER)
-			return 0;
-		/* XXX: Handle intersection */
-		if (last_request->initiator == REGDOM_SET_BY_COUNTRY_IE)
-			return -EOPNOTSUPP;
-		return 0;
-	default:
-		return -EINVAL;
-	}
-}
-
 /* Used by nl80211 before kmalloc'ing our regulatory domain */
 bool reg_is_valid_request(const char *alpha2)
 {
@@ -556,22 +468,79 @@ void wiphy_update_regulatory(struct wiphy *wiphy, enum reg_set_by setby)
 	}
 }
 
+/* This has the logic which determines when a new request
+ * should be ignored. */
+static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
+			  const char *alpha2)
+{
+	/* All initial requests are respected */
+	if (!last_request)
+		return 0;
+
+	switch (set_by) {
+	case REGDOM_SET_BY_INIT:
+		return -EINVAL;
+	case REGDOM_SET_BY_CORE:
+		/*
+		 * Always respect new wireless core hints, should only happen
+		 * when updating the world regulatory domain at init.
+		 */
+		return 0;
+	case REGDOM_SET_BY_COUNTRY_IE:
+		if (unlikely(!is_an_alpha2(alpha2)))
+			return -EINVAL;
+		if (last_request->initiator == REGDOM_SET_BY_COUNTRY_IE) {
+			if (last_request->wiphy != wiphy) {
+				/*
+				 * Two cards with two APs claiming different
+				 * different Country IE alpha2s. We could
+				 * intersect them, but that seems unlikely
+				 * to be correct. Reject second one for now.
+				 */
+				if (!alpha2_equal(alpha2,
+						  cfg80211_regdomain->alpha2))
+					return -EOPNOTSUPP;
+				return -EALREADY;
+			}
+			/* Two consecutive Country IE hints on the same wiphy */
+			if (!alpha2_equal(cfg80211_regdomain->alpha2, alpha2))
+				return 0;
+			return -EALREADY;
+		}
+		/*
+		 * Ignore Country IE hints for now, need to think about
+		 * what we need to do to support multi-domain operation.
+		 */
+		return -EOPNOTSUPP;
+	case REGDOM_SET_BY_DRIVER:
+		if (last_request->initiator == REGDOM_SET_BY_DRIVER)
+			return -EALREADY;
+		return 0;
+	case REGDOM_SET_BY_USER:
+		/*
+		 * If the user wants to override the AP's hint, we may
+		 * need to follow both and use the intersection. For now,
+		 * reject any such attempt (but we don't support country
+		 * IEs right now anyway.)
+		 */
+		if (last_request->initiator == REGDOM_SET_BY_COUNTRY_IE)
+			return -EOPNOTSUPP;
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
 /* Caller must hold &cfg80211_drv_mutex */
 int __regulatory_hint(struct wiphy *wiphy, enum reg_set_by set_by,
-		      const char *alpha2, struct ieee80211_regdomain *rd)
+		      const char *alpha2)
 {
 	struct regulatory_request *request;
-	char *rd_alpha2;
 	int r = 0;
 
-	r = ignore_request(wiphy, set_by, (char *) alpha2, rd);
+	r = ignore_request(wiphy, set_by, alpha2);
 	if (r)
 		return r;
-
-	if (rd)
-		rd_alpha2 = rd->alpha2;
-	else
-		rd_alpha2 = (char *) alpha2;
 
 	switch (set_by) {
 	case REGDOM_SET_BY_CORE:
@@ -579,19 +548,17 @@ int __regulatory_hint(struct wiphy *wiphy, enum reg_set_by set_by,
 	case REGDOM_SET_BY_DRIVER:
 	case REGDOM_SET_BY_USER:
 		request = kzalloc(sizeof(struct regulatory_request),
-			GFP_KERNEL);
+				  GFP_KERNEL);
 		if (!request)
 			return -ENOMEM;
 
-		request->alpha2[0] = rd_alpha2[0];
-		request->alpha2[1] = rd_alpha2[1];
+		request->alpha2[0] = alpha2[0];
+		request->alpha2[1] = alpha2[1];
 		request->initiator = set_by;
 		request->wiphy = wiphy;
 
 		kfree(last_request);
 		last_request = request;
-		if (rd)
-			break;
 		r = call_crda(alpha2);
 #ifndef CONFIG_WIRELESS_OLD_REGULATORY
 		if (r)
@@ -606,26 +573,13 @@ int __regulatory_hint(struct wiphy *wiphy, enum reg_set_by set_by,
 	return r;
 }
 
-/* If rd is not NULL and if this call fails the caller must free it */
-int regulatory_hint(struct wiphy *wiphy, const char *alpha2,
-	struct ieee80211_regdomain *rd)
+void regulatory_hint(struct wiphy *wiphy, const char *alpha2)
 {
-	int r;
-	BUG_ON(!rd && !alpha2);
+	BUG_ON(!alpha2);
 
 	mutex_lock(&cfg80211_drv_mutex);
-
-	r = __regulatory_hint(wiphy, REGDOM_SET_BY_DRIVER, alpha2, rd);
-	if (r || !rd)
-		goto unlock_and_exit;
-
-	/* If the driver passed a regulatory domain we skipped asking
-	 * userspace for one so we can now go ahead and set it */
-	r = set_regdom(rd);
-
-unlock_and_exit:
+	__regulatory_hint(wiphy, REGDOM_SET_BY_DRIVER, alpha2);
 	mutex_unlock(&cfg80211_drv_mutex);
-	return r;
 }
 EXPORT_SYMBOL(regulatory_hint);
 
@@ -691,6 +645,7 @@ void print_regdomain_info(const struct ieee80211_regdomain *rd)
 	print_rd_rules(rd);
 }
 
+/* Takes ownership of rd only if it doesn't fail */
 static int __set_regdom(const struct ieee80211_regdomain *rd)
 {
 	/* Some basic sanity checks first */
@@ -744,7 +699,6 @@ static int __set_regdom(const struct ieee80211_regdomain *rd)
 
 	/* Tada! */
 	cfg80211_regdomain = rd;
-	last_request->granted = 1;
 
 	return 0;
 }
@@ -752,16 +706,17 @@ static int __set_regdom(const struct ieee80211_regdomain *rd)
 
 /* Use this call to set the current regulatory domain. Conflicts with
  * multiple drivers can be ironed out later. Caller must've already
- * kmalloc'd the rd structure. If this calls fails you should kfree()
- * the passed rd. Caller must hold cfg80211_drv_mutex */
+ * kmalloc'd the rd structure. Caller must hold cfg80211_drv_mutex */
 int set_regdom(const struct ieee80211_regdomain *rd)
 {
 	int r;
 
 	/* Note that this doesn't update the wiphys, this is done below */
 	r = __set_regdom(rd);
-	if (r)
+	if (r) {
+		kfree(rd);
 		return r;
+	}
 
 	/* This would make this whole thing pointless */
 	BUG_ON(rd != cfg80211_regdomain);
@@ -793,11 +748,11 @@ int regulatory_init(void)
 	 * that is not a valid ISO / IEC 3166 alpha2 */
 	if (ieee80211_regdom[0] != 'E' || ieee80211_regdom[1] != 'U')
 		err = __regulatory_hint(NULL, REGDOM_SET_BY_CORE,
-					ieee80211_regdom, NULL);
+					ieee80211_regdom);
 #else
 	cfg80211_regdomain = cfg80211_world_regdom;
 
-	err = __regulatory_hint(NULL, REGDOM_SET_BY_CORE, "00", NULL);
+	err = __regulatory_hint(NULL, REGDOM_SET_BY_CORE, "00");
 	if (err)
 		printk(KERN_ERR "cfg80211: calling CRDA failed - "
 		       "unable to update world regulatory domain, "

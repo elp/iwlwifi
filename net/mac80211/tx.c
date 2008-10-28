@@ -565,8 +565,8 @@ ieee80211_tx_h_rate_ctrl(struct ieee80211_tx_data *tx)
 				IEEE80211_TX_RC_USE_RTS_CTS;
 
 		/* RC is busted */
-		if (WARN_ON(info->control.rates[i].idx >=
-			    sband->n_bitrates)) {
+		if (WARN_ON_ONCE(info->control.rates[i].idx >=
+				 sband->n_bitrates)) {
 			info->control.rates[i].idx = -1;
 			continue;
 		}
@@ -663,6 +663,7 @@ ieee80211_tx_h_sequence(struct ieee80211_tx_data *tx)
 static ieee80211_tx_result debug_noinline
 ieee80211_tx_h_fragment(struct ieee80211_tx_data *tx)
 {
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(tx->skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)tx->skb->data;
 	size_t hdrlen, per_fragm, num_fragm, payload_len, left;
 	struct sk_buff **frags, *first, *frag;
@@ -679,9 +680,7 @@ ieee80211_tx_h_fragment(struct ieee80211_tx_data *tx)
 	 * This scenario is handled in __ieee80211_tx_prepare but extra
 	 * caution taken here as fragmented ampdu may cause Tx stop.
 	 */
-	if (WARN_ON(tx->flags & IEEE80211_TX_CTL_AMPDU ||
-		    skb_get_queue_mapping(tx->skb) >=
-			ieee80211_num_regular_queues(&tx->local->hw)))
+	if (WARN_ON(info->flags & IEEE80211_TX_CTL_AMPDU))
 		return TX_DROP;
 
 	first = tx->skb;
@@ -953,7 +952,8 @@ __ieee80211_tx_prepare(struct ieee80211_tx_data *tx,
 	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 
-	int hdrlen;
+	int hdrlen, tid;
+	u8 *qc, *state;
 
 	memset(tx, 0, sizeof(*tx));
 	tx->skb = skb;
@@ -983,6 +983,15 @@ __ieee80211_tx_prepare(struct ieee80211_tx_data *tx,
 	hdr = (struct ieee80211_hdr *) skb->data;
 
 	tx->sta = sta_info_get(local, hdr->addr1);
+
+	if (tx->sta && ieee80211_is_data_qos(hdr->frame_control)) {
+		qc = ieee80211_get_qos_ctl(hdr);
+		tid = *qc & IEEE80211_QOS_CTL_TID_MASK;
+
+		state = &tx->sta->ampdu_mlme.tid_state_tx[tid];
+		if (*state == HT_AGG_STATE_OPERATIONAL)
+			info->flags |= IEEE80211_TX_CTL_AMPDU;
+	}
 
 	if (is_multicast_ether_addr(hdr->addr1)) {
 		tx->flags &= ~IEEE80211_TX_UNICAST;
@@ -1174,7 +1183,7 @@ retry:
 		 * queues, there's no reason for a driver to reject
 		 * a frame there, warn and drop it.
 		 */
-		if (WARN_ON(queue >= ieee80211_num_regular_queues(&local->hw)))
+		if (WARN_ON(info->flags & IEEE80211_TX_CTL_AMPDU))
 			goto drop;
 
 		store = &local->pending_packet[queue];

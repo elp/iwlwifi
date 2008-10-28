@@ -670,7 +670,6 @@ static int ap_sta_ps_end(struct sta_info *sta)
 	struct ieee80211_local *local = sdata->local;
 	struct sk_buff *skb;
 	int sent = 0;
-	struct ieee80211_tx_info *info;
 	DECLARE_MAC_BUF(mac);
 
 	atomic_dec(&sdata->bss->num_sta_ps);
@@ -687,13 +686,11 @@ static int ap_sta_ps_end(struct sta_info *sta)
 
 	/* Send all buffered frames to the station */
 	while ((skb = skb_dequeue(&sta->tx_filtered)) != NULL) {
-		info = IEEE80211_SKB_CB(skb);
 		sent++;
-		info->flags |= IEEE80211_TX_CTL_REQUEUE;
+		skb->requeue = 1;
 		dev_queue_xmit(skb);
 	}
 	while ((skb = skb_dequeue(&sta->ps_tx_buf)) != NULL) {
-		info = IEEE80211_SKB_CB(skb);
 		local->total_ps_buffered--;
 		sent++;
 #ifdef CONFIG_MAC80211_VERBOSE_PS_DEBUG
@@ -701,7 +698,7 @@ static int ap_sta_ps_end(struct sta_info *sta)
 		       "since STA not sleeping anymore\n", sdata->dev->name,
 		       print_mac(mac, sta->sta.addr), sta->sta.aid);
 #endif /* CONFIG_MAC80211_VERBOSE_PS_DEBUG */
-		info->flags |= IEEE80211_TX_CTL_REQUEUE;
+		skb->requeue = 1;
 		dev_queue_xmit(skb);
 	}
 
@@ -1380,6 +1377,7 @@ ieee80211_rx_h_amsdu(struct ieee80211_rx_data *rx)
 	return RX_QUEUED;
 }
 
+#ifdef CONFIG_MAC80211_MESH
 static ieee80211_rx_result
 ieee80211_rx_h_mesh_fwding(struct ieee80211_rx_data *rx)
 {
@@ -1454,7 +1452,7 @@ ieee80211_rx_h_mesh_fwding(struct ieee80211_rx_data *rx)
 	else
 		return RX_DROP_MONITOR;
 }
-
+#endif
 
 static ieee80211_rx_result debug_noinline
 ieee80211_rx_h_data(struct ieee80211_rx_data *rx)
@@ -1551,14 +1549,6 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 	/* all categories we currently handle have action_code */
 	if (len < IEEE80211_MIN_ACTION_SIZE + 1)
 		return RX_DROP_MONITOR;
-
-	/*
-	 * FIXME: revisit this, I'm sure we should handle most
-	 *	  of these frames in other modes as well!
-	 */
-	if (sdata->vif.type != NL80211_IFTYPE_STATION &&
-	    sdata->vif.type != NL80211_IFTYPE_ADHOC)
-		return RX_CONTINUE;
 
 	switch (mgmt->u.action.category) {
 	case WLAN_CATEGORY_BACK:
@@ -1781,8 +1771,10 @@ static void ieee80211_invoke_rx_handlers(struct ieee80211_sub_if_data *sdata,
 	/* must be after MMIC verify so header is counted in MPDU mic */
 	CALL_RXH(ieee80211_rx_h_remove_qos_control)
 	CALL_RXH(ieee80211_rx_h_amsdu)
+#ifdef CONFIG_MAC80211_MESH
 	if (ieee80211_vif_is_mesh(&sdata->vif))
 		CALL_RXH(ieee80211_rx_h_mesh_fwding);
+#endif
 	CALL_RXH(ieee80211_rx_h_data)
 	CALL_RXH(ieee80211_rx_h_ctrl)
 	CALL_RXH(ieee80211_rx_h_action)

@@ -954,10 +954,7 @@ static int ath_attach(u16 devid,
 			&sc->sbands[IEEE80211_BAND_5GHZ];
 	}
 
-	/* FIXME: Have to figure out proper hw init values later */
-
 	hw->queues = 4;
-	hw->ampdu_queues = 1;
 
 	/* Register rate control */
 	hw->rate_control_algorithm = "ath9k_rate_control";
@@ -1251,7 +1248,8 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 		sc->sc_ah->ah_channels[pos].chanmode =
 			ath_get_extchanmode(sc, curchan);
 
-	sc->sc_config.txpowlimit = 2 * conf->power_level;
+	if (changed & IEEE80211_CONF_CHANGE_POWER)
+		sc->sc_config.txpowlimit = 2 * conf->power_level;
 
 	/* set h/w channel */
 	if (ath_set_channel(sc, &sc->sc_ah->ah_channels[pos]) < 0)
@@ -1747,7 +1745,8 @@ static int ath_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	hw->flags = IEEE80211_HW_RX_INCLUDES_FCS |
 		IEEE80211_HW_HOST_BROADCAST_PS_BUFFERING |
 		IEEE80211_HW_SIGNAL_DBM |
-		IEEE80211_HW_NOISE_DBM;
+		IEEE80211_HW_NOISE_DBM |
+		IEEE80211_HW_AMPDU_AGGREGATION;
 
 	hw->wiphy->interface_modes =
 		BIT(NL80211_IFTYPE_AP) |

@@ -979,6 +979,39 @@ static void tcp_update_reordering(struct sock *sk, const int metric,
 	}
 }
 
+/* This must be called before lost_out is incremented */
+static void tcp_verify_retransmit_hint(struct tcp_sock *tp, struct sk_buff *skb)
+{
+	if ((tp->retransmit_skb_hint == NULL) ||
+	    before(TCP_SKB_CB(skb)->seq,
+		   TCP_SKB_CB(tp->retransmit_skb_hint)->seq))
+		tp->retransmit_skb_hint = skb;
+
+	if (!tp->lost_out ||
+	    after(TCP_SKB_CB(skb)->end_seq, tp->retransmit_high))
+		tp->retransmit_high = TCP_SKB_CB(skb)->end_seq;
+}
+
+static void tcp_skb_mark_lost(struct tcp_sock *tp, struct sk_buff *skb)
+{
+	if (!(TCP_SKB_CB(skb)->sacked & (TCPCB_LOST|TCPCB_SACKED_ACKED))) {
+		tcp_verify_retransmit_hint(tp, skb);
+
+		tp->lost_out += tcp_skb_pcount(skb);
+		TCP_SKB_CB(skb)->sacked |= TCPCB_LOST;
+	}
+}
+
+void tcp_skb_mark_lost_uncond_verify(struct tcp_sock *tp, struct sk_buff *skb)
+{
+	tcp_verify_retransmit_hint(tp, skb);
+
+	if (!(TCP_SKB_CB(skb)->sacked & (TCPCB_LOST|TCPCB_SACKED_ACKED))) {
+		tp->lost_out += tcp_skb_pcount(skb);
+		TCP_SKB_CB(skb)->sacked |= TCPCB_LOST;
+	}
+}
+
 /* This procedure tags the retransmission queue when SACKs arrive.
  *
  * We have three tag bits: SACKED(S), RETRANS(R) and LOST(L).
@@ -1155,13 +1188,7 @@ static void tcp_mark_lost_retrans(struct sock *sk)
 			TCP_SKB_CB(skb)->sacked &= ~TCPCB_SACKED_RETRANS;
 			tp->retrans_out -= tcp_skb_pcount(skb);
 
-			/* clear lost hint */
-			tp->retransmit_skb_hint = NULL;
-
-			if (!(TCP_SKB_CB(skb)->sacked & (TCPCB_LOST|TCPCB_SACKED_ACKED))) {
-				tp->lost_out += tcp_skb_pcount(skb);
-				TCP_SKB_CB(skb)->sacked |= TCPCB_LOST;
-			}
+			tcp_skb_mark_lost_uncond_verify(tp, skb);
 			NET_INC_STATS_BH(sock_net(sk), LINUX_MIB_TCPLOSTRETRANSMIT);
 		} else {
 			if (before(ack_seq, new_low_seq))
@@ -1271,9 +1298,6 @@ static int tcp_sacktag_one(struct sk_buff *skb, struct sock *sk,
 					~(TCPCB_LOST|TCPCB_SACKED_RETRANS);
 				tp->lost_out -= tcp_skb_pcount(skb);
 				tp->retrans_out -= tcp_skb_pcount(skb);
-
-				/* clear lost hint */
-				tp->retransmit_skb_hint = NULL;
 			}
 		} else {
 			if (!(sacked & TCPCB_RETRANS)) {
@@ -1292,9 +1316,6 @@ static int tcp_sacktag_one(struct sk_buff *skb, struct sock *sk,
 			if (sacked & TCPCB_LOST) {
 				TCP_SKB_CB(skb)->sacked &= ~TCPCB_LOST;
 				tp->lost_out -= tcp_skb_pcount(skb);
-
-				/* clear lost hint */
-				tp->retransmit_skb_hint = NULL;
 			}
 		}
 
@@ -1324,7 +1345,6 @@ static int tcp_sacktag_one(struct sk_buff *skb, struct sock *sk,
 	if (dup_sack && (TCP_SKB_CB(skb)->sacked & TCPCB_SACKED_RETRANS)) {
 		TCP_SKB_CB(skb)->sacked &= ~TCPCB_SACKED_RETRANS;
 		tp->retrans_out -= tcp_skb_pcount(skb);
-		tp->retransmit_skb_hint = NULL;
 	}
 
 	return flag;
@@ -1726,6 +1746,8 @@ int tcp_use_frto(struct sock *sk)
 		return 0;
 
 	skb = tcp_write_queue_head(sk);
+	if (tcp_skb_is_last(sk, skb))
+		return 1;
 	skb = tcp_write_queue_next(sk, skb);	/* Skips head */
 	tcp_for_write_queue_from(skb, sk) {
 		if (skb == tcp_send_head(sk))
@@ -1867,6 +1889,7 @@ static void tcp_enter_frto_loss(struct sock *sk, int allowed_segments, int flag)
 		if (!(TCP_SKB_CB(skb)->sacked & TCPCB_SACKED_ACKED)) {
 			TCP_SKB_CB(skb)->sacked |= TCPCB_LOST;
 			tp->lost_out += tcp_skb_pcount(skb);
+			tp->retransmit_high = TCP_SKB_CB(skb)->end_seq;
 		}
 	}
 	tcp_verify_left_out(tp);
@@ -1883,7 +1906,7 @@ static void tcp_enter_frto_loss(struct sock *sk, int allowed_segments, int flag)
 	tp->high_seq = tp->snd_nxt;
 	TCP_ECN_queue_cwr(tp);
 
-	tcp_clear_retrans_hints_partial(tp);
+	tcp_clear_all_retrans_hints(tp);
 }
 
 static void tcp_clear_retrans_partial(struct tcp_sock *tp)
@@ -1934,12 +1957,11 @@ void tcp_enter_loss(struct sock *sk, int how)
 		/* Push undo marker, if it was plain RTO and nothing
 		 * was retransmitted. */
 		tp->undo_marker = tp->snd_una;
-		tcp_clear_retrans_hints_partial(tp);
 	} else {
 		tp->sacked_out = 0;
 		tp->fackets_out = 0;
-		tcp_clear_all_retrans_hints(tp);
 	}
+	tcp_clear_all_retrans_hints(tp);
 
 	tcp_for_write_queue(skb, sk) {
 		if (skb == tcp_send_head(sk))
@@ -1952,6 +1974,7 @@ void tcp_enter_loss(struct sock *sk, int how)
 			TCP_SKB_CB(skb)->sacked &= ~TCPCB_SACKED_ACKED;
 			TCP_SKB_CB(skb)->sacked |= TCPCB_LOST;
 			tp->lost_out += tcp_skb_pcount(skb);
+			tp->retransmit_high = TCP_SKB_CB(skb)->end_seq;
 		}
 	}
 	tcp_verify_left_out(tp);
@@ -2157,19 +2180,6 @@ static int tcp_time_to_recover(struct sock *sk)
 	return 0;
 }
 
-/* RFC: This is from the original, I doubt that this is necessary at all:
- * clear xmit_retrans hint if seq of this skb is beyond hint. How could we
- * retransmitted past LOST markings in the first place? I'm not fully sure
- * about undo and end of connection cases, which can cause R without L?
- */
-static void tcp_verify_retransmit_hint(struct tcp_sock *tp, struct sk_buff *skb)
-{
-	if ((tp->retransmit_skb_hint != NULL) &&
-	    before(TCP_SKB_CB(skb)->seq,
-		   TCP_SKB_CB(tp->retransmit_skb_hint)->seq))
-		tp->retransmit_skb_hint = NULL;
-}
-
 /* Mark head of queue up as lost. With RFC3517 SACK, the packets is
  * is against sacked "cnt", otherwise it's against facked "cnt"
  */
@@ -2217,11 +2227,7 @@ static void tcp_mark_head_lost(struct sock *sk, int packets)
 			cnt = packets;
 		}
 
-		if (!(TCP_SKB_CB(skb)->sacked & (TCPCB_SACKED_ACKED|TCPCB_LOST))) {
-			TCP_SKB_CB(skb)->sacked |= TCPCB_LOST;
-			tp->lost_out += tcp_skb_pcount(skb);
-			tcp_verify_retransmit_hint(tp, skb);
-		}
+		tcp_skb_mark_lost(tp, skb);
 	}
 	tcp_verify_left_out(tp);
 }
@@ -2263,11 +2269,7 @@ static void tcp_update_scoreboard(struct sock *sk, int fast_rexmit)
 			if (!tcp_skb_timedout(sk, skb))
 				break;
 
-			if (!(TCP_SKB_CB(skb)->sacked & (TCPCB_SACKED_ACKED|TCPCB_LOST))) {
-				TCP_SKB_CB(skb)->sacked |= TCPCB_LOST;
-				tp->lost_out += tcp_skb_pcount(skb);
-				tcp_verify_retransmit_hint(tp, skb);
-			}
+			tcp_skb_mark_lost(tp, skb);
 		}
 
 		tp->scoreboard_skb_hint = skb;
@@ -2378,10 +2380,6 @@ static void tcp_undo_cwr(struct sock *sk, const int undo)
 	}
 	tcp_moderate_cwnd(tp);
 	tp->snd_cwnd_stamp = tcp_time_stamp;
-
-	/* There is something screwy going on with the retrans hints after
-	   an undo */
-	tcp_clear_all_retrans_hints(tp);
 }
 
 static inline int tcp_may_undo(struct tcp_sock *tp)
@@ -2838,7 +2836,8 @@ static u32 tcp_tso_acked(struct sock *sk, struct sk_buff *skb)
  * is before the ack sequence we can discard it as it's confirmed to have
  * arrived at the other end.
  */
-static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets)
+static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
+			       u32 prior_snd_una)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	const struct inet_connection_sock *icsk = inet_csk(sk);
@@ -2848,6 +2847,7 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets)
 	int flag = 0;
 	u32 pkts_acked = 0;
 	u32 reord = tp->packets_out;
+	u32 prior_sacked = tp->sacked_out;
 	s32 seq_rtt = -1;
 	s32 ca_seq_rtt = -1;
 	ktime_t last_ackt = net_invalid_timestamp();
@@ -2904,9 +2904,6 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets)
 		if (sacked & TCPCB_LOST)
 			tp->lost_out -= acked_pcount;
 
-		if (unlikely(tp->urg_mode && !before(end_seq, tp->snd_up)))
-			tp->urg_mode = 0;
-
 		tp->packets_out -= acked_pcount;
 		pkts_acked += acked_pcount;
 
@@ -2929,8 +2926,15 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets)
 
 		tcp_unlink_write_queue(skb, sk);
 		sk_wmem_free_skb(sk, skb);
-		tcp_clear_all_retrans_hints(tp);
+		tp->scoreboard_skb_hint = NULL;
+		if (skb == tp->retransmit_skb_hint)
+			tp->retransmit_skb_hint = NULL;
+		if (skb == tp->lost_skb_hint)
+			tp->lost_skb_hint = NULL;
 	}
+
+	if (likely(between(tp->snd_up, prior_snd_una, tp->snd_una)))
+		tp->snd_up = tp->snd_una;
 
 	if (skb && (TCP_SKB_CB(skb)->sacked & TCPCB_SACKED_ACKED))
 		flag |= FLAG_SACK_RENEGING;
@@ -2948,6 +2952,15 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets)
 			/* Non-retransmitted hole got filled? That's reordering */
 			if (reord < prior_fackets)
 				tcp_update_reordering(sk, tp->fackets_out - reord, 0);
+
+			/* No need to care for underflows here because
+			 * the lost_skb_hint gets NULLed if we're past it
+			 * (or something non-trivial happened)
+			 */
+			if (tcp_is_fack(tp))
+				tp->lost_cnt_hint -= pkts_acked;
+			else
+				tp->lost_cnt_hint -= prior_sacked - tp->sacked_out;
 		}
 
 		tp->fackets_out -= min(pkts_acked, tp->fackets_out);
@@ -3299,7 +3312,7 @@ static int tcp_ack(struct sock *sk, struct sk_buff *skb, int flag)
 		goto no_queue;
 
 	/* See if we can take anything off of the retransmit queue. */
-	flag |= tcp_clean_rtx_queue(sk, prior_fackets);
+	flag |= tcp_clean_rtx_queue(sk, prior_fackets, prior_snd_una);
 
 	if (tp->frto_counter)
 		frto_cwnd = tcp_process_frto(sk, flag);
@@ -4138,7 +4151,7 @@ drop:
 				skb1 = skb1->prev;
 			}
 		}
-		__skb_insert(skb, skb1, skb1->next, &tp->out_of_order_queue);
+		__skb_queue_after(&tp->out_of_order_queue, skb1, skb);
 
 		/* And clean segments covered by new one as whole. */
 		while ((skb1 = skb->next) !=
@@ -4228,7 +4241,7 @@ tcp_collapse(struct sock *sk, struct sk_buff_head *list,
 		memcpy(nskb->head, skb->head, header);
 		memcpy(nskb->cb, skb->cb, sizeof(skb->cb));
 		TCP_SKB_CB(nskb)->seq = TCP_SKB_CB(nskb)->end_seq = start;
-		__skb_insert(nskb, skb->prev, skb, list);
+		__skb_queue_before(list, skb, nskb);
 		skb_set_owner_r(nskb, sk);
 
 		/* Copy data, releasing collapsed skbs. */
@@ -4436,8 +4449,8 @@ static void tcp_new_space(struct sock *sk)
 
 	if (tcp_should_expand_sndbuf(sk)) {
 		int sndmem = max_t(u32, tp->rx_opt.mss_clamp, tp->mss_cache) +
-			MAX_TCP_HEADER + 16 + sizeof(struct sk_buff),
-		    demanded = max_t(unsigned int, tp->snd_cwnd,
+			MAX_TCP_HEADER + 16 + sizeof(struct sk_buff);
+		int demanded = max_t(unsigned int, tp->snd_cwnd,
 				     tp->reordering + 1);
 		sndmem *= 2 * demanded;
 		if (sndmem > sk->sk_sndbuf)

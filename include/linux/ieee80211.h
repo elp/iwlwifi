@@ -12,8 +12,8 @@
  * published by the Free Software Foundation.
  */
 
-#ifndef IEEE80211_H
-#define IEEE80211_H
+#ifndef LINUX_IEEE80211_H
+#define LINUX_IEEE80211_H
 
 #include <linux/types.h>
 #include <asm/byteorder.h>
@@ -826,8 +826,7 @@ struct ieee80211_ht_info {
 /* Authentication algorithms */
 #define WLAN_AUTH_OPEN 0
 #define WLAN_AUTH_SHARED_KEY 1
-#define WLAN_AUTH_FAST_BSS_TRANSITION 2
-#define WLAN_AUTH_LEAP 128
+#define WLAN_AUTH_LEAP 2
 
 #define WLAN_AUTH_CHALLENGE_LEN 128
 
@@ -1114,4 +1113,4 @@ static inline u8 *ieee80211_get_DA(struct ieee80211_hdr *hdr)
 		return hdr->addr1;
 }
 
-#endif /* IEEE80211_H */
+#endif /* LINUX_IEEE80211_H */

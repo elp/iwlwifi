@@ -1695,7 +1695,7 @@ static int nl80211_req_set_reg(struct sk_buff *skb, struct genl_info *info)
 		return -EINVAL;
 #endif
 	mutex_lock(&cfg80211_drv_mutex);
-	r = __regulatory_hint(NULL, REGDOM_SET_BY_USER, data, NULL);
+	r = __regulatory_hint(NULL, REGDOM_SET_BY_USER, data);
 	mutex_unlock(&cfg80211_drv_mutex);
 	return r;
 }
@@ -1935,12 +1935,9 @@ static int nl80211_set_reg(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&cfg80211_drv_mutex);
 	r = set_regdom(rd);
 	mutex_unlock(&cfg80211_drv_mutex);
-	if (r)
-		goto bad_reg;
-
 	return r;
 
-bad_reg:
+ bad_reg:
 	kfree(rd);
 	return -EINVAL;
 }

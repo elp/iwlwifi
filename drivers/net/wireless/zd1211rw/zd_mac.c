@@ -171,7 +171,7 @@ int zd_mac_init_hw(struct ieee80211_hw *hw)
 
 	r = zd_reg2alpha2(mac->regdomain, alpha2);
 	if (!r)
-		regulatory_hint(hw->wiphy, alpha2, NULL);
+		regulatory_hint(hw->wiphy, alpha2);
 
 	r = 0;
 disable_int:
@@ -611,7 +611,7 @@ static int filter_ack(struct ieee80211_hw *hw, struct ieee80211_hdr *rx_hdr,
 
 	q = &zd_hw_mac(hw)->ack_wait_queue;
 	spin_lock_irqsave(&q->lock, flags);
-	for (skb = q->next; skb != (struct sk_buff *)q; skb = skb->next) {
+	skb_queue_walk(q, skb) {
 		struct ieee80211_hdr *tx_hdr;
 
 		tx_hdr = (struct ieee80211_hdr *)skb->data;

@@ -180,6 +180,7 @@ source "net/tipc/Kconfig"
 source "net/atm/Kconfig"
 source "net/802/Kconfig"
 source "net/bridge/Kconfig"
+source "net/dsa/Kconfig"
 source "net/8021q/Kconfig"
 source "net/decnet/Kconfig"
 source "net/llc/Kconfig"
@@ -232,6 +233,7 @@ source "net/can/Kconfig"
 source "net/irda/Kconfig"
 source "net/bluetooth/Kconfig"
 source "net/rxrpc/Kconfig"
+source "net/phonet/Kconfig"
 
 config FIB_RULES
 	bool
