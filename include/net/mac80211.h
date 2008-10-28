@@ -272,18 +272,6 @@ enum mac80211_rate_control_flags {
 	IEEE80211_TX_RC_SHORT_GI		= BIT(7),
 };
 
-enum mac80211_rate_control_flags {
-	IEEE80211_TX_RC_USE_RTS_CTS		= BIT(0),
-	IEEE80211_TX_RC_USE_CTS_PROTECT		= BIT(1),
-	IEEE80211_TX_RC_USE_SHORT_PREAMBLE	= BIT(2),
-
-	/* rate index is an MCS rate number instead of an index */
-	IEEE80211_TX_RC_MCS			= BIT(3),
-	IEEE80211_TX_RC_GREEN_FIELD		= BIT(4),
-	IEEE80211_TX_RC_40_MHZ_WIDTH		= BIT(5),
-	IEEE80211_TX_RC_DUP_DATA		= BIT(6),
-	IEEE80211_TX_RC_SHORT_GI		= BIT(7),
-};
 
 /* there are 40 bytes if you don't need the rateset to be kept */
 #define IEEE80211_TX_INFO_DRIVER_DATA_SIZE 40

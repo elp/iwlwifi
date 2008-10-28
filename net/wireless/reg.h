@@ -21,15 +21,8 @@ int set_regdom(const struct ieee80211_regdomain *rd);
  * giving it an ISO/IEC 3166 alpha2 country code it knows its regulatory
  * domain should be in.
  *
- * Returns -EALREADY if *a regulatory domain* has already been set. Note that
- * this could be by another driver. It is safe for drivers to continue if
- * -EALREADY is returned, if drivers are not capable of world roaming they
- * should not register more channels than they support. Right now we only
- * support listening to the first driver hint. If the driver is capable
- * of world roaming but wants to respect its own EEPROM mappings for
- * specific regulatory domains it should register the @reg_notifier callback
- * on the &struct wiphy. Returns 0 if the hint went through fine or through an
- * intersection operation. Otherwise a standard error code is returned.
+ * Returns zero if all went fine, %-EALREADY if a regulatory domain had
+ * already been set or other standard error codes.
  *
  */
 extern int __regulatory_hint(struct wiphy *wiphy, enum reg_set_by set_by,
