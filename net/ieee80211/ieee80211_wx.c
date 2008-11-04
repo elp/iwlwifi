@@ -310,6 +310,7 @@ int ieee80211_wx_set_encode(struct ieee80211_device *ieee,
 	int i, key, key_provided, len;
 	struct ieee80211_crypt_data **crypt;
 	int host_crypto = ieee->host_encrypt || ieee->host_decrypt || ieee->host_build_iv;
+	DECLARE_SSID_BUF(ssid);
 
 	IEEE80211_DEBUG_WX("SET_ENCODE\n");
 
@@ -399,6 +400,10 @@ int ieee80211_wx_set_encode(struct ieee80211_device *ieee,
 
 	/* If a new key was provided, set it up */
 	if (erq->length > 0) {
+#ifdef CONFIG_IEEE80211_DEBUG
+		DECLARE_SSID_BUF(ssid);
+#endif
+
 		len = erq->length <= 5 ? 5 : 13;
 		memcpy(sec.keys[key], keybuf, erq->length);
 		if (len > erq->length)

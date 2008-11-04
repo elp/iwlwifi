@@ -2087,7 +2087,6 @@ static void iwl_alive_start(struct iwl_priv *priv)
 		iwl_error_recovery(priv);
 
 	iwl_power_update_mode(priv, 1);
-	ieee80211_notify_mac(priv->hw, IEEE80211_NOTIFY_RE_ASSOC);
 
 	if (test_and_clear_bit(STATUS_MODE_PENDING, &priv->status))
 		iwl_set_mode(priv, priv->iw_mode);
@@ -2339,6 +2338,7 @@ static void iwl_bg_alive_start(struct work_struct *data)
 	mutex_lock(&priv->mutex);
 	iwl_alive_start(priv);
 	mutex_unlock(&priv->mutex);
+	ieee80211_notify_mac(priv->hw, IEEE80211_NOTIFY_RE_ASSOC);
 }
 
 static void iwl_bg_rf_kill(struct work_struct *work)
@@ -2948,7 +2948,6 @@ static int iwl_mac_config_interface(struct ieee80211_hw *hw,
 {
 	struct iwl_priv *priv = hw->priv;
 	DECLARE_MAC_BUF(mac);
-	unsigned long flags;
 	int rc;
 
 	if (conf == NULL)
@@ -2967,13 +2966,6 @@ static int iwl_mac_config_interface(struct ieee80211_hw *hw,
 		rc = iwl_mac_beacon_update(hw, beacon);
 		if (rc)
 			return rc;
-	}
-
-	if ((priv->iw_mode == NL80211_IFTYPE_AP) &&
-	    (!conf->ssid_len)) {
-		IWL_DEBUG_MAC80211
-		    ("Leaving in AP mode because HostAPD is not ready.\n");
-		return 0;
 	}
 
 	if (!iwl_is_alive(priv))
@@ -3043,15 +3035,6 @@ static int iwl_mac_config_interface(struct ieee80211_hw *hw,
 	}
 
  done:
-	spin_lock_irqsave(&priv->lock, flags);
-	if (!conf->ssid_len)
-		memset(priv->essid, 0, IW_ESSID_MAX_SIZE);
-	else
-		memcpy(priv->essid, conf->ssid, conf->ssid_len);
-
-	priv->essid_len = conf->ssid_len;
-	spin_unlock_irqrestore(&priv->lock, flags);
-
 	IWL_DEBUG_MAC80211("leave\n");
 	mutex_unlock(&priv->mutex);
 
@@ -3094,8 +3077,6 @@ static void iwl_mac_remove_interface(struct ieee80211_hw *hw,
 	if (priv->vif == conf->vif) {
 		priv->vif = NULL;
 		memset(priv->bssid, 0, ETH_ALEN);
-		memset(priv->essid, 0, IW_ESSID_MAX_SIZE);
-		priv->essid_len = 0;
 	}
 	mutex_unlock(&priv->mutex);
 
