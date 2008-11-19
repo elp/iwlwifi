@@ -809,6 +809,12 @@ int iwl_remove_dynamic_key(struct iwl_priv *priv,
 		return 0;
 	}
 
+	if (WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
+		 "Removing wrong key %d 0x%x\n", keyconf->keyidx, key_flags)) {
+		spin_unlock_irqrestore(&priv->sta_lock, flags);
+		return 0;
+	}
+
 	if (!test_and_clear_bit(priv->stations[sta_id].sta.key.key_offset,
 		&priv->ucode_key_table))
 		IWL_ERROR("index %d not used in uCode key table.\n",
