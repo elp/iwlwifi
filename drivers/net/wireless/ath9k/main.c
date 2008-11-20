@@ -236,68 +236,6 @@ static void setup_ht_cap(struct ieee80211_sta_ht_cap *ht_info)
 	ht_info->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
 }
 
-static int ath_rate2idx(struct ath_softc *sc, int rate)
-{
-	int i = 0, cur_band, n_rates;
-	struct ieee80211_hw *hw = sc->hw;
-
-	cur_band = hw->conf.channel->band;
-	n_rates = sc->sbands[cur_band].n_bitrates;
-
-	for (i = 0; i < n_rates; i++) {
-		if (sc->sbands[cur_band].bitrates[i].bitrate == rate)
-			break;
-	}
-
-	/*
-	 * NB:mac80211 validates rx rate index against the supported legacy rate
-	 * index only (should be done against ht rates also), return the highest
-	 * legacy rate index for rx rate which does not match any one of the
-	 * supported basic and extended rates to make mac80211 happy.
-	 * The following hack will be cleaned up once the issue with
-	 * the rx rate index validation in mac80211 is fixed.
-	 */
-	if (i == n_rates)
-		return n_rates - 1;
-	return i;
-}
-
-static void ath9k_rx_prepare(struct ath_softc *sc,
-			     struct sk_buff *skb,
-			     struct ath_recv_status *status,
-			     struct ieee80211_rx_status *rx_status)
-{
-	struct ieee80211_hw *hw = sc->hw;
-	struct ieee80211_channel *curchan = hw->conf.channel;
-
-	memset(rx_status, 0, sizeof(struct ieee80211_rx_status));
-
-	rx_status->mactime = status->tsf;
-	rx_status->band = curchan->band;
-	rx_status->freq =  curchan->center_freq;
-	rx_status->noise = sc->sc_ani.sc_noise_floor;
-	rx_status->signal = rx_status->noise + status->rssi;
-	rx_status->rate_idx = ath_rate2idx(sc, (status->rateKbps / 100));
-	rx_status->antenna = status->antenna;
-
-	/* at 45 you will be able to use MCS 15 reliably. A more elaborate
-	 * scheme can be used here but it requires tables of SNR/throughput for
-	 * each possible mode used. */
-	rx_status->qual = status->rssi * 100 / 45;
-
-	/* rssi can be more than 45 though, anything above that
-	 * should be considered at 100% */
-	if (rx_status->qual > 100)
-		rx_status->qual = 100;
-
-	if (status->flags & ATH_RX_MIC_ERROR)
-		rx_status->flag |= RX_FLAG_MMIC_ERROR;
-	if (status->flags & ATH_RX_FCS_ERROR)
-		rx_status->flag |= RX_FLAG_FAILED_FCS_CRC;
-
-	rx_status->flag |= RX_FLAG_TSFT;
-}
-
 static void ath9k_ht_conf(struct ath_softc *sc,
 			  struct ieee80211_bss_conf *bss_conf)
 {
@@ -379,11 +317,6 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 			DPRINTF(sc, ATH_DBG_FATAL,
 				"%s: Unable to set channel\n",
 				__func__);
-
-		ath_rate_newstate(sc, avp);
-		/* Update ratectrl about the new state */
-		ath_rc_node_update(hw, avp->rc_node);
-
 		/* Start ANI */
 		mod_timer(&sc->sc_ani.timer,
 			jiffies + msecs_to_jiffies(ATH_ANI_POLLINTERVAL));
@@ -407,77 +340,6 @@ void ath_get_beaconconfig(struct ath_softc *sc,
 	conf->listen_interval = 100;
 	conf->dtim_count = 1;
 	conf->bmiss_timeout = ATH_DEFAULT_BMISS_LIMIT * conf->listen_interval;
-}
-
-void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
-		     struct ath_xmit_status *tx_status)
-{
-	struct ieee80211_hw *hw = sc->hw;
-	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
-
-	DPRINTF(sc, ATH_DBG_XMIT,
-		"%s: TX complete: skb: %p\n", __func__, skb);
-
-	ieee80211_tx_info_clear_status(tx_info);
-	if (tx_info->flags & IEEE80211_TX_CTL_NO_ACK ||
-		tx_info->flags & IEEE80211_TX_STAT_TX_FILTERED) {
-		/* free driver's private data area of tx_info, XXX: HACK! */
-		if (tx_info->control.vif != NULL)
-			kfree(tx_info->control.vif);
-			tx_info->control.vif = NULL;
-	}
-
-	if (tx_status->flags & ATH_TX_BAR) {
-		tx_info->flags |= IEEE80211_TX_STAT_AMPDU_NO_BACK;
-		tx_status->flags &= ~ATH_TX_BAR;
-	}
-
-	if (!(tx_status->flags & (ATH_TX_ERROR | ATH_TX_XRETRY))) {
-		/* Frame was ACKed */
-		tx_info->flags |= IEEE80211_TX_STAT_ACK;
-	}
-
-	tx_info->status.rates[0].count = tx_status->retries + 1;
-
-	ieee80211_tx_status(hw, skb);
-}
-
-int _ath_rx_indicate(struct ath_softc *sc,
-		     struct sk_buff *skb,
-		     struct ath_recv_status *status,
-		     u16 keyix)
-{
-	struct ieee80211_hw *hw = sc->hw;
-	struct ieee80211_rx_status rx_status;
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
-	int hdrlen = ieee80211_get_hdrlen_from_skb(skb);
-	int padsize;
-
-	/* see if any padding is done by the hw and remove it */
-	if (hdrlen & 3) {
-		padsize = hdrlen % 4;
-		memmove(skb->data + padsize, skb->data, hdrlen);
-		skb_pull(skb, padsize);
-	}
-
-	/* Prepare rx status */
-	ath9k_rx_prepare(sc, skb, status, &rx_status);
-
-	if (!(keyix == ATH9K_RXKEYIX_INVALID) &&
-	    !(status->flags & ATH_RX_DECRYPT_ERROR)) {
-		rx_status.flag |= RX_FLAG_DECRYPTED;
-	} else if ((le16_to_cpu(hdr->frame_control) & IEEE80211_FCTL_PROTECTED)
-		   && !(status->flags & ATH_RX_DECRYPT_ERROR)
-		   && skb->len >= hdrlen + 4) {
-		keyix = skb->data[hdrlen + 3] >> 6;
-
-		if (test_bit(keyix, sc->sc_keymap))
-			rx_status.flag |= RX_FLAG_DECRYPTED;
-	}
-
-	__ieee80211_rx(hw, skb, &rx_status);
-
-	return 0;
 }
 
 /********************************/
@@ -595,7 +457,7 @@ fail:
 	ath_deinit_leds(sc);
 }
 
-#ifdef CONFIG_RFKILL
+#if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 
 /*******************/
 /*	Rfkill	   */
@@ -811,9 +673,9 @@ static int ath_start_rfkill_poll(struct ath_softc *sc)
 			rfkill_free(sc->rf_kill.rfkill);
 
 			/* Deinitialize the device */
+			ath_detach(sc);
 			if (sc->pdev->irq)
 				free_irq(sc->pdev->irq, sc);
-			ath_detach(sc);
 			pci_iounmap(sc->pdev, sc->mem);
 			pci_release_region(sc->pdev, 0);
 			pci_disable_device(sc->pdev);
@@ -835,15 +697,14 @@ static void ath_detach(struct ath_softc *sc)
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "%s: Detach ATH hw\n", __func__);
 
-	ieee80211_unregister_hw(hw);
-
-	ath_deinit_leds(sc);
-
-#ifdef CONFIG_RFKILL
+#if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 	ath_deinit_rfkill(sc);
 #endif
+	ath_deinit_leds(sc);
+
+	ieee80211_unregister_hw(hw);
+
 	ath_rate_control_unregister();
-	ath_rate_detach(sc->sc_rc);
 
 	ath_rx_cleanup(sc);
 	ath_tx_cleanup(sc);
@@ -888,6 +749,8 @@ static int ath_attach(u16 devid, struct ath_softc *sc)
 		BIT(NL80211_IFTYPE_ADHOC);
 
 	hw->queues = 4;
+	hw->max_rates = 4;
+	hw->max_rate_tries = ATH_11N_TXMAXTRY;
 	hw->sta_data_size = sizeof(struct ath_node);
 	hw->vif_data_size = sizeof(struct ath_vap);
 
@@ -913,16 +776,16 @@ static int ath_attach(u16 devid, struct ath_softc *sc)
 		hw->wiphy->bands[IEEE80211_BAND_5GHZ] =
 			&sc->sbands[IEEE80211_BAND_5GHZ];
 
-	error = ieee80211_register_hw(hw);
-	if (error != 0) {
-		ath_rate_control_unregister();
-		goto bad;
-	}
+	/* initialize tx/rx engine */
+	error = ath_tx_init(sc, ATH_TXBUF);
+	if (error != 0)
+		goto detach;
 
-	/* Initialize LED control */
-	ath_init_leds(sc);
+	error = ath_rx_init(sc, ATH_RXBUF);
+	if (error != 0)
+		goto detach;
 
-#ifdef CONFIG_RFKILL
+#if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 	/* Initialze h/w Rfkill */
 	if (sc->sc_ah->ah_caps.hw_caps & ATH9K_HW_CAP_RFSILENT)
 		INIT_DELAYED_WORK(&sc->rf_kill.rfkill_poll, ath_rfkill_poll);
@@ -932,15 +795,14 @@ static int ath_attach(u16 devid, struct ath_softc *sc)
 		goto detach;
 #endif
 
-	/* initialize tx/rx engine */
+	error = ieee80211_register_hw(hw);
+	if (error != 0) {
+		ath_rate_control_unregister();
+		goto bad;
+	}
 
-	error = ath_tx_init(sc, ATH_TXBUF);
-	if (error != 0)
-		goto detach;
-
-	error = ath_rx_init(sc, ATH_RXBUF);
-	if (error != 0)
-		goto detach;
+	/* Initialize LED control */
+	ath_init_leds(sc);
 
 	return 0;
 detach:
@@ -979,7 +841,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 		goto exit;
 	}
 
-#ifdef CONFIG_RFKILL
+#if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 	error = ath_start_rfkill_poll(sc);
 #endif
 
@@ -1101,10 +963,6 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 	/* Set the device opmode */
 	sc->sc_ah->ah_opmode = ic_opmode;
 
-	/* default VAP configuration */
-	avp->av_config.av_fixed_rateset = IEEE80211_FIXED_RATE_NONE;
-	avp->av_config.av_fixed_retryset = 0x03030303;
-
 	if (conf->type == NL80211_IFTYPE_AP) {
 		/* TODO: is this a suitable place to start ANI for AP mode? */
 		/* Start ANI */
@@ -1208,9 +1066,6 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 		switch (vif->type) {
 		case NL80211_IFTYPE_STATION:
 		case NL80211_IFTYPE_ADHOC:
-			/* Update ratectrl about the new state */
-			ath_rate_newstate(sc, avp);
-
 			/* Set BSSID */
 			memcpy(sc->sc_curbssid, conf->bssid, ETH_ALEN);
 			sc->sc_curaid = 0;
@@ -1594,10 +1449,18 @@ static int ath_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (pci_enable_device(pdev))
 		return -EIO;
 
-	/* XXX 32-bit addressing only */
-	if (pci_set_dma_mask(pdev, 0xffffffff)) {
-		printk(KERN_ERR "ath_pci: 32-bit DMA not available\n");
-		ret = -ENODEV;
+	ret =  pci_set_dma_mask(pdev, DMA_32BIT_MASK);
+
+	if (ret) {
+		printk(KERN_ERR "ath9k: 32-bit DMA not available\n");
+		goto bad;
+	}
+
+	ret = pci_set_consistent_dma_mask(pdev, DMA_32BIT_MASK);
+
+	if (ret) {
+		printk(KERN_ERR "ath9k: 32-bit DMA consistent "
+			"DMA enable faled\n");
 		goto bad;
 	}
 
@@ -1724,7 +1587,7 @@ static int ath_pci_suspend(struct pci_dev *pdev, pm_message_t state)
 
 	ath9k_hw_set_gpio(sc->sc_ah, ATH_LED_PIN, 1);
 
-#ifdef CONFIG_RFKILL
+#if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 	if (sc->sc_ah->ah_caps.hw_caps & ATH9K_HW_CAP_RFSILENT)
 		cancel_delayed_work_sync(&sc->rf_kill.rfkill_poll);
 #endif
@@ -1761,7 +1624,7 @@ static int ath_pci_resume(struct pci_dev *pdev)
 			    AR_GPIO_OUTPUT_MUX_AS_OUTPUT);
 	ath9k_hw_set_gpio(sc->sc_ah, ATH_LED_PIN, 1);
 
-#ifdef CONFIG_RFKILL
+#if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 	/*
 	 * check the h/w rfkill state on resume
 	 * and start the rfkill poll timer
