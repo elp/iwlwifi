@@ -488,6 +488,8 @@ void iwl_clear_stations_table(struct iwl_priv *priv)
 
 	priv->num_stations = 0;
 	memset(priv->stations, 0, sizeof(priv->stations));
+	/* clean ucode key table bit map */
+	priv->ucode_key_table = 0;
 
 	spin_unlock_irqrestore(&priv->sta_lock, flags);
 }
@@ -501,7 +503,7 @@ static int iwl_get_free_ucode_key_index(struct iwl_priv *priv)
 		if (!test_and_set_bit(i, &priv->ucode_key_table))
 			return i;
 
-	return -1;
+	return WEP_INVALID_OFFSET;
 }
 
 int iwl_send_static_wepkey_cmd(struct iwl_priv *priv, u8 send_if_empty)
@@ -645,6 +647,8 @@ static int iwl_set_wep_dynamic_key_info(struct iwl_priv *priv,
 				 iwl_get_free_ucode_key_index(priv);
 	/* else, we are overriding an existing key => no need to allocated room
 	 * in uCode. */
+	WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
+		"no space for new kew");
 
 	priv->stations[sta_id].sta.key.key_flags = key_flags;
 	priv->stations[sta_id].sta.sta.modify_mask = STA_MODIFY_KEY_MASK;
@@ -663,6 +667,7 @@ static int iwl_set_ccmp_dynamic_key_info(struct iwl_priv *priv,
 {
 	unsigned long flags;
 	__le16 key_flags = 0;
+	int ret;
 
 	key_flags |= (STA_KEY_FLG_CCMP | STA_KEY_FLG_MAP_KEY_MSK);
 	key_flags |= cpu_to_le16(keyconf->keyidx << STA_KEY_FLG_KEYID_POS);
@@ -690,14 +695,18 @@ static int iwl_set_ccmp_dynamic_key_info(struct iwl_priv *priv,
 	/* else, we are overriding an existing key => no need to allocated room
 	 * in uCode. */
 
+	WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
+		"no space for new kew");
+
 	priv->stations[sta_id].sta.key.key_flags = key_flags;
 	priv->stations[sta_id].sta.sta.modify_mask = STA_MODIFY_KEY_MASK;
 	priv->stations[sta_id].sta.mode = STA_CONTROL_MODIFY_MSK;
 
+	ret = iwl_send_add_sta(priv, &priv->stations[sta_id].sta, CMD_ASYNC);
+
 	spin_unlock_irqrestore(&priv->sta_lock, flags);
 
-	IWL_DEBUG_INFO("hwcrypto: modify ucode station key info\n");
-	return iwl_send_add_sta(priv, &priv->stations[sta_id].sta, CMD_ASYNC);
+	return ret;
 }
 
 static int iwl_set_tkip_dynamic_key_info(struct iwl_priv *priv,
@@ -722,6 +731,9 @@ static int iwl_set_tkip_dynamic_key_info(struct iwl_priv *priv,
 	/* else, we are overriding an existing key => no need to allocated room
 	 * in uCode. */
 
+	WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
+		"no space for new kew");
+
 	/* This copy is actually not needed: we get the key with each TX */
 	memcpy(priv->stations[sta_id].keyinfo.key, keyconf->key, 16);
 
@@ -736,10 +748,10 @@ void iwl_update_tkip_key(struct iwl_priv *priv,
 			struct ieee80211_key_conf *keyconf,
 			const u8 *addr, u32 iv32, u16 *phase1key)
 {
-	u8 sta_id = IWL_INVALID_STATION;
 	unsigned long flags;
-	__le16 key_flags = 0;
 	int i;
+	__le16 key_flags = 0;
+	u8 sta_id;
 	DECLARE_MAC_BUF(mac);
 
 	sta_id = iwl_find_station(priv, addr);
@@ -765,7 +777,7 @@ void iwl_update_tkip_key(struct iwl_priv *priv,
 	spin_lock_irqsave(&priv->sta_lock, flags);
 
 	priv->stations[sta_id].sta.key.key_flags = key_flags;
-	priv->stations[sta_id].sta.key.tkip_rx_tsc_byte2 = (u8) iv32;
+	priv->stations[sta_id].sta.key.tkip_rx_tsc_byte2 = (u8)iv32;
 
 	for (i = 0; i < 5; i++)
 		priv->stations[sta_id].sta.key.tkip_rx_ttak[i] =
@@ -811,6 +823,13 @@ int iwl_remove_dynamic_key(struct iwl_priv *priv,
 
 	if (WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
 		 "Removing wrong key %d 0x%x\n", keyconf->keyidx, key_flags)) {
+		spin_unlock_irqrestore(&priv->sta_lock, flags);
+		return 0;
+	}
+
+	if (priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET) {
+		IWL_WARNING("Removing wrong key %d 0x%x\n",
+			    keyconf->keyidx, key_flags);
 		spin_unlock_irqrestore(&priv->sta_lock, flags);
 		return 0;
 	}
