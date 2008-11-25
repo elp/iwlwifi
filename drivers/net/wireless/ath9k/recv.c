@@ -41,9 +41,11 @@ static void ath_rx_buf_link(struct ath_softc *sc, struct ath_buf *bf)
 	ASSERT(skb != NULL);
 	ds->ds_vdata = skb->data;
 
-	/* setup rx descriptors */
+	/* setup rx descriptors. The sc_rxbufsize here tells the harware
+	 * how much data it can DMA to us and that we are prepared
+	 * to process */
 	ath9k_hw_setuprxdesc(ah, ds,
-			     skb_tailroom(skb), /* buffer size */
+			     sc->sc_rxbufsize,
 			     0);
 
 	if (sc->sc_rxlink == NULL)
@@ -53,6 +55,28 @@ static void ath_rx_buf_link(struct ath_softc *sc, struct ath_buf *bf)
 
 	sc->sc_rxlink = &ds->ds_link;
 	ath9k_hw_rxena(ah);
+}
+
+static void ath_setdefantenna(struct ath_softc *sc, u32 antenna)
+{
+	/* XXX block beacon interrupts */
+	ath9k_hw_setantenna(sc->sc_ah, antenna);
+	sc->sc_defant = antenna;
+	sc->sc_rxotherant = 0;
+}
+
+/*
+ *  Extend 15-bit time stamp from rx descriptor to
+ *  a full 64-bit TSF using the current h/w TSF.
+*/
+static u64 ath_extend_tsf(struct ath_softc *sc, u32 rstamp)
+{
+	u64 tsf;
+
+	tsf = ath9k_hw_gettsf64(sc->sc_ah);
+	if ((tsf & 0x7fff) < rstamp)
+		tsf -= 0x8000;
+	return (tsf & ~0x7fff) | rstamp;
 }
 
 static struct sk_buff *ath_rxbuf_alloc(struct ath_softc *sc, u32 len)
@@ -66,6 +90,13 @@ static struct sk_buff *ath_rxbuf_alloc(struct ath_softc *sc, u32 len)
 	 * in rx'd frames.
 	 */
 
+	/* Note: the kernel can allocate a value greater than
+	 * what we ask it to give us. We really only need 4 KB as that
+	 * is this hardware supports and in fact we need at least 3849
+	 * as that is the MAX AMSDU size this hardware supports.
+	 * Unfortunately this means we may get 8 KB here from the
+	 * kernel... and that is actually what is observed on some
+	 * systems :( */
 	skb = dev_alloc_skb(len + sc->sc_cachelsz - 1);
 	if (skb != NULL) {
 		off = ((unsigned long) skb->data) % sc->sc_cachelsz;
@@ -80,29 +111,6 @@ static struct sk_buff *ath_rxbuf_alloc(struct ath_softc *sc, u32 len)
 
 	return skb;
 }
-
-static void ath_rx_requeue(struct ath_softc *sc, struct ath_buf *bf)
-{
-	struct sk_buff *skb;
-
-	ASSERT(bf != NULL);
-
-	if (bf->bf_mpdu == NULL) {
-		skb = ath_rxbuf_alloc(sc, sc->sc_rxbufsize);
-		if (skb != NULL) {
-			bf->bf_mpdu = skb;
-			bf->bf_buf_addr = pci_map_single(sc->pdev, skb->data,
-						 skb_end_pointer(skb) - skb->head,
-						 PCI_DMA_FROMDEVICE);
-			bf->bf_dmacontext = bf->bf_buf_addr;
-
-		}
-	}
-
-	list_move_tail(&bf->list, &sc->sc_rxbuf);
-	ath_rx_buf_link(sc, bf);
-}
-
 
 static int ath_rate2idx(struct ath_softc *sc, int rate)
 {
@@ -299,7 +307,7 @@ int ath_rx_init(struct ath_softc *sc, int nbufs)
 
 			bf->bf_mpdu = skb;
 			bf->bf_buf_addr = pci_map_single(sc->pdev, skb->data,
-					 skb_end_pointer(skb) - skb->head,
+					 sc->sc_rxbufsize,
 					 PCI_DMA_FROMDEVICE);
 			bf->bf_dmacontext = bf->bf_buf_addr;
 		}
@@ -445,7 +453,7 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 
 	struct ath_buf *bf;
 	struct ath_desc *ds;
-	struct sk_buff *skb = NULL;
+	struct sk_buff *skb = NULL, *requeue_skb;
 	struct ieee80211_rx_status rx_status;
 	struct ath_hal *ah = sc->sc_ah;
 	struct ieee80211_hdr *hdr;
@@ -522,21 +530,32 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 		 * chain it back at the queue without processing it.
 		 */
 		if (flush)
-			goto rx_next;
+			goto requeue;
 
 		if (!ds->ds_rxstat.rs_datalen)
-			goto rx_next;
+			goto requeue;
 
 		/* The status portion of the descriptor could get corrupted. */
 		if (sc->sc_rxbufsize < ds->ds_rxstat.rs_datalen)
-			goto rx_next;
+			goto requeue;
 
 		if (!ath_rx_prepare(skb, ds, &rx_status, &decrypt_error, sc))
-			goto rx_next;
+			goto requeue;
+
+		/* Ensure we always have an skb to requeue once we are done
+		 * processing the current buffer's skb */
+		requeue_skb = ath_rxbuf_alloc(sc, sc->sc_rxbufsize);
+
+		/* If there is no memory we ignore the current RX'd frame,
+		 * tell hardware it can give us a new frame using the old
+		 * skb and put it at the tail of the sc->sc_rxbuf list for
+		 * processing. */
+		if (!requeue_skb)
+			goto requeue;
 
 		/* Sync and unmap the frame */
 		pci_dma_sync_single_for_cpu(sc->pdev, bf->bf_buf_addr,
-					    skb_tailroom(skb),
+					    sc->sc_rxbufsize,
 					    PCI_DMA_FROMDEVICE);
 		pci_unmap_single(sc->pdev, bf->bf_buf_addr,
 				 sc->sc_rxbufsize,
@@ -569,7 +588,13 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 
 		/* Send the frame to mac80211 */
 		__ieee80211_rx(sc->hw, skb, &rx_status);
-		bf->bf_mpdu = NULL;
+
+		/* We will now give hardware our shiny new allocated skb */
+		bf->bf_mpdu = requeue_skb;
+		bf->bf_buf_addr = pci_map_single(sc->pdev, requeue_skb->data,
+					 sc->sc_rxbufsize,
+					 PCI_DMA_FROMDEVICE);
+		bf->bf_dmacontext = bf->bf_buf_addr;
 
 		/*
 		 * change the default rx antenna if rx diversity chooses the
@@ -581,8 +606,9 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 		} else {
 			sc->sc_rxotherant = 0;
 		}
-rx_next:
-		ath_rx_requeue(sc, bf);
+requeue:
+		list_move_tail(&bf->list, &sc->sc_rxbuf);
+		ath_rx_buf_link(sc, bf);
 	} while (1);
 
 	spin_unlock_bh(&sc->sc_rxbuflock);
