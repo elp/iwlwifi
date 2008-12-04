@@ -491,6 +491,9 @@ void iwl_clear_stations_table(struct iwl_priv *priv)
 	/* clean ucode key table bit map */
 	priv->ucode_key_table = 0;
 
+	/* clean ucode key table bit map */
+	priv->ucode_key_table = 0;
+
 	spin_unlock_irqrestore(&priv->sta_lock, flags);
 }
 EXPORT_SYMBOL(iwl_clear_stations_table);
@@ -647,6 +650,9 @@ static int iwl_set_wep_dynamic_key_info(struct iwl_priv *priv,
 				 iwl_get_free_ucode_key_index(priv);
 	/* else, we are overriding an existing key => no need to allocated room
 	 * in uCode. */
+	WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
+		"no space for new kew");
+
 	WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
 		"no space for new kew");
 
