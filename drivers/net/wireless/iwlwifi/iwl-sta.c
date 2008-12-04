@@ -488,8 +488,6 @@ void iwl_clear_stations_table(struct iwl_priv *priv)
 
 	priv->num_stations = 0;
 	memset(priv->stations, 0, sizeof(priv->stations));
-	/* clean ucode key table bit map */
-	priv->ucode_key_table = 0;
 
 	/* clean ucode key table bit map */
 	priv->ucode_key_table = 0;
@@ -650,8 +648,6 @@ static int iwl_set_wep_dynamic_key_info(struct iwl_priv *priv,
 				 iwl_get_free_ucode_key_index(priv);
 	/* else, we are overriding an existing key => no need to allocated room
 	 * in uCode. */
-	WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
-		"no space for new kew");
 
 	WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
 		"no space for new kew");
@@ -754,10 +750,10 @@ void iwl_update_tkip_key(struct iwl_priv *priv,
 			struct ieee80211_key_conf *keyconf,
 			const u8 *addr, u32 iv32, u16 *phase1key)
 {
+	u8 sta_id = IWL_INVALID_STATION;
 	unsigned long flags;
-	int i;
 	__le16 key_flags = 0;
-	u8 sta_id;
+	int i;
 	DECLARE_MAC_BUF(mac);
 
 	sta_id = iwl_find_station(priv, addr);
@@ -783,7 +779,7 @@ void iwl_update_tkip_key(struct iwl_priv *priv,
 	spin_lock_irqsave(&priv->sta_lock, flags);
 
 	priv->stations[sta_id].sta.key.key_flags = key_flags;
-	priv->stations[sta_id].sta.key.tkip_rx_tsc_byte2 = (u8)iv32;
+	priv->stations[sta_id].sta.key.tkip_rx_tsc_byte2 = (u8) iv32;
 
 	for (i = 0; i < 5; i++)
 		priv->stations[sta_id].sta.key.tkip_rx_ttak[i] =
