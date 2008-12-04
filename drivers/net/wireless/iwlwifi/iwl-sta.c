@@ -821,12 +821,6 @@ int iwl_remove_dynamic_key(struct iwl_priv *priv,
 		return 0;
 	}
 
-	if (WARN(priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET,
-		 "Removing wrong key %d 0x%x\n", keyconf->keyidx, key_flags)) {
-		spin_unlock_irqrestore(&priv->sta_lock, flags);
-		return 0;
-	}
-
 	if (priv->stations[sta_id].sta.key.key_offset == WEP_INVALID_OFFSET) {
 		IWL_WARNING("Removing wrong key %d 0x%x\n",
 			    keyconf->keyidx, key_flags);
