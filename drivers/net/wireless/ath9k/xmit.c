@@ -493,7 +493,7 @@ static void ath_tx_update_baw(struct ath_softc *sc, struct ath_atx_tid *tid,
 static u32 ath_pkt_duration(struct ath_softc *sc, u8 rix, struct ath_buf *bf,
 			    int width, int half_gi, bool shortPreamble)
 {
-	struct ath_rate_table *rate_table = sc->hw_rate_table[sc->sc_curmode];
+	struct ath_rate_table *rate_table = sc->cur_rate_table;
 	u32 nbits, nsymbits, duration, nsymbols;
 	u8 rc;
 	int streams, pktlen;
@@ -557,7 +557,7 @@ static void ath_buf_set_rate(struct ath_softc *sc, struct ath_buf *bf)
 	}
 
 	/* get the cix for the lowest valid rix */
-	rt = sc->hw_rate_table[sc->sc_curmode];
+	rt = sc->cur_rate_table;
 	for (i = 3; i >= 0; i--) {
 		if (rates[i].count && (rates[i].idx >= 0)) {
 			rix = rates[i].idx;
@@ -1240,7 +1240,7 @@ static u32 ath_lookup_rate(struct ath_softc *sc,
 			   struct ath_buf *bf,
 			   struct ath_atx_tid *tid)
 {
-	struct ath_rate_table *rate_table = sc->hw_rate_table[sc->sc_curmode];
+	struct ath_rate_table *rate_table = sc->cur_rate_table;
 	struct sk_buff *skb;
 	struct ieee80211_tx_info *tx_info;
 	struct ieee80211_tx_rate *rates;
@@ -1308,7 +1308,7 @@ static int ath_compute_num_delims(struct ath_softc *sc,
 				  struct ath_buf *bf,
 				  u16 frmlen)
 {
-	struct ath_rate_table *rt = sc->hw_rate_table[sc->sc_curmode];
+	struct ath_rate_table *rt = sc->cur_rate_table;
 	struct sk_buff *skb = bf->bf_mpdu;
 	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
 	u32 nsymbits, nsymbols, mpdudensity;
@@ -2405,7 +2405,7 @@ void ath_tx_node_init(struct ath_softc *sc, struct ath_node *an)
 	/*
 	 * Init per tid tx state
 	 */
-	for (tidno = 0, tid = &an->an_aggr.tx.tid[tidno];
+	for (tidno = 0, tid = &an->tid[tidno];
 	     tidno < WME_NUM_TID;
 	     tidno++, tid++) {
 		tid->an        = an;
@@ -2419,7 +2419,7 @@ void ath_tx_node_init(struct ath_softc *sc, struct ath_node *an)
 		INIT_LIST_HEAD(&tid->buf_q);
 
 		acno = TID_TO_WME_AC(tidno);
-		tid->ac = &an->an_aggr.tx.ac[acno];
+		tid->ac = &an->ac[acno];
 
 		/* ADDBA state */
 		tid->state &= ~AGGR_ADDBA_COMPLETE;
@@ -2430,7 +2430,7 @@ void ath_tx_node_init(struct ath_softc *sc, struct ath_node *an)
 	/*
 	 * Init per ac tx state
 	 */
-	for (acno = 0, ac = &an->an_aggr.tx.ac[acno];
+	for (acno = 0, ac = &an->ac[acno];
 	     acno < WME_NUM_AC; acno++, ac++) {
 		ac->sched    = false;
 		INIT_LIST_HEAD(&ac->tid_q);

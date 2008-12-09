@@ -34,6 +34,7 @@ static struct pci_device_id ath_pci_id_table[] __devinitdata = {
 	{ PCI_VDEVICE(ATHEROS, 0x0027) }, /* PCI   */
 	{ PCI_VDEVICE(ATHEROS, 0x0029) }, /* PCI   */
 	{ PCI_VDEVICE(ATHEROS, 0x002A) }, /* PCI-E */
+	{ PCI_VDEVICE(ATHEROS, 0x002B) }, /* PCI-E */
 	{ 0 }
 };
 
@@ -60,7 +61,8 @@ static void bus_read_cachesize(struct ath_softc *sc, int *csz)
 
 static void ath_setcurmode(struct ath_softc *sc, enum wireless_mode mode)
 {
-	sc->sc_curmode = mode;
+	if (!sc->sc_curaid)
+		sc->cur_rate_table = sc->hw_rate_table[mode];
 	/*
 	 * All protection frames are transmited at 2Mb/s for
 	 * 11g, otherwise at 1Mb/s.
@@ -596,6 +598,8 @@ static irqreturn_t ath_isr(int irq, void *dev)
 			}
 		}
 	} while (0);
+
+	ath_debug_stat_interrupt(sc, status);
 
 	if (sched) {
 		/* turn off every interrupt except SWBA */
@@ -1511,11 +1515,6 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	/* save MISC configurations */
 	sc->sc_config.swBeaconProcess = 1;
 
-#ifdef CONFIG_SLOW_ANT_DIV
-	/* range is 40 - 255, we use something in the middle */
-	ath_slow_ant_div_init(&sc->sc_antdiv, sc, 0x127);
-#endif
-
 	/* setup channels and rates */
 
 	sc->sbands[IEEE80211_BAND_2GHZ].channels =
@@ -2127,9 +2126,6 @@ static void ath9k_remove_interface(struct ieee80211_hw *hw,
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Detach Interface\n");
 
-#ifdef CONFIG_SLOW_ANT_DIV
-	ath_slow_ant_div_stop(&sc->sc_antdiv);
-#endif
 	/* Stop ANI */
 	del_timer_sync(&sc->sc_ani.timer);
 

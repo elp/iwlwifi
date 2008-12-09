@@ -106,7 +106,7 @@ static void ath_beacon_setup(struct ath_softc *sc,
 	 * XXX everything at min xmit rate
 	 */
 	rix = 0;
-	rt = sc->hw_rate_table[sc->sc_curmode];
+	rt = sc->cur_rate_table;
 	rate = rt->info[rix].ratecode;
 	if (sc->sc_flags & SC_OP_PREAMBLE_SHORT)
 		rate |= rt->info[rix].short_preamble;
@@ -167,6 +167,7 @@ static struct ath_buf *ath_beacon_generate(struct ath_softc *sc, int if_id)
 		pci_unmap_single(sc->pdev, bf->bf_dmacontext,
 				 skb->len,
 				 PCI_DMA_TODEVICE);
+		dev_kfree_skb_any(skb);
 	}
 
 	skb = ieee80211_beacon_get(sc->hw, vif);
