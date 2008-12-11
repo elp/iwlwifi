@@ -254,8 +254,8 @@ void iwl_rx_allocate(struct iwl_priv *priv)
 				__GFP_NOWARN | GFP_ATOMIC);
 		if (!rxb->skb) {
 			if (net_ratelimit())
-				printk(KERN_CRIT DRV_NAME
-				       ": Can not allocate SKB buffers\n");
+				dev_printk(KERN_CRIT, &(priv->hw->wiphy->dev),
+					   "Can not allocate SKB buffers\n");
 			/* We don't reschedule replenish work here -- we will
 			 * call the restock method and if it still needs
 			 * more buffers it will schedule replenish */
