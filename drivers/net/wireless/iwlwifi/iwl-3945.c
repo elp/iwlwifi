@@ -2471,7 +2471,6 @@ unsigned int iwl3945_hw_get_beacon_cmd(struct iwl_priv *priv,
 
 	frame_size = iwl3945_fill_beacon_frame(priv,
 				tx_beacon_cmd->frame,
-				iwl_bcast_addr,
 				sizeof(frame->u) - sizeof(*tx_beacon_cmd));
 
 	BUG_ON(frame_size > MAX_MPDU_SIZE);
