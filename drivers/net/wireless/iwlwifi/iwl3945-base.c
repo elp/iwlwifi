@@ -7423,7 +7423,7 @@ static struct ieee80211_ops iwl3945_hw_ops = {
 	.hw_scan = iwl3945_mac_hw_scan
 };
 
-int iwl3945_init_drv(struct iwl_priv *priv)
+static int iwl3945_init_drv(struct iwl_priv *priv)
 {
 	int ret;
 
