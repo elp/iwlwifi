@@ -756,12 +756,12 @@ static int ath_reserve_key_cache_slot(struct ath_softc *sc)
 			    (test_bit(i , sc->sc_keymap) ||
 			     test_bit(i + 32, sc->sc_keymap) ||
 			     test_bit(i + 64 + 32, sc->sc_keymap)))
-				return i;
+				return i + 64;
 			if (!test_bit(i + 64 + 32, sc->sc_keymap) &&
 			    (test_bit(i, sc->sc_keymap) ||
 			     test_bit(i + 32, sc->sc_keymap) ||
 			     test_bit(i + 64, sc->sc_keymap)))
-				return i;
+				return i + 64 + 32;
 		}
 	} else {
 		for (i = IEEE80211_WEP_NKID; i < sc->sc_keymax / 2; i++) {
@@ -776,6 +776,18 @@ static int ath_reserve_key_cache_slot(struct ath_softc *sc)
 
 	/* No partially used TKIP slots, pick any available slot */
 	for (i = IEEE80211_WEP_NKID; i < sc->sc_keymax; i++) {
+		/* Do not allow slots that could be needed for TKIP group keys
+		 * to be used. This limitation could be removed if we know that
+		 * TKIP will not be used. */
+		if (i >= 64 && i < 64 + IEEE80211_WEP_NKID)
+			continue;
+		if (sc->sc_splitmic) {
+			if (i >= 32 && i < 32 + IEEE80211_WEP_NKID)
+				continue;
+			if (i >= 64 + 32 && i < 64 + 32 + IEEE80211_WEP_NKID)
+				continue;
+		}
+
 		if (!test_bit(i, sc->sc_keymap))
 			return i; /* Found a free slot for a key */
 	}
@@ -1326,6 +1338,7 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 		printk(KERN_ERR "Unable to create debugfs files\n");
 
 	spin_lock_init(&sc->sc_resetlock);
+	mutex_init(&sc->mutex);
 	tasklet_init(&sc->intr_tq, ath9k_tasklet, (unsigned long)sc);
 	tasklet_init(&sc->bcon_tasklet, ath9k_beacon_tasklet,
 		     (unsigned long)sc);
@@ -1362,20 +1375,6 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	 */
 	for (i = 0; i < sc->sc_keymax; i++)
 		ath9k_hw_keyreset(ah, (u16) i);
-	/*
-	 * Mark key cache slots associated with global keys
-	 * as in use.  If we knew TKIP was not to be used we
-	 * could leave the +32, +64, and +32+64 slots free.
-	 */
-	for (i = 0; i < IEEE80211_WEP_NKID; i++) {
-		set_bit(i, sc->sc_keymap);
-		set_bit(i + 64, sc->sc_keymap);
-		if (ath9k_hw_getcapability(ah, ATH9K_CAP_TKIP_SPLIT,
-					   0, NULL)) {
-			set_bit(i + 32, sc->sc_keymap);
-			set_bit(i + 32 + 64, sc->sc_keymap);
-		}
-	}
 
 	/* Collect the channel list using the default country code */
 
@@ -2135,6 +2134,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	struct ath_softc *sc = hw->priv;
 	struct ieee80211_conf *conf = &hw->conf;
 
+	mutex_lock(&sc->mutex);
 	if (changed & (IEEE80211_CONF_CHANGE_CHANNEL |
 		       IEEE80211_CONF_CHANGE_HT)) {
 		struct ieee80211_channel *curchan = hw->conf.channel;
@@ -2147,6 +2147,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 		if (pos == -1) {
 			DPRINTF(sc, ATH_DBG_FATAL, "Invalid channel: %d\n",
 				curchan->center_freq);
+			mutex_unlock(&sc->mutex);
 			return -EINVAL;
 		}
 
@@ -2167,6 +2168,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 
 		if (ath_set_channel(sc, &sc->sc_ah->ah_channels[pos]) < 0) {
 			DPRINTF(sc, ATH_DBG_FATAL, "Unable to set channel\n");
+			mutex_unlock(&sc->mutex);
 			return -EINVAL;
 		}
 
@@ -2176,6 +2178,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	if (changed & IEEE80211_CONF_CHANGE_POWER)
 		sc->sc_config.txpowlimit = 2 * conf->power_level;
 
+	mutex_unlock(&sc->mutex);
 	return 0;
 }
 

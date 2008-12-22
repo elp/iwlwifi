@@ -341,7 +341,8 @@ static void ieee80211_tasklet_handler(unsigned long data)
 			dev_kfree_skb(skb);
 			break ;
 		default:
-			WARN_ON(1);
+			WARN(1, "mac80211: Packet is of unknown type %d\n",
+			     skb->pkt_type);
 			dev_kfree_skb(skb);
 			break;
 		}
@@ -724,7 +725,16 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 
 	spin_lock_init(&local->key_lock);
 
+	spin_lock_init(&local->queue_stop_reason_lock);
+
 	INIT_DELAYED_WORK(&local->scan_work, ieee80211_scan_work);
+
+	INIT_WORK(&local->dynamic_ps_enable_work,
+		  ieee80211_dynamic_ps_enable_work);
+	INIT_WORK(&local->dynamic_ps_disable_work,
+		  ieee80211_dynamic_ps_disable_work);
+	setup_timer(&local->dynamic_ps_timer,
+		    ieee80211_dynamic_ps_timer, (unsigned long) local);
 
 	sta_info_init(local);
 
