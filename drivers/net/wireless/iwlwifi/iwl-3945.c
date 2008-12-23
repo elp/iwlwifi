@@ -399,7 +399,7 @@ void iwl3945_hw_rx_statistics(struct iwl_priv *priv, struct iwl_rx_mem_buffer *r
 
 	memcpy(&priv->statistics_39, pkt->u.raw, sizeof(priv->statistics_39));
 
-	iwl_leds_background(priv);
+	iwl3945_led_background(priv);
 
 	priv->last_statistics_time = jiffies;
 }
@@ -576,6 +576,9 @@ static void iwl3945_pass_packet_to_mac80211(struct iwl_priv *priv,
 				   struct ieee80211_rx_status *stats)
 {
 	struct iwl_rx_packet *pkt = (struct iwl_rx_packet *)rxb->skb->data;
+#ifdef CONFIG_IWL3945_LEDS
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)IWL_RX_DATA(pkt);
+#endif
 	struct iwl3945_rx_frame_hdr *rx_hdr = IWL_RX_HDR(pkt);
 	struct iwl3945_rx_frame_end *rx_end = IWL_RX_END(pkt);
 	short len = le16_to_cpu(rx_hdr->len);
@@ -600,6 +603,11 @@ static void iwl3945_pass_packet_to_mac80211(struct iwl_priv *priv,
 	if (iwl3945_mod_params.sw_crypto)
 		iwl3945_set_decrypted_flag(priv, rxb->skb,
 				       le32_to_cpu(rx_end->status), stats);
+
+#ifdef CONFIG_IWL3945_LEDS
+	if (ieee80211_is_data(hdr->frame_control))
+		priv->rxtxpackets += len;
+#endif
 	ieee80211_rx_irqsafe(priv->hw, rxb->skb, stats);
 	rxb->skb = NULL;
 }
