@@ -3319,7 +3319,8 @@ static void iwl3945_rx_allocate(struct iwl_priv *priv)
 
 		/* Alloc a new receive buffer */
 		rxb->skb =
-		    alloc_skb(IWL_RX_BUF_SIZE, __GFP_NOWARN | GFP_ATOMIC);
+		    alloc_skb(priv->hw_params.rx_buf_size,
+				__GFP_NOWARN | GFP_ATOMIC);
 		if (!rxb->skb) {
 			if (net_ratelimit())
 				IWL_CRIT(priv, ": Can not allocate SKB buffers\n");
@@ -3341,9 +3342,10 @@ static void iwl3945_rx_allocate(struct iwl_priv *priv)
 		list_del(element);
 
 		/* Get physical address of RB/SKB */
-		rxb->real_dma_addr =
-		    pci_map_single(priv->pci_dev, rxb->skb->data,
-				   IWL_RX_BUF_SIZE, PCI_DMA_FROMDEVICE);
+		rxb->real_dma_addr = pci_map_single(priv->pci_dev,
+						rxb->skb->data,
+						priv->hw_params.rx_buf_size,
+						PCI_DMA_FROMDEVICE);
 		list_add_tail(&rxb->list, &rxq->rx_free);
 		rxq->free_count++;
 	}
@@ -3492,7 +3494,7 @@ static void iwl3945_rx_handle(struct iwl_priv *priv)
 		rxq->queue[i] = NULL;
 
 		pci_dma_sync_single_for_cpu(priv->pci_dev, rxb->real_dma_addr,
-					    IWL_RX_BUF_SIZE,
+					    priv->hw_params.rx_buf_size,
 					    PCI_DMA_FROMDEVICE);
 		pkt = (struct iwl_rx_packet *)rxb->skb->data;
 
@@ -3542,7 +3544,8 @@ static void iwl3945_rx_handle(struct iwl_priv *priv)
 		}
 
 		pci_unmap_single(priv->pci_dev, rxb->real_dma_addr,
-				 IWL_RX_BUF_SIZE, PCI_DMA_FROMDEVICE);
+				priv->hw_params.rx_buf_size,
+				PCI_DMA_FROMDEVICE);
 		spin_lock_irqsave(&rxq->lock, flags);
 		list_add_tail(&rxb->list, &priv->rxq.rx_used);
 		spin_unlock_irqrestore(&rxq->lock, flags);
