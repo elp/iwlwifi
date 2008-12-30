@@ -280,6 +280,18 @@ static const struct rt2x00debug rt2500usb_rt2x00debug = {
 };
 #endif /* CONFIG_RT2X00_LIB_DEBUGFS */
 
+#ifdef CONFIG_RT2X00_LIB_RFKILL
+static int rt2500usb_rfkill_poll(struct rt2x00_dev *rt2x00dev)
+{
+	u16 reg;
+
+	rt2500usb_register_read(rt2x00dev, MAC_CSR19, &reg);
+	return rt2x00_get_field32(reg, MAC_CSR19_BIT7);
+}
+#else
+#define rt2500usb_rfkill_poll	NULL
+#endif /* CONFIG_RT2X00_LIB_RFKILL */
+
 #ifdef CONFIG_RT2X00_LIB_LEDS
 static void rt2500usb_brightness_set(struct led_classdev *led_cdev,
 				     enum led_brightness brightness)
@@ -376,11 +388,11 @@ static int rt2500usb_config_key(struct rt2x00_dev *rt2x00dev,
 
 		/*
 		 * The driver does not support the IV/EIV generation
-		 * in hardware. However it doesn't support the IV/EIV
-		 * inside the ieee80211 frame either, but requires it
-		 * to be provided seperately for the descriptor.
-		 * rt2x00lib will cut the IV/EIV data out of all frames
-		 * given to us by mac80211, but we must tell mac80211
+		 * in hardware. However it demands the data to be provided
+		 * both seperately as well as inside the frame.
+		 * We already provided the CONFIG_CRYPTO_COPY_IV to rt2x00lib
+		 * to ensure rt2x00lib will not strip the data from the
+		 * frame after the copy, now we must tell mac80211
 		 * to generate the IV/EIV data.
 		 */
 		key->flags |= IEEE80211_KEY_FLAG_GENERATE_IV;
@@ -634,6 +646,32 @@ static void rt2500usb_config_duration(struct rt2x00_dev *rt2x00dev,
 	rt2500usb_register_write(rt2x00dev, TXRX_CSR18, reg);
 }
 
+static void rt2500usb_config_ps(struct rt2x00_dev *rt2x00dev,
+				struct rt2x00lib_conf *libconf)
+{
+	enum dev_state state =
+	    (libconf->conf->flags & IEEE80211_CONF_PS) ?
+		STATE_SLEEP : STATE_AWAKE;
+	u16 reg;
+
+	if (state == STATE_SLEEP) {
+		rt2500usb_register_read(rt2x00dev, MAC_CSR18, &reg);
+		rt2x00_set_field16(&reg, MAC_CSR18_DELAY_AFTER_BEACON,
+				   libconf->conf->beacon_int - 20);
+		rt2x00_set_field16(&reg, MAC_CSR18_BEACONS_BEFORE_WAKEUP,
+				   libconf->conf->listen_interval - 1);
+
+		/* We must first disable autowake before it can be enabled */
+		rt2x00_set_field16(&reg, MAC_CSR18_AUTO_WAKE, 0);
+		rt2500usb_register_write(rt2x00dev, MAC_CSR18, reg);
+
+		rt2x00_set_field16(&reg, MAC_CSR18_AUTO_WAKE, 1);
+		rt2500usb_register_write(rt2x00dev, MAC_CSR18, reg);
+	}
+
+	rt2x00dev->ops->lib->set_device_state(rt2x00dev, state);
+}
+
 static void rt2500usb_config(struct rt2x00_dev *rt2x00dev,
 			     struct rt2x00lib_conf *libconf,
 			     const unsigned int flags)
@@ -647,6 +685,8 @@ static void rt2500usb_config(struct rt2x00_dev *rt2x00dev,
 					 libconf->conf->power_level);
 	if (flags & IEEE80211_CONF_CHANGE_BEACON_INTERVAL)
 		rt2500usb_config_duration(rt2x00dev, libconf);
+	if (flags & IEEE80211_CONF_CHANGE_PS)
+		rt2500usb_config_ps(rt2x00dev, libconf);
 }
 
 /*
@@ -670,7 +710,8 @@ static void rt2500usb_link_stats(struct rt2x00_dev *rt2x00dev,
 	qual->false_cca = rt2x00_get_field16(reg, STA_CSR3_FALSE_CCA_ERROR);
 }
 
-static void rt2500usb_reset_tuner(struct rt2x00_dev *rt2x00dev)
+static void rt2500usb_reset_tuner(struct rt2x00_dev *rt2x00dev,
+				  struct link_qual *qual)
 {
 	u16 eeprom;
 	u16 value;
@@ -691,7 +732,7 @@ static void rt2500usb_reset_tuner(struct rt2x00_dev *rt2x00dev)
 	value = rt2x00_get_field16(eeprom, EEPROM_BBPTUNE_VGCUPPER);
 	rt2500usb_bbp_write(rt2x00dev, 17, value);
 
-	rt2x00dev->link.vgc_level = value;
+	qual->vgc_level = value;
 }
 
 /*
@@ -1176,7 +1217,7 @@ static void rt2500usb_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 	rt2x00_set_field32(&word, TXD_W0_TIMESTAMP,
 			   test_bit(ENTRY_TXD_REQ_TIMESTAMP, &txdesc->flags));
 	rt2x00_set_field32(&word, TXD_W0_OFDM,
-			   test_bit(ENTRY_TXD_OFDM_RATE, &txdesc->flags));
+			   (txdesc->rate_mode == RATE_MODE_OFDM));
 	rt2x00_set_field32(&word, TXD_W0_NEW_SEQ,
 			   test_bit(ENTRY_TXD_FIRST_FRAGMENT, &txdesc->flags));
 	rt2x00_set_field32(&word, TXD_W0_IFS, txdesc->ifs);
@@ -1334,14 +1375,7 @@ static void rt2500usb_fill_rxdone(struct queue_entry *entry,
 
 		/* ICV is located at the end of frame */
 
-		/*
-		 * Hardware has stripped IV/EIV data from 802.11 frame during
-		 * decryption. It has provided the data seperately but rt2x00lib
-		 * should decide if it should be reinserted.
-		 */
-		rxdesc->flags |= RX_FLAG_IV_STRIPPED;
-		if (rxdesc->cipher != CIPHER_TKIP)
-			rxdesc->flags |= RX_FLAG_MMIC_STRIPPED;
+		rxdesc->flags |= RX_FLAG_MMIC_STRIPPED;
 		if (rxdesc->cipher_status == RX_CRYPTO_SUCCESS)
 			rxdesc->flags |= RX_FLAG_DECRYPTED;
 		else if (rxdesc->cipher_status == RX_CRYPTO_FAIL_MIC)
@@ -1575,6 +1609,14 @@ static int rt2500usb_init_eeprom(struct rt2x00_dev *rt2x00dev)
 		rt2500usb_init_led(rt2x00dev, &rt2x00dev->led_qual,
 				   LED_TYPE_ACTIVITY);
 #endif /* CONFIG_RT2X00_LIB_LEDS */
+
+	/*
+	 * Detect if this device has an hardware controlled radio.
+	 */
+#ifdef CONFIG_RT2X00_LIB_RFKILL
+	if (rt2x00_get_field16(eeprom, EEPROM_ANTENNA_HARDWARE_RADIO))
+		__set_bit(CONFIG_SUPPORT_HW_BUTTON, &rt2x00dev->flags);
+#endif /* CONFIG_RT2X00_LIB_RFKILL */
 
 	/*
 	 * Check if the BBP tuning should be disabled.
@@ -1848,7 +1890,7 @@ static int rt2500usb_probe_hw(struct rt2x00_dev *rt2x00dev)
 	__set_bit(DRIVER_REQUIRE_SCHEDULED, &rt2x00dev->flags);
 	if (!modparam_nohwcrypt) {
 		__set_bit(CONFIG_SUPPORT_HW_CRYPTO, &rt2x00dev->flags);
-		__set_bit(CONFIG_CRYPTO_COPY_IV, &rt2x00dev->flags);
+		__set_bit(DRIVER_REQUIRE_COPY_IV, &rt2x00dev->flags);
 	}
 	__set_bit(CONFIG_DISABLE_LINK_TUNING, &rt2x00dev->flags);
 
@@ -1882,6 +1924,7 @@ static const struct rt2x00lib_ops rt2500usb_rt2x00_ops = {
 	.uninitialize		= rt2x00usb_uninitialize,
 	.clear_entry		= rt2x00usb_clear_entry,
 	.set_device_state	= rt2500usb_set_device_state,
+	.rfkill_poll		= rt2500usb_rfkill_poll,
 	.link_stats		= rt2500usb_link_stats,
 	.reset_tuner		= rt2500usb_reset_tuner,
 	.link_tuner		= rt2500usb_link_tuner,

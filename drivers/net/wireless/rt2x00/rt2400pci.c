@@ -524,6 +524,32 @@ static void rt2400pci_config_duration(struct rt2x00_dev *rt2x00dev,
 	rt2x00pci_register_write(rt2x00dev, CSR12, reg);
 }
 
+static void rt2400pci_config_ps(struct rt2x00_dev *rt2x00dev,
+				struct rt2x00lib_conf *libconf)
+{
+	enum dev_state state =
+	    (libconf->conf->flags & IEEE80211_CONF_PS) ?
+		STATE_SLEEP : STATE_AWAKE;
+	u32 reg;
+
+	if (state == STATE_SLEEP) {
+		rt2x00pci_register_read(rt2x00dev, CSR20, &reg);
+		rt2x00_set_field32(&reg, CSR20_DELAY_AFTER_TBCN,
+				   (libconf->conf->beacon_int - 20) * 16);
+		rt2x00_set_field32(&reg, CSR20_TBCN_BEFORE_WAKEUP,
+				   libconf->conf->listen_interval - 1);
+
+		/* We must first disable autowake before it can be enabled */
+		rt2x00_set_field32(&reg, CSR20_AUTOWAKE, 0);
+		rt2x00pci_register_write(rt2x00dev, CSR20, reg);
+
+		rt2x00_set_field32(&reg, CSR20_AUTOWAKE, 1);
+		rt2x00pci_register_write(rt2x00dev, CSR20, reg);
+	}
+
+	rt2x00dev->ops->lib->set_device_state(rt2x00dev, state);
+}
+
 static void rt2400pci_config(struct rt2x00_dev *rt2x00dev,
 			     struct rt2x00lib_conf *libconf,
 			     const unsigned int flags)
@@ -537,6 +563,8 @@ static void rt2400pci_config(struct rt2x00_dev *rt2x00dev,
 		rt2400pci_config_retry_limit(rt2x00dev, libconf);
 	if (flags & IEEE80211_CONF_CHANGE_BEACON_INTERVAL)
 		rt2400pci_config_duration(rt2x00dev, libconf);
+	if (flags & IEEE80211_CONF_CHANGE_PS)
+		rt2400pci_config_ps(rt2x00dev, libconf);
 }
 
 static void rt2400pci_config_cw(struct rt2x00_dev *rt2x00dev,
@@ -572,35 +600,37 @@ static void rt2400pci_link_stats(struct rt2x00_dev *rt2x00dev,
 	qual->false_cca = bbp;
 }
 
-static void rt2400pci_reset_tuner(struct rt2x00_dev *rt2x00dev)
+static inline void rt2400pci_set_vgc(struct rt2x00_dev *rt2x00dev,
+				     struct link_qual *qual, u8 vgc_level)
 {
-	rt2400pci_bbp_write(rt2x00dev, 13, 0x08);
-	rt2x00dev->link.vgc_level = 0x08;
+	rt2400pci_bbp_write(rt2x00dev, 13, vgc_level);
+	qual->vgc_level = vgc_level;
+	qual->vgc_level_reg = vgc_level;
 }
 
-static void rt2400pci_link_tuner(struct rt2x00_dev *rt2x00dev)
+static void rt2400pci_reset_tuner(struct rt2x00_dev *rt2x00dev,
+				  struct link_qual *qual)
 {
-	u8 reg;
+	rt2400pci_set_vgc(rt2x00dev, qual, 0x08);
+}
 
+static void rt2400pci_link_tuner(struct rt2x00_dev *rt2x00dev,
+				 struct link_qual *qual, const u32 count)
+{
 	/*
 	 * The link tuner should not run longer then 60 seconds,
 	 * and should run once every 2 seconds.
 	 */
-	if (rt2x00dev->link.count > 60 || !(rt2x00dev->link.count & 1))
+	if (count > 60 || !(count & 1))
 		return;
 
 	/*
 	 * Base r13 link tuning on the false cca count.
 	 */
-	rt2400pci_bbp_read(rt2x00dev, 13, &reg);
-
-	if (rt2x00dev->link.qual.false_cca > 512 && reg < 0x20) {
-		rt2400pci_bbp_write(rt2x00dev, 13, ++reg);
-		rt2x00dev->link.vgc_level = reg;
-	} else if (rt2x00dev->link.qual.false_cca < 100 && reg > 0x08) {
-		rt2400pci_bbp_write(rt2x00dev, 13, --reg);
-		rt2x00dev->link.vgc_level = reg;
-	}
+	if ((qual->false_cca > 512) && (qual->vgc_level < 0x20))
+		rt2400pci_set_vgc(rt2x00dev, qual, ++qual->vgc_level);
+	else if ((qual->false_cca < 100) && (qual->vgc_level > 0x08))
+		rt2400pci_set_vgc(rt2x00dev, qual, --qual->vgc_level);
 }
 
 /*

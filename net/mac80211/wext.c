@@ -865,18 +865,24 @@ set:
 	local->powersave = ps;
 	local->dynamic_ps_timeout = timeout;
 
-	if (sdata->u.sta.flags & IEEE80211_STA_ASSOCIATED) {
-		if (!(local->hw.flags & IEEE80211_HW_NO_STACK_DYNAMIC_PS) &&
-		    local->dynamic_ps_timeout > 0)
+	if (!(local->hw.flags & IEEE80211_HW_NO_STACK_DYNAMIC_PS) &&
+			(sdata->u.sta.flags & IEEE80211_STA_ASSOCIATED)) {
+		if (local->dynamic_ps_timeout > 0)
 			mod_timer(&local->dynamic_ps_timer, jiffies +
 				  msecs_to_jiffies(local->dynamic_ps_timeout));
 		else {
-			if (local->powersave)
+			if (local->powersave) {
+				ieee80211_send_nullfunc(local, sdata, 1);
 				conf->flags |= IEEE80211_CONF_PS;
-			else
+				ret = ieee80211_hw_config(local,
+						IEEE80211_CONF_CHANGE_PS);
+			} else {
 				conf->flags &= ~IEEE80211_CONF_PS;
+				ret = ieee80211_hw_config(local,
+						IEEE80211_CONF_CHANGE_PS);
+				ieee80211_send_nullfunc(local, sdata, 0);
+			}
 		}
-		ret = ieee80211_hw_config(local, IEEE80211_CONF_CHANGE_PS);
 	}
 
 	return ret;
@@ -903,11 +909,21 @@ static int ieee80211_ioctl_siwauth(struct net_device *dev,
 
 	switch (data->flags & IW_AUTH_INDEX) {
 	case IW_AUTH_WPA_VERSION:
-	case IW_AUTH_CIPHER_PAIRWISE:
 	case IW_AUTH_CIPHER_GROUP:
 	case IW_AUTH_WPA_ENABLED:
 	case IW_AUTH_RX_UNENCRYPTED_EAPOL:
 	case IW_AUTH_KEY_MGMT:
+		break;
+	case IW_AUTH_CIPHER_PAIRWISE:
+		if (sdata->vif.type == NL80211_IFTYPE_STATION) {
+			if (data->value & (IW_AUTH_CIPHER_WEP40 |
+			    IW_AUTH_CIPHER_WEP104 | IW_AUTH_CIPHER_TKIP))
+				sdata->u.sta.flags |=
+					IEEE80211_STA_TKIP_WEP_USED;
+			else
+				sdata->u.sta.flags &=
+					~IEEE80211_STA_TKIP_WEP_USED;
+		}
 		break;
 	case IW_AUTH_DROP_UNENCRYPTED:
 		sdata->drop_unencrypted = !!data->value;
