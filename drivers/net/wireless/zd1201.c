@@ -1842,6 +1842,10 @@ static void zd1201_disconnect(struct usb_interface *interface)
 	if (!zd)
 		return;
 	usb_set_intfdata(interface, NULL);
+	if (zd->dev) {
+		unregister_netdev(zd->dev);
+		free_netdev(zd->dev);
+	}
 
 	hlist_for_each_entry_safe(frag, node, node2, &zd->fraglist, fnode) {
 		hlist_del_init(&frag->fnode);
@@ -1857,11 +1861,7 @@ static void zd1201_disconnect(struct usb_interface *interface)
 		usb_kill_urb(zd->rx_urb);
 		usb_free_urb(zd->rx_urb);
 	}
-
-	if (zd->dev) {
-		unregister_netdev(zd->dev);
-		free_netdev(zd->dev);
-	}
+	kfree(zd);
 }
 
 #ifdef CONFIG_PM

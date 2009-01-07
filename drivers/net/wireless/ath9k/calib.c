@@ -19,8 +19,6 @@
 #include "reg.h"
 #include "phy.h"
 
-static const int16_t NOISE_FLOOR[] = { -96, -93, -98, -96, -93, -96 };
-
 /* We can tune this as we go by monitoring really low values */
 #define ATH9K_NF_TOO_LOW	-60
 
@@ -168,26 +166,18 @@ static void ath9k_hw_do_getnf(struct ath_hal *ah,
 }
 
 static bool getNoiseFloorThresh(struct ath_hal *ah,
-				const struct ath9k_channel *chan,
+				enum ieee80211_band band,
 				int16_t *nft)
 {
-	switch (chan->chanmode) {
-	case CHANNEL_A:
-	case CHANNEL_A_HT20:
-	case CHANNEL_A_HT40PLUS:
-	case CHANNEL_A_HT40MINUS:
+	switch (band) {
+	case IEEE80211_BAND_5GHZ:
 		*nft = (int8_t)ath9k_hw_get_eeprom(ah, EEP_NFTHRESH_5);
 		break;
-	case CHANNEL_B:
-	case CHANNEL_G:
-	case CHANNEL_G_HT20:
-	case CHANNEL_G_HT40PLUS:
-	case CHANNEL_G_HT40MINUS:
+	case IEEE80211_BAND_2GHZ:
 		*nft = (int8_t)ath9k_hw_get_eeprom(ah, EEP_NFTHRESH_2);
 		break;
 	default:
-		DPRINTF(ah->ah_sc, ATH_DBG_CHANNEL,
-			"invalid channel flags 0x%x\n", chan->channelFlags);
+		BUG_ON(1);
 		return false;
 	}
 
@@ -285,27 +275,24 @@ static void ath9k_hw_per_calibration(struct ath_hal *ah,
 	}
 }
 
+/* Assumes you are talking about the currently configured channel */
 static bool ath9k_hw_iscal_supported(struct ath_hal *ah,
-				     struct ath9k_channel *chan,
 				     enum hal_cal_types calType)
 {
 	struct ath_hal_5416 *ahp = AH5416(ah);
-	bool retval = false;
+	struct ieee80211_conf *conf = &ah->ah_sc->hw->conf;
 
 	switch (calType & ahp->ah_suppCals) {
-	case IQ_MISMATCH_CAL:
-		if (!IS_CHAN_B(chan))
-			retval = true;
-		break;
+	case IQ_MISMATCH_CAL: /* Both 2 GHz and 5 GHz support OFDM */
+		return true;
 	case ADC_GAIN_CAL:
 	case ADC_DC_CAL:
-		if (!IS_CHAN_B(chan)
-		    && !(IS_CHAN_2GHZ(chan) && IS_CHAN_HT20(chan)))
-			retval = true;
+		if (conf->channel->band == IEEE80211_BAND_5GHZ &&
+		  conf_is_ht20(conf))
+			return true;
 		break;
 	}
-
-	return retval;
+	return false;
 }
 
 static void ath9k_hw_iqcal_collect(struct ath_hal *ah)
@@ -573,50 +560,40 @@ static void ath9k_hw_adc_dccal_calibrate(struct ath_hal *ah, u8 numChains)
 		  AR_PHY_NEW_ADC_DC_OFFSET_CORR_ENABLE);
 }
 
-void ath9k_hw_reset_calvalid(struct ath_hal *ah, struct ath9k_channel *chan,
-			     bool *isCalDone)
+/* This is done for the currently configured channel */
+bool ath9k_hw_reset_calvalid(struct ath_hal *ah)
 {
 	struct ath_hal_5416 *ahp = AH5416(ah);
-	struct ath9k_channel *ichan =
-		ath9k_regd_check_channel(ah, chan);
+	struct ieee80211_conf *conf = &ah->ah_sc->hw->conf;
 	struct hal_cal_list *currCal = ahp->ah_cal_list_curr;
 
-	*isCalDone = true;
+	if (!ah->ah_curchan)
+		return true;
 
 	if (!AR_SREV_9100(ah) && !AR_SREV_9160_10_OR_LATER(ah))
-		return;
+		return true;
 
 	if (currCal == NULL)
-		return;
-
-	if (ichan == NULL) {
-		DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
-			"invalid channel %u/0x%x; no mapping\n",
-			chan->channel, chan->channelFlags);
-		return;
-	}
-
+		return true;
 
 	if (currCal->calState != CAL_DONE) {
 		DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
 			"Calibration state incorrect, %d\n",
 			currCal->calState);
-		return;
+		return true;
 	}
 
-
-	if (!ath9k_hw_iscal_supported(ah, chan, currCal->calData->calType))
-		return;
+	if (!ath9k_hw_iscal_supported(ah, currCal->calData->calType))
+		return true;
 
 	DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
-		"Resetting Cal %d state for channel %u/0x%x\n",
-		currCal->calData->calType, chan->channel,
-		chan->channelFlags);
+		"Resetting Cal %d state for channel %u\n",
+		currCal->calData->calType, conf->channel->center_freq);
 
-	ichan->CalValid &= ~currCal->calData->calType;
+	ah->ah_curchan->CalValid &= ~currCal->calData->calType;
 	currCal->calState = CAL_WAITING;
 
-	*isCalDone = false;
+	return false;
 }
 
 void ath9k_hw_start_nfcal(struct ath_hal *ah)
@@ -692,6 +669,7 @@ int16_t ath9k_hw_getnf(struct ath_hal *ah,
 	int16_t nf, nfThresh;
 	int16_t nfarray[NUM_NF_READINGS] = { 0 };
 	struct ath9k_nfcal_hist *h;
+	struct ieee80211_channel *c = chan->chan;
 	u8 chainmask;
 
 	if (AR_SREV_9280(ah))
@@ -709,7 +687,7 @@ int16_t ath9k_hw_getnf(struct ath_hal *ah,
 	} else {
 		ath9k_hw_do_getnf(ah, nfarray);
 		nf = nfarray[0];
-		if (getNoiseFloorThresh(ah, chan, &nfThresh)
+		if (getNoiseFloorThresh(ah, c->band, &nfThresh)
 		    && nf > nfThresh) {
 			DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
 				"noise floor failed detected; "
@@ -760,10 +738,9 @@ s16 ath9k_hw_getchan_noise(struct ath_hal *ah, struct ath9k_channel *chan)
 			chan->channel, chan->channelFlags);
 		return ATH_DEFAULT_NOISE_FLOOR;
 	}
-	if (ichan->rawNoiseFloor == 0) {
-		enum wireless_mode mode = ath9k_hw_chan2wmode(ah, chan);
-		nf = NOISE_FLOOR[mode];
-	} else
+	if (ichan->rawNoiseFloor == 0)
+		nf = -96;
+	else
 		nf = ichan->rawNoiseFloor;
 
 	if (!ath9k_hw_nf_in_range(ah, nf))
@@ -940,19 +917,19 @@ bool ath9k_hw_init_cal(struct ath_hal *ah,
 	ahp->ah_cal_list = ahp->ah_cal_list_last = ahp->ah_cal_list_curr = NULL;
 
 	if (AR_SREV_9100(ah) || AR_SREV_9160_10_OR_LATER(ah)) {
-		if (ath9k_hw_iscal_supported(ah, chan, ADC_GAIN_CAL)) {
+		if (ath9k_hw_iscal_supported(ah, ADC_GAIN_CAL)) {
 			INIT_CAL(&ahp->ah_adcGainCalData);
 			INSERT_CAL(ahp, &ahp->ah_adcGainCalData);
 			DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
 				"enabling ADC Gain Calibration.\n");
 		}
-		if (ath9k_hw_iscal_supported(ah, chan, ADC_DC_CAL)) {
+		if (ath9k_hw_iscal_supported(ah, ADC_DC_CAL)) {
 			INIT_CAL(&ahp->ah_adcDcCalData);
 			INSERT_CAL(ahp, &ahp->ah_adcDcCalData);
 			DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,
 				"enabling ADC DC Calibration.\n");
 		}
-		if (ath9k_hw_iscal_supported(ah, chan, IQ_MISMATCH_CAL)) {
+		if (ath9k_hw_iscal_supported(ah, IQ_MISMATCH_CAL)) {
 			INIT_CAL(&ahp->ah_iqCalData);
 			INSERT_CAL(ahp, &ahp->ah_iqCalData);
 			DPRINTF(ah->ah_sc, ATH_DBG_CALIBRATE,

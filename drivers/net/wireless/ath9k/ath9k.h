@@ -453,6 +453,7 @@ struct ath9k_11n_rate_series {
 	 CHANNEL_HT40MINUS)
 
 struct ath9k_channel {
+	struct ieee80211_channel *chan;
 	u16 channel;
 	u32 channelFlags;
 	u8 privFlags;
@@ -843,11 +844,8 @@ void ath9k_hw_rfdetach(struct ath_hal *ah);
 
 /* HW Reset */
 
-bool ath9k_hw_reset(struct ath_hal *ah, struct ath9k_channel *chan,
-		    enum ath9k_ht_macmode macmode,
-		    u8 txchainmask, u8 rxchainmask,
-		    enum ath9k_ht_extprotspacing extprotspacing,
-		    bool bChannelChange, int *status);
+int ath9k_hw_reset(struct ath_hal *ah, struct ath9k_channel *chan,
+		    bool bChannelChange);
 
 /* Key Cache Management */
 
@@ -951,8 +949,7 @@ void ath9k_hw_ani_detach(struct ath_hal *ah);
 
 /* Calibration */
 
-void ath9k_hw_reset_calvalid(struct ath_hal *ah, struct ath9k_channel *chan,
-			     bool *isCalDone);
+bool ath9k_hw_reset_calvalid(struct ath_hal *ah);
 void ath9k_hw_start_nfcal(struct ath_hal *ah);
 void ath9k_hw_loadnf(struct ath_hal *ah, struct ath9k_channel *chan);
 int16_t ath9k_hw_getnf(struct ath_hal *ah,

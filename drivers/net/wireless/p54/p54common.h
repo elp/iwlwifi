@@ -31,7 +31,7 @@ struct bootrec {
 #define PDR_SYNTH_IQ_CAL_DISABLED	0x0008
 #define PDR_SYNTH_IQ_CAL_ZIF		0x0010
 #define PDR_SYNTH_FAA_SWITCH_MASK	0x0020
-#define PDR_SYNTH_FAA_SWITCH_ENABLED	0x0001
+#define PDR_SYNTH_FAA_SWITCH_ENABLED	0x0020
 #define PDR_SYNTH_24_GHZ_MASK		0x0040
 #define PDR_SYNTH_24_GHZ_DISABLED	0x0040
 #define PDR_SYNTH_5_GHZ_MASK		0x0080
@@ -178,6 +178,12 @@ struct pda_pa_curve_data {
 struct pda_rssi_cal_entry {
 	__le16 mul;
 	__le16 add;
+} __attribute__ ((packed));
+
+struct pda_country {
+	u8 regdomain;
+	u8 alpha2[2];
+	u8 flags;
 } __attribute__ ((packed));
 
 /*
@@ -528,6 +534,7 @@ struct p54_psm_interval {
 	__le16 periods;
 } __attribute__ ((packed));
 
+#define P54_PSM_CAM			0
 #define P54_PSM				BIT(0)
 #define P54_PSM_DTIM			BIT(1)
 #define P54_PSM_MCBC			BIT(2)

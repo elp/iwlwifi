@@ -59,41 +59,42 @@ static void bus_read_cachesize(struct ath_softc *sc, int *csz)
 		*csz = DEFAULT_CACHELINE >> 2;   /* Use the default size */
 }
 
-static void ath_setcurmode(struct ath_softc *sc, enum wireless_mode mode)
+static void ath_cache_conf_rate(struct ath_softc *sc,
+				struct ieee80211_conf *conf)
 {
-	sc->cur_rate_table = sc->hw_rate_table[mode];
-	/*
-	 * All protection frames are transmited at 2Mb/s for
-	 * 11g, otherwise at 1Mb/s.
-	 * XXX select protection rate index from rate table.
-	 */
-	sc->sc_protrix = (mode == ATH9K_MODE_11G ? 1 : 0);
-}
-
-static enum wireless_mode ath_chan2mode(struct ath9k_channel *chan)
-{
-	if (chan->chanmode == CHANNEL_A)
-		return ATH9K_MODE_11A;
-	else if (chan->chanmode == CHANNEL_G)
-		return ATH9K_MODE_11G;
-	else if (chan->chanmode == CHANNEL_B)
-		return ATH9K_MODE_11B;
-	else if (chan->chanmode == CHANNEL_A_HT20)
-		return ATH9K_MODE_11NA_HT20;
-	else if (chan->chanmode == CHANNEL_G_HT20)
-		return ATH9K_MODE_11NG_HT20;
-	else if (chan->chanmode == CHANNEL_A_HT40PLUS)
-		return ATH9K_MODE_11NA_HT40PLUS;
-	else if (chan->chanmode == CHANNEL_A_HT40MINUS)
-		return ATH9K_MODE_11NA_HT40MINUS;
-	else if (chan->chanmode == CHANNEL_G_HT40PLUS)
-		return ATH9K_MODE_11NG_HT40PLUS;
-	else if (chan->chanmode == CHANNEL_G_HT40MINUS)
-		return ATH9K_MODE_11NG_HT40MINUS;
-
-	WARN_ON(1); /* should not get here */
-
-	return ATH9K_MODE_11B;
+	switch (conf->channel->band) {
+	case IEEE80211_BAND_2GHZ:
+		if (conf_is_ht20(conf))
+			sc->cur_rate_table =
+			  sc->hw_rate_table[ATH9K_MODE_11NG_HT20];
+		else if (conf_is_ht40_minus(conf))
+			sc->cur_rate_table =
+			  sc->hw_rate_table[ATH9K_MODE_11NG_HT40MINUS];
+		else if (conf_is_ht40_plus(conf))
+			sc->cur_rate_table =
+			  sc->hw_rate_table[ATH9K_MODE_11NG_HT40PLUS];
+		else
+			sc->cur_rate_table =
+			  sc->hw_rate_table[ATH9K_MODE_11G];
+		break;
+	case IEEE80211_BAND_5GHZ:
+		if (conf_is_ht20(conf))
+			sc->cur_rate_table =
+			  sc->hw_rate_table[ATH9K_MODE_11NA_HT20];
+		else if (conf_is_ht40_minus(conf))
+			sc->cur_rate_table =
+			  sc->hw_rate_table[ATH9K_MODE_11NA_HT40MINUS];
+		else if (conf_is_ht40_plus(conf))
+			sc->cur_rate_table =
+			  sc->hw_rate_table[ATH9K_MODE_11NA_HT40PLUS];
+		else
+			sc->cur_rate_table =
+			  sc->hw_rate_table[ATH9K_MODE_11A];
+		break;
+	default:
+		BUG_ON(1);
+		break;
+	}
 }
 
 static void ath_update_txpow(struct ath_softc *sc)
@@ -217,6 +218,7 @@ static int ath_setup_channels(struct ath_softc *sc)
 			chan_2ghz[a].band = IEEE80211_BAND_2GHZ;
 			chan_2ghz[a].center_freq = c->channel;
 			chan_2ghz[a].max_power = c->maxTxPower;
+			c->chan = &chan_2ghz[a];
 
 			if (c->privFlags & CHANNEL_DISALLOW_ADHOC)
 				chan_2ghz[a].flags |= IEEE80211_CHAN_NO_IBSS;
@@ -232,6 +234,7 @@ static int ath_setup_channels(struct ath_softc *sc)
 			chan_5ghz[b].band = IEEE80211_BAND_5GHZ;
 			chan_5ghz[b].center_freq = c->channel;
 			chan_5ghz[b].max_power = c->maxTxPower;
+			c->chan = &chan_5ghz[a];
 
 			if (c->privFlags & CHANNEL_DISALLOW_ADHOC)
 				chan_5ghz[b].flags |= IEEE80211_CHAN_NO_IBSS;
@@ -258,68 +261,63 @@ static int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
 {
 	struct ath_hal *ah = sc->sc_ah;
 	bool fastcc = true, stopped;
+	struct ieee80211_hw *hw = sc->hw;
+	struct ieee80211_channel *channel = hw->conf.channel;
+	int r;
 
 	if (sc->sc_flags & SC_OP_INVALID)
 		return -EIO;
 
-	if (hchan->channel != sc->sc_ah->ah_curchan->channel ||
-	    hchan->channelFlags != sc->sc_ah->ah_curchan->channelFlags ||
-	    (sc->sc_flags & SC_OP_CHAINMASK_UPDATE) ||
-	    (sc->sc_flags & SC_OP_FULL_RESET)) {
-		int status;
-		/*
-		 * This is only performed if the channel settings have
-		 * actually changed.
-		 *
-		 * To switch channels clear any pending DMA operations;
-		 * wait long enough for the RX fifo to drain, reset the
-		 * hardware at the new frequency, and then re-enable
-		 * the relevant bits of the h/w.
-		 */
-		ath9k_hw_set_interrupts(ah, 0);
-		ath_draintxq(sc, false);
-		stopped = ath_stoprecv(sc);
+	/*
+	 * This is only performed if the channel settings have
+	 * actually changed.
+	 *
+	 * To switch channels clear any pending DMA operations;
+	 * wait long enough for the RX fifo to drain, reset the
+	 * hardware at the new frequency, and then re-enable
+	 * the relevant bits of the h/w.
+	 */
+	ath9k_hw_set_interrupts(ah, 0);
+	ath_draintxq(sc, false);
+	stopped = ath_stoprecv(sc);
 
-		/* XXX: do not flush receive queue here. We don't want
-		 * to flush data frames already in queue because of
-		 * changing channel. */
+	/* XXX: do not flush receive queue here. We don't want
+	 * to flush data frames already in queue because of
+	 * changing channel. */
 
-		if (!stopped || (sc->sc_flags & SC_OP_FULL_RESET))
-			fastcc = false;
+	if (!stopped || (sc->sc_flags & SC_OP_FULL_RESET))
+		fastcc = false;
 
-		DPRINTF(sc, ATH_DBG_CONFIG,
-			"(%u MHz) -> (%u MHz), cflags:%x, chanwidth: %d\n",
-			sc->sc_ah->ah_curchan->channel,
-			hchan->channel, hchan->channelFlags, sc->tx_chan_width);
+	DPRINTF(sc, ATH_DBG_CONFIG,
+		"(%u MHz) -> (%u MHz), chanwidth: %d\n",
+		sc->sc_ah->ah_curchan->channel,
+		channel->center_freq, sc->tx_chan_width);
 
-		spin_lock_bh(&sc->sc_resetlock);
-		if (!ath9k_hw_reset(ah, hchan, sc->tx_chan_width,
-				    sc->sc_tx_chainmask, sc->sc_rx_chainmask,
-				    sc->sc_ht_extprotspacing, fastcc, &status)) {
-			DPRINTF(sc, ATH_DBG_FATAL,
-				"Unable to reset channel %u (%uMhz) "
-				"flags 0x%x hal status %u\n",
-				ath9k_hw_mhz2ieee(ah, hchan->channel,
-						  hchan->channelFlags),
-				hchan->channel, hchan->channelFlags, status);
-			spin_unlock_bh(&sc->sc_resetlock);
-			return -EIO;
-		}
+	spin_lock_bh(&sc->sc_resetlock);
+
+	r = ath9k_hw_reset(ah, hchan, fastcc);
+	if (r) {
+		DPRINTF(sc, ATH_DBG_FATAL,
+			"Unable to reset channel (%u Mhz) "
+			"reset status %u\n",
+			channel->center_freq, r);
 		spin_unlock_bh(&sc->sc_resetlock);
-
-		sc->sc_flags &= ~SC_OP_CHAINMASK_UPDATE;
-		sc->sc_flags &= ~SC_OP_FULL_RESET;
-
-		if (ath_startrecv(sc) != 0) {
-			DPRINTF(sc, ATH_DBG_FATAL,
-				"Unable to restart recv logic\n");
-			return -EIO;
-		}
-
-		ath_setcurmode(sc, ath_chan2mode(hchan));
-		ath_update_txpow(sc);
-		ath9k_hw_set_interrupts(ah, sc->sc_imask);
+		return r;
 	}
+	spin_unlock_bh(&sc->sc_resetlock);
+
+	sc->sc_flags &= ~SC_OP_CHAINMASK_UPDATE;
+	sc->sc_flags &= ~SC_OP_FULL_RESET;
+
+	if (ath_startrecv(sc) != 0) {
+		DPRINTF(sc, ATH_DBG_FATAL,
+			"Unable to restart recv logic\n");
+		return -EIO;
+	}
+
+	ath_cache_conf_rate(sc, &hw->conf);
+	ath_update_txpow(sc);
+	ath9k_hw_set_interrupts(ah, sc->sc_imask);
 	return 0;
 }
 
@@ -369,8 +367,7 @@ static void ath_ani_calibrate(unsigned long data)
 	} else {
 		if ((timestamp - sc->sc_ani.sc_resetcal_timer) >=
 		    ATH_RESTART_CALINTERVAL) {
-			ath9k_hw_reset_calvalid(ah, ah->ah_curchan,
-						&sc->sc_ani.sc_caldone);
+			sc->sc_ani.sc_caldone = ath9k_hw_reset_calvalid(ah);
 			if (sc->sc_ani.sc_caldone)
 				sc->sc_ani.sc_resetcal_timer = timestamp;
 		}
@@ -797,7 +794,7 @@ static int ath_reserve_key_cache_slot(struct ath_softc *sc)
 }
 
 static int ath_key_config(struct ath_softc *sc,
-			  const u8 *addr,
+			  struct ieee80211_sta *sta,
 			  struct ieee80211_key_conf *key)
 {
 	struct ath9k_keyval hk;
@@ -831,7 +828,10 @@ static int ath_key_config(struct ath_softc *sc,
 	} else if (key->keyidx) {
 		struct ieee80211_vif *vif;
 
-		mac = addr;
+		if (WARN_ON(!sta))
+			return -EOPNOTSUPP;
+		mac = sta->addr;
+
 		vif = sc->sc_vaps[0];
 		if (vif->type != NL80211_IFTYPE_AP) {
 			/* Only keyidx 0 should be used with unicast key, but
@@ -840,7 +840,10 @@ static int ath_key_config(struct ath_softc *sc,
 		} else
 			return -EIO;
 	} else {
-		mac = addr;
+		if (WARN_ON(!sta))
+			return -EOPNOTSUPP;
+		mac = sta->addr;
+
 		if (key->alg == ALG_TKIP)
 			idx = ath_reserve_key_cache_slot_tkip(sc);
 		else
@@ -1069,23 +1072,18 @@ fail:
 static void ath_radio_enable(struct ath_softc *sc)
 {
 	struct ath_hal *ah = sc->sc_ah;
-	int status;
+	struct ieee80211_channel *channel = sc->hw->conf.channel;
+	int r;
 
 	spin_lock_bh(&sc->sc_resetlock);
-	if (!ath9k_hw_reset(ah, ah->ah_curchan,
-			    sc->tx_chan_width,
-			    sc->sc_tx_chainmask,
-			    sc->sc_rx_chainmask,
-			    sc->sc_ht_extprotspacing,
-			    false, &status)) {
+
+	r = ath9k_hw_reset(ah, ah->ah_curchan, false);
+
+	if (r) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset channel %u (%uMhz) "
-			"flags 0x%x hal status %u\n",
-			ath9k_hw_mhz2ieee(ah,
-					  ah->ah_curchan->channel,
-					  ah->ah_curchan->channelFlags),
-			ah->ah_curchan->channel,
-			ah->ah_curchan->channelFlags, status);
+			"Unable to reset channel %u (%uMhz) ",
+			"reset status %u\n",
+			channel->center_freq, r);
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
 
@@ -1113,8 +1111,8 @@ static void ath_radio_enable(struct ath_softc *sc)
 static void ath_radio_disable(struct ath_softc *sc)
 {
 	struct ath_hal *ah = sc->sc_ah;
-	int status;
-
+	struct ieee80211_channel *channel = sc->hw->conf.channel;
+	int r;
 
 	ieee80211_stop_queues(sc->hw);
 
@@ -1130,20 +1128,12 @@ static void ath_radio_disable(struct ath_softc *sc)
 	ath_flushrecv(sc);		/* flush recv queue */
 
 	spin_lock_bh(&sc->sc_resetlock);
-	if (!ath9k_hw_reset(ah, ah->ah_curchan,
-			    sc->tx_chan_width,
-			    sc->sc_tx_chainmask,
-			    sc->sc_rx_chainmask,
-			    sc->sc_ht_extprotspacing,
-			    false, &status)) {
+	r = ath9k_hw_reset(ah, ah->ah_curchan, false);
+	if (r) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to reset channel %u (%uMhz) "
-			"flags 0x%x hal status %u\n",
-			ath9k_hw_mhz2ieee(ah,
-				ah->ah_curchan->channel,
-				ah->ah_curchan->channelFlags),
-			ah->ah_curchan->channel,
-			ah->ah_curchan->channelFlags, status);
+			"reset status %u\n",
+			channel->center_freq, r);
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
 
@@ -1354,7 +1344,7 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	ah = ath9k_hw_attach(devid, sc, sc->mem, &status);
 	if (ah == NULL) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to attach hardware; HAL status %u\n", status);
+			"Unable to attach hardware; HAL status %d\n", status);
 		error = -ENXIO;
 		goto bad;
 	}
@@ -1621,8 +1611,8 @@ detach:
 int ath_reset(struct ath_softc *sc, bool retry_tx)
 {
 	struct ath_hal *ah = sc->sc_ah;
-	int status;
-	int error = 0;
+	struct ieee80211_hw *hw = sc->hw;
+	int r;
 
 	ath9k_hw_set_interrupts(ah, 0);
 	ath_draintxq(sc, retry_tx);
@@ -1630,14 +1620,10 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 	ath_flushrecv(sc);
 
 	spin_lock_bh(&sc->sc_resetlock);
-	if (!ath9k_hw_reset(ah, sc->sc_ah->ah_curchan,
-			    sc->tx_chan_width,
-			    sc->sc_tx_chainmask, sc->sc_rx_chainmask,
-			    sc->sc_ht_extprotspacing, false, &status)) {
+	r = ath9k_hw_reset(ah, sc->sc_ah->ah_curchan, false);
+	if (r)
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset hardware; hal status %u\n", status);
-		error = -EIO;
-	}
+			"Unable to reset hardware; reset status %u\n", r);
 	spin_unlock_bh(&sc->sc_resetlock);
 
 	if (ath_startrecv(sc) != 0)
@@ -1648,7 +1634,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 	 * that changes the channel so update any state that
 	 * might change as a result.
 	 */
-	ath_setcurmode(sc, ath_chan2mode(sc->sc_ah->ah_curchan));
+	ath_cache_conf_rate(sc, &hw->conf);
 
 	ath_update_txpow(sc);
 
@@ -1668,7 +1654,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 		}
 	}
 
-	return error;
+	return r;
 }
 
 /*
@@ -1851,7 +1837,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	struct ath_softc *sc = hw->priv;
 	struct ieee80211_channel *curchan = hw->conf.channel;
 	struct ath9k_channel *init_channel;
-	int error = 0, pos, status;
+	int r, pos;
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Starting driver with "
 		"initial channel: %d MHz\n", curchan->center_freq);
@@ -1861,8 +1847,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	pos = ath_get_channel(sc, curchan);
 	if (pos == -1) {
 		DPRINTF(sc, ATH_DBG_FATAL, "Invalid channel: %d\n", curchan->center_freq);
-		error = -EINVAL;
-		goto error;
+		return -EINVAL;
 	}
 
 	sc->tx_chan_width = ATH9K_HT_MACMODE_20;
@@ -1881,17 +1866,14 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	 * and then setup of the interrupt mask.
 	 */
 	spin_lock_bh(&sc->sc_resetlock);
-	if (!ath9k_hw_reset(sc->sc_ah, init_channel,
-			    sc->tx_chan_width,
-			    sc->sc_tx_chainmask, sc->sc_rx_chainmask,
-			    sc->sc_ht_extprotspacing, false, &status)) {
+	r = ath9k_hw_reset(sc->sc_ah, init_channel, false);
+	if (r) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset hardware; hal status %u "
-			"(freq %u flags 0x%x)\n", status,
-			init_channel->channel, init_channel->channelFlags);
-		error = -EIO;
+			"Unable to reset hardware; reset status %u "
+			"(freq %u MHz)\n", r,
+			curchan->center_freq);
 		spin_unlock_bh(&sc->sc_resetlock);
-		goto error;
+		return r;
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
 
@@ -1911,8 +1893,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	if (ath_startrecv(sc) != 0) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to start recv logic\n");
-		error = -EIO;
-		goto error;
+		return -EIO;
 	}
 
 	/* Setup our intr mask. */
@@ -1945,7 +1926,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	    !sc->sc_config.swBeaconProcess)
 		sc->sc_imask |= ATH9K_INT_TIM;
 
-	ath_setcurmode(sc, ath_chan2mode(init_channel));
+	ath_cache_conf_rate(sc, &hw->conf);
 
 	sc->sc_flags &= ~SC_OP_INVALID;
 
@@ -1956,11 +1937,9 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	ieee80211_wake_queues(sc->hw);
 
 #if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
-	error = ath_start_rfkill_poll(sc);
+	r = ath_start_rfkill_poll(sc);
 #endif
-
-error:
-	return error;
+	return r;
 }
 
 static int ath9k_tx(struct ieee80211_hw *hw,
@@ -2156,9 +2135,8 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 			(curchan->band == IEEE80211_BAND_2GHZ) ?
 			CHANNEL_G : CHANNEL_A;
 
-		if (conf->ht.enabled) {
-			if (conf->ht.channel_type == NL80211_CHAN_HT40PLUS ||
-			    conf->ht.channel_type == NL80211_CHAN_HT40MINUS)
+		if (conf_is_ht(conf)) {
+			if (conf_is_ht40(conf))
 				sc->tx_chan_width = ATH9K_HT_MACMODE_2040;
 
 			sc->sc_ah->ah_channels[pos].chanmode =
@@ -2172,7 +2150,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 			return -EINVAL;
 		}
 
-		ath_update_chainmask(sc, conf->ht.enabled);
+		ath_update_chainmask(sc, conf_is_ht(conf));
 	}
 
 	if (changed & IEEE80211_CONF_CHANGE_POWER)
@@ -2352,8 +2330,8 @@ static int ath9k_conf_tx(struct ieee80211_hw *hw,
 
 static int ath9k_set_key(struct ieee80211_hw *hw,
 			 enum set_key_cmd cmd,
-			 const u8 *local_addr,
-			 const u8 *addr,
+			 struct ieee80211_vif *vif,
+			 struct ieee80211_sta *sta,
 			 struct ieee80211_key_conf *key)
 {
 	struct ath_softc *sc = hw->priv;
@@ -2363,7 +2341,7 @@ static int ath9k_set_key(struct ieee80211_hw *hw,
 
 	switch (cmd) {
 	case SET_KEY:
-		ret = ath_key_config(sc, addr, key);
+		ret = ath_key_config(sc, sta, key);
 		if (ret >= 0) {
 			key->hw_key_idx = ret;
 			/* push IV and Michael MIC generation to stack */

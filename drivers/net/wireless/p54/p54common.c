@@ -365,6 +365,36 @@ static void p54_parse_rssical(struct ieee80211_hw *dev, void *data, int len,
 	}
 }
 
+static void p54_parse_default_country(struct ieee80211_hw *dev,
+				      void *data, int len)
+{
+	struct pda_country *country;
+
+	if (len != sizeof(*country)) {
+		printk(KERN_ERR "%s: found possible invalid default country "
+				"eeprom entry. (entry size: %d)\n",
+		       wiphy_name(dev->wiphy), len);
+
+		print_hex_dump_bytes("country:", DUMP_PREFIX_NONE,
+				     data, len);
+
+		printk(KERN_ERR "%s: please report this issue.\n",
+			wiphy_name(dev->wiphy));
+		return;
+	}
+
+	country = (struct pda_country *) data;
+	if (country->flags == PDR_COUNTRY_CERT_CODE_PSEUDO)
+		regulatory_hint(dev->wiphy, country->alpha2);
+	else {
+		/* TODO:
+		 * write a shared/common function that converts
+		 * "Regulatory domain codes" (802.11-2007 14.8.2.2)
+		 * into ISO/IEC 3166-1 alpha2 for regulatory_hint.
+		 */
+	}
+}
+
 static int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
 {
 	struct p54_common *priv = dev->priv;
@@ -453,6 +483,9 @@ static int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
 			memcpy(priv->iq_autocal, entry->data, data_len);
 			priv->iq_autocal_len = data_len / sizeof(struct pda_iq_autocal_entry);
 			break;
+		case PDR_DEFAULT_COUNTRY:
+			p54_parse_default_country(dev, entry->data, data_len);
+			break;
 		case PDR_INTERFACE_LIST:
 			tmp = entry->data;
 			while ((u8 *)tmp < entry->data + data_len) {
@@ -487,7 +520,6 @@ static int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
 		case PDR_UTF8_OEM_NAME:
 		case PDR_UTF8_PRODUCT_NAME:
 		case PDR_COUNTRY_LIST:
-		case PDR_DEFAULT_COUNTRY:
 		case PDR_ANTENNA_GAIN:
 		case PDR_PRISM_INDIGO_PA_CALIBRATION_DATA:
 		case PDR_REGULATORY_POWER_LIMITS:
@@ -521,6 +553,10 @@ static int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
 		dev->wiphy->bands[IEEE80211_BAND_2GHZ] = &band_2GHz;
 	if (!(synth & PDR_SYNTH_5_GHZ_DISABLED))
 		dev->wiphy->bands[IEEE80211_BAND_5GHZ] = &band_5GHz;
+	if ((synth & PDR_SYNTH_RX_DIV_MASK) == PDR_SYNTH_RX_DIV_SUPPORTED)
+		priv->rx_diversity_mask = 3;
+	if ((synth & PDR_SYNTH_TX_DIV_MASK) == PDR_SYNTH_TX_DIV_SUPPORTED)
+		priv->tx_diversity_mask = 3;
 
 	if (!is_valid_ether_addr(dev->wiphy->perm_addr)) {
 		u8 perm_addr[ETH_ALEN];
@@ -576,6 +612,7 @@ static int p54_rx_data(struct ieee80211_hw *dev, struct sk_buff *skb)
 	u16 freq = le16_to_cpu(hdr->freq);
 	size_t header_len = sizeof(*hdr);
 	u32 tsf32;
+	u8 rate = hdr->rate & 0xf;
 
 	/*
 	 * If the device is in a unspecified state we have to
@@ -604,8 +641,11 @@ static int p54_rx_data(struct ieee80211_hw *dev, struct sk_buff *skb)
 	rx_status.qual = (100 * hdr->rssi) / 127;
 	if (hdr->rate & 0x10)
 		rx_status.flag |= RX_FLAG_SHORTPRE;
-	rx_status.rate_idx = (dev->conf.channel->band == IEEE80211_BAND_2GHZ ?
-			hdr->rate : (hdr->rate - 4)) & 0xf;
+	if (dev->conf.channel->band == IEEE80211_BAND_5GHZ)
+		rx_status.rate_idx = (rate < 4) ? 0 : rate - 4;
+	else
+		rx_status.rate_idx = rate;
+
 	rx_status.freq = freq;
 	rx_status.band =  dev->conf.channel->band;
 	rx_status.antenna = hdr->antenna;
@@ -1452,8 +1492,8 @@ static int p54_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 	txhdr->hw_queue = queue;
 	txhdr->backlog = current_queue->len;
 	memset(txhdr->durations, 0, sizeof(txhdr->durations));
-	txhdr->tx_antenna = (info->antenna_sel_tx == 0) ?
-		2 : info->antenna_sel_tx - 1;
+	txhdr->tx_antenna = ((info->antenna_sel_tx == 0) ?
+		2 : info->antenna_sel_tx - 1) & priv->tx_diversity_mask;
 	txhdr->output_power = priv->output_power;
 	txhdr->cts_rate = cts_rate;
 	if (padding)
@@ -1515,7 +1555,8 @@ static int p54_setup_mac(struct ieee80211_hw *dev)
 		 * "TRANSPARENT and PROMISCUOUS are mutually exclusive"
 		 * STSW45X0C LMAC API - page 12
 		 */
-		if ((priv->filter_flags & FIF_PROMISC_IN_BSS) &&
+		if (((priv->filter_flags & FIF_PROMISC_IN_BSS) ||
+		     (priv->filter_flags & FIF_OTHER_BSS)) &&
 		    (mode != P54_FILTER_TYPE_PROMISCUOUS))
 			mode |= P54_FILTER_TYPE_TRANSPARENT;
 	} else
@@ -1524,7 +1565,7 @@ static int p54_setup_mac(struct ieee80211_hw *dev)
 	setup->mac_mode = cpu_to_le16(mode);
 	memcpy(setup->mac_addr, priv->mac_addr, ETH_ALEN);
 	memcpy(setup->bssid, priv->bssid, ETH_ALEN);
-	setup->rx_antenna = 2; /* automatic */
+	setup->rx_antenna = 2 & priv->rx_diversity_mask; /* automatic */
 	setup->rx_align = 0;
 	if (priv->fw_var < 0x500) {
 		setup->v1.basic_rate_mask = cpu_to_le32(priv->basic_rate_mask);
@@ -1697,6 +1738,43 @@ static int p54_set_edcf(struct ieee80211_hw *dev)
 	memset(edcf->mapping, 0, sizeof(edcf->mapping));
 	memcpy(edcf->queue, priv->qos_params, sizeof(edcf->queue));
 	priv->tx(dev, skb);
+	return 0;
+}
+
+static int p54_set_ps(struct ieee80211_hw *dev)
+{
+	struct p54_common *priv = dev->priv;
+	struct sk_buff *skb;
+	struct p54_psm *psm;
+	u16 mode;
+	int i;
+
+	if (dev->conf.flags & IEEE80211_CONF_PS)
+		mode = cpu_to_le16(P54_PSM | P54_PSM_DTIM | P54_PSM_MCBC);
+	else
+		mode = P54_PSM_CAM;
+
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*psm) +
+			sizeof(struct p54_hdr), P54_CONTROL_TYPE_PSM,
+			GFP_ATOMIC);
+	if (!skb)
+		return -ENOMEM;
+
+	psm = (struct p54_psm *)skb_put(skb, sizeof(*psm));
+	psm->mode = cpu_to_le16(mode);
+	psm->aid = cpu_to_le16(priv->aid);
+	for (i = 0; i < ARRAY_SIZE(psm->intervals); i++) {
+		psm->intervals[i].interval =
+			cpu_to_le16(dev->conf.listen_interval);
+		psm->intervals[i].periods = 1;
+	}
+
+	psm->beacon_rssi_skip_max = 60;
+	psm->rssi_delta_threshold = 0;
+	psm->nr = 0;
+
+	priv->tx(dev, skb);
+
 	return 0;
 }
 
@@ -1892,6 +1970,11 @@ static int p54_config(struct ieee80211_hw *dev, u32 changed)
 		if (ret)
 			goto out;
 	}
+	if (changed & IEEE80211_CONF_CHANGE_PS) {
+		ret = p54_set_ps(dev);
+		if (ret)
+			goto out;
+	}
 
 out:
 	mutex_unlock(&priv->conf_mutex);
@@ -1943,12 +2026,13 @@ static void p54_configure_filter(struct ieee80211_hw *dev,
 	struct p54_common *priv = dev->priv;
 
 	*total_flags &= FIF_PROMISC_IN_BSS |
+			FIF_OTHER_BSS |
 			(*total_flags & FIF_PROMISC_IN_BSS) ?
 				FIF_FCSFAIL : 0;
 
 	priv->filter_flags = *total_flags;
 
-	if (changed_flags & FIF_PROMISC_IN_BSS)
+	if (changed_flags & (FIF_PROMISC_IN_BSS | FIF_OTHER_BSS))
 		p54_setup_mac(dev);
 }
 
@@ -2067,7 +2151,7 @@ static void p54_bss_info_changed(struct ieee80211_hw *dev,
 }
 
 static int p54_set_key(struct ieee80211_hw *dev, enum set_key_cmd cmd,
-		       const u8 *local_address, const u8 *address,
+		       struct ieee80211_vif *vif, struct ieee80211_sta *sta,
 		       struct ieee80211_key_conf *key)
 {
 	struct p54_common *priv = dev->priv;
@@ -2131,8 +2215,8 @@ static int p54_set_key(struct ieee80211_hw *dev, enum set_key_cmd cmd,
 	rxkey->entry = key->keyidx;
 	rxkey->key_id = key->keyidx;
 	rxkey->key_type = algo;
-	if (address)
-		memcpy(rxkey->mac, address, ETH_ALEN);
+	if (sta)
+		memcpy(rxkey->mac, sta->addr, ETH_ALEN);
 	else
 		memset(rxkey->mac, ~0, ETH_ALEN);
 	if (key->alg != ALG_TKIP) {

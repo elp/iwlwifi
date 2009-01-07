@@ -509,7 +509,6 @@ static inline int __deprecated __IEEE80211_CONF_SHORT_SLOT_TIME(void)
 #define IEEE80211_CONF_SHORT_SLOT_TIME (__IEEE80211_CONF_SHORT_SLOT_TIME())
 
 struct ieee80211_ht_conf {
-	bool enabled;
 	enum nl80211_channel_type channel_type;
 };
 
@@ -548,6 +547,7 @@ enum ieee80211_conf_changed {
  * @listen_interval: listen interval in units of beacon interval
  * @flags: configuration flags defined above
  * @power_level: requested transmit power (in dBm)
+ * @user_power_level: User configured transmit power (in dBm)
  * @channel: the channel to tune to
  * @ht: the HT configuration for the device
  * @long_frame_max_tx_count: Maximum number of transmissions for a "long" frame
@@ -561,6 +561,7 @@ struct ieee80211_conf {
 	int beacon_int;
 	u32 flags;
 	int power_level;
+	int user_power_level;
 
 	u16 listen_interval;
 	bool radio_enabled;
@@ -715,8 +716,8 @@ enum ieee80211_key_flags {
  * 	- Temporal Encryption Key (128 bits)
  * 	- Temporal Authenticator Tx MIC Key (64 bits)
  * 	- Temporal Authenticator Rx MIC Key (64 bits)
- * @icv_len: FIXME
- * @iv_len: FIXME
+ * @icv_len: The ICV length for this key type
+ * @iv_len: The IV length for this key type
  */
 struct ieee80211_key_conf {
 	enum ieee80211_key_alg alg;
@@ -1019,15 +1020,11 @@ ieee80211_get_alt_retry_rate(const struct ieee80211_hw *hw,
  *
  * The set_key() callback in the &struct ieee80211_ops for a given
  * device is called to enable hardware acceleration of encryption and
- * decryption. The callback takes an @address parameter that will be
- * the broadcast address for default keys, the other station's hardware
- * address for individual keys or the zero address for keys that will
- * be used only for transmission.
+ * decryption. The callback takes a @sta parameter that will be NULL
+ * for default keys or keys used for transmission only, or point to
+ * the station information for the peer for individual keys.
  * Multiple transmission keys with the same key index may be used when
  * VLANs are configured for an access point.
- *
- * The @local_address parameter will always be set to our own address,
- * this is only relevant if you support multiple local addresses.
  *
  * When transmitting, the TX control data will use the @hw_key_idx
  * selected by the driver by modifying the &struct ieee80211_key_conf
@@ -1233,8 +1230,8 @@ enum ieee80211_ampdu_mlme_action {
  *
  * @set_key: See the section "Hardware crypto acceleration"
  *	This callback can sleep, and is only called between add_interface
- *	and remove_interface calls, i.e. while the interface with the
- *	given local_address is enabled.
+ *	and remove_interface calls, i.e. while the given virtual interface
+ *	is enabled.
  *
  * @update_tkip_key: See the section "Hardware crypto acceleration"
  * 	This callback will be called in the context of Rx. Called for drivers
@@ -1311,7 +1308,7 @@ struct ieee80211_ops {
 	int (*set_tim)(struct ieee80211_hw *hw, struct ieee80211_sta *sta,
 		       bool set);
 	int (*set_key)(struct ieee80211_hw *hw, enum set_key_cmd cmd,
-		       const u8 *local_address, const u8 *address,
+		       struct ieee80211_vif *vif, struct ieee80211_sta *sta,
 		       struct ieee80211_key_conf *key);
 	void (*update_tkip_key)(struct ieee80211_hw *hw,
 			struct ieee80211_key_conf *conf, const u8 *address,
@@ -1962,5 +1959,35 @@ rate_lowest_index(struct ieee80211_supported_band *sband,
 
 int ieee80211_rate_control_register(struct rate_control_ops *ops);
 void ieee80211_rate_control_unregister(struct rate_control_ops *ops);
+
+static inline bool
+conf_is_ht20(struct ieee80211_conf *conf)
+{
+	return conf->ht.channel_type == NL80211_CHAN_HT20;
+}
+
+static inline bool
+conf_is_ht40_minus(struct ieee80211_conf *conf)
+{
+	return conf->ht.channel_type == NL80211_CHAN_HT40MINUS;
+}
+
+static inline bool
+conf_is_ht40_plus(struct ieee80211_conf *conf)
+{
+	return conf->ht.channel_type == NL80211_CHAN_HT40PLUS;
+}
+
+static inline bool
+conf_is_ht40(struct ieee80211_conf *conf)
+{
+	return conf_is_ht40_minus(conf) || conf_is_ht40_plus(conf);
+}
+
+static inline bool
+conf_is_ht(struct ieee80211_conf *conf)
+{
+	return conf->ht.channel_type != NL80211_CHAN_NO_HT;
+}
 
 #endif /* MAC80211_H */

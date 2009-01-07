@@ -546,7 +546,8 @@ static void ath_buf_set_rate(struct ath_softc *sc, struct ath_buf *bf)
 	struct ieee80211_tx_info *tx_info;
 	struct ieee80211_tx_rate *rates;
 	struct ieee80211_hdr *hdr;
-	int i, flags, rtsctsena = 0;
+	struct ieee80211_hw *hw = sc->hw;
+	int i, flags, rtsctsena = 0, enable_g_protection = 0;
 	u32 ctsduration = 0;
 	u8 rix = 0, cix, ctsrate = 0;
 	__le16 fc;
@@ -578,6 +579,12 @@ static void ath_buf_set_rate(struct ath_softc *sc, struct ath_buf *bf)
 	flags = (bf->bf_flags & (ATH9K_TXDESC_RTSENA | ATH9K_TXDESC_CTSENA));
 	cix = rt->info[rix].ctrl_rate;
 
+	/* All protection frames are transmited at 2Mb/s for 802.11g,
+	 * otherwise we transmit them at 1Mb/s */
+	if (hw->conf.channel->band == IEEE80211_BAND_2GHZ &&
+	  !conf_is_ht(&hw->conf))
+		enable_g_protection = 1;
+
 	/*
 	 * If 802.11g protection is enabled, determine whether to use RTS/CTS or
 	 * just CTS.  Note that this is only done for OFDM/HT unicast frames.
@@ -590,7 +597,7 @@ static void ath_buf_set_rate(struct ath_softc *sc, struct ath_buf *bf)
 		else if (sc->sc_protmode == PROT_M_CTSONLY)
 			flags = ATH9K_TXDESC_CTSENA;
 
-		cix = rt->info[sc->sc_protrix].ctrl_rate;
+		cix = rt->info[enable_g_protection].ctrl_rate;
 		rtsctsena = 1;
 	}
 
@@ -608,7 +615,7 @@ static void ath_buf_set_rate(struct ath_softc *sc, struct ath_buf *bf)
 	if (sc->sc_config.ath_aggr_prot &&
 	    (!bf_isaggr(bf) || (bf_isaggr(bf) && bf->bf_al < 8192))) {
 		flags = ATH9K_TXDESC_RTSENA;
-		cix = rt->info[sc->sc_protrix].ctrl_rate;
+		cix = rt->info[enable_g_protection].ctrl_rate;
 		rtsctsena = 1;
 	}
 
@@ -1133,7 +1140,7 @@ static void ath_tx_stopdma(struct ath_softc *sc, struct ath_txq *txq)
 static void ath_drain_txdataq(struct ath_softc *sc, bool retry_tx)
 {
 	struct ath_hal *ah = sc->sc_ah;
-	int i, status, npend = 0;
+	int i, npend = 0;
 
 	if (!(sc->sc_flags & SC_OP_INVALID)) {
 		for (i = 0; i < ATH9K_NUM_TX_QUEUES; i++) {
@@ -1148,20 +1155,16 @@ static void ath_drain_txdataq(struct ath_softc *sc, bool retry_tx)
 	}
 
 	if (npend) {
+		int r;
 		/* TxDMA not stopped, reset the hal */
 		DPRINTF(sc, ATH_DBG_XMIT, "Unable to stop TxDMA. Reset HAL!\n");
 
 		spin_lock_bh(&sc->sc_resetlock);
-		if (!ath9k_hw_reset(ah,
-				    sc->sc_ah->ah_curchan,
-				    sc->tx_chan_width,
-				    sc->sc_tx_chainmask, sc->sc_rx_chainmask,
-				    sc->sc_ht_extprotspacing, true, &status)) {
-
+		r = ath9k_hw_reset(ah, sc->sc_ah->ah_curchan, true);
+		if (r)
 			DPRINTF(sc, ATH_DBG_FATAL,
-				"Unable to reset hardware; hal status %u\n",
-				status);
-		}
+				"Unable to reset hardware; reset status %u\n",
+				r);
 		spin_unlock_bh(&sc->sc_resetlock);
 	}
 
@@ -1687,7 +1690,7 @@ static int ath_tx_setup_buffer(struct ath_softc *sc, struct ath_buf *bf,
 	(sc->sc_flags & SC_OP_PREAMBLE_SHORT) ?
 		(bf->bf_state.bf_type |= BUF_SHORT_PREAMBLE) :
 		(bf->bf_state.bf_type &= ~BUF_SHORT_PREAMBLE);
-	(sc->hw->conf.ht.enabled && !is_pae(skb) &&
+	(conf_is_ht(&sc->hw->conf) && !is_pae(skb) &&
 	 (tx_info->flags & IEEE80211_TX_CTL_AMPDU)) ?
 		(bf->bf_state.bf_type |= BUF_HT) :
 		(bf->bf_state.bf_type &= ~BUF_HT);

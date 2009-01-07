@@ -523,9 +523,9 @@ static void iwl_ht_conf(struct iwl_priv *priv,
 	 */
 
 	iwl_conf->extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_NONE;
-	if (priv->hw->conf.ht.channel_type == NL80211_CHAN_HT40MINUS)
+	if (conf_is_ht40_minus(&priv->hw->conf))
 		iwl_conf->extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_BELOW;
-	else if(priv->hw->conf.ht.channel_type == NL80211_CHAN_HT40PLUS)
+	else if (conf_is_ht40_plus(&priv->hw->conf))
 		iwl_conf->extension_chan_offset = IEEE80211_HT_PARAM_CHA_SEC_ABOVE;
 
 	/* If no above or below channel supplied disable FAT channel */
@@ -2553,7 +2553,7 @@ static int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 	mutex_lock(&priv->mutex);
 	IWL_DEBUG_MAC80211("enter to channel %d\n", conf->channel->hw_value);
 
-	priv->current_ht_config.is_ht = conf->ht.enabled;
+	priv->current_ht_config.is_ht = conf_is_ht(conf);
 
 	if (conf->radio_enabled && iwl_radio_kill_sw_enable_radio(priv)) {
 		IWL_DEBUG_MAC80211("leave - RF-KILL - waiting for uCode\n");
@@ -3030,7 +3030,8 @@ static void iwl_mac_update_tkip_key(struct ieee80211_hw *hw,
 }
 
 static int iwl_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
-			   const u8 *local_addr, const u8 *addr,
+			   struct ieee80211_vif *vif,
+			   struct ieee80211_sta *sta,
 			   struct ieee80211_key_conf *key)
 {
 	struct iwl_priv *priv = hw->priv;
@@ -3038,6 +3039,9 @@ static int iwl_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	int ret = 0;
 	u8 sta_id = IWL_INVALID_STATION;
 	u8 is_default_wep_key = 0;
+	static const u8 bcast_addr[ETH_ALEN] =
+		{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, };
+	static const u8 *addr;
 
 	IWL_DEBUG_MAC80211("enter\n");
 
@@ -3046,9 +3050,7 @@ static int iwl_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		return -EOPNOTSUPP;
 	}
 
-	if (is_zero_ether_addr(addr))
-		/* only support pairwise keys */
-		return -EOPNOTSUPP;
+	addr = sta ? sta->addr : bcast_addr;
 
 	sta_id = iwl_find_station(priv, addr);
 	if (sta_id == IWL_INVALID_STATION) {

@@ -97,6 +97,8 @@ static const struct ssb_device_id b43_ssb_tbl[] = {
 	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 10),
 	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 11),
 	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 13),
+	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 15),
+	SSB_DEVICE(SSB_VENDOR_BROADCOM, SSB_DEV_80211, 16),
 	SSB_DEVTABLE_END
 };
 
@@ -1952,8 +1954,9 @@ static void b43_print_fw_helptext(struct b43_wl *wl, bool error)
 	const char *text;
 
 	text = "You must go to "
-	       "http://linuxwireless.org/en/users/Drivers/b43#devicefirmware "
-	       "and download the latest firmware (version 4).\n";
+	       "http://wireless.kernel.org/en/users/Drivers/b43#devicefirmware "
+	       "and download the correct firmware for this driver version. "
+	       "Please carefully read all instructions on this website.\n";
 	if (error)
 		b43err(wl, text);
 	else
@@ -2269,8 +2272,11 @@ static int b43_upload_microcode(struct b43_wldev *dev)
 	}
 
 	if (b43_is_old_txhdr_format(dev)) {
+		/* We're over the deadline, but we keep support for old fw
+		 * until it turns out to be in major conflict with something new. */
 		b43warn(dev->wl, "You are using an old firmware image. "
-			"Support for old firmware will be removed in July 2008.\n");
+			"Support for old firmware will be removed soon "
+			"(official deadline was July 2008).\n");
 		b43_print_fw_helptext(dev->wl, 0);
 	}
 
@@ -3470,8 +3476,8 @@ out_unlock_mutex:
 }
 
 static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
-			   const u8 *local_addr, const u8 *addr,
-			   struct ieee80211_key_conf *key)
+			  struct ieee80211_vif *vif, struct ieee80211_sta *sta,
+			  struct ieee80211_key_conf *key)
 {
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev;
@@ -3537,9 +3543,14 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		}
 
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
+			if (WARN_ON(!sta)) {
+				err = -EOPNOTSUPP;
+				goto out_unlock;
+			}
 			/* Pairwise key with an assigned MAC address. */
 			err = b43_key_write(dev, -1, algorithm,
-					    key->key, key->keylen, addr, key);
+					    key->key, key->keylen,
+					    sta->addr, key);
 		} else {
 			/* Group key */
 			err = b43_key_write(dev, index, algorithm,
@@ -3572,7 +3583,7 @@ out_unlock:
 		b43dbg(wl, "%s hardware based encryption for keyidx: %d, "
 		       "mac: %s\n",
 		       cmd == SET_KEY ? "Using" : "Disabling", key->keyidx,
-		       print_mac(mac, addr));
+		       sta ? print_mac(mac, sta->addr) : "<group key>");
 		b43_dump_keymemory(dev);
 	}
 	write_unlock(&wl->tx_lock);
@@ -3752,6 +3763,12 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 		break;
 #ifdef CONFIG_B43_NPHY
 	case B43_PHYTYPE_N:
+		if (phy_rev > 4)
+			unsupported = 1;
+		break;
+#endif
+#ifdef CONFIG_B43_PHY_LP
+	case B43_PHYTYPE_LP:
 		if (phy_rev > 1)
 			unsupported = 1;
 		break;
@@ -3805,7 +3822,11 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 			unsupported = 1;
 		break;
 	case B43_PHYTYPE_N:
-		if (radio_ver != 0x2055)
+		if (radio_ver != 0x2055 && radio_ver != 0x2056)
+			unsupported = 1;
+		break;
+	case B43_PHYTYPE_LP:
+		if (radio_ver != 0x2062)
 			unsupported = 1;
 		break;
 	default:
@@ -4402,6 +4423,7 @@ static int b43_wireless_core_attach(struct b43_wldev *dev)
 			break;
 		case B43_PHYTYPE_G:
 		case B43_PHYTYPE_N:
+		case B43_PHYTYPE_LP:
 			have_2ghz_phy = 1;
 			break;
 		default:
