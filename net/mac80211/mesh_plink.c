@@ -218,7 +218,7 @@ static int mesh_plink_frame_tx(struct ieee80211_sub_if_data *sdata,
 		memcpy(pos, &reason, 2);
 	}
 
-	ieee80211_tx_skb(sdata, skb, 0);
+	ieee80211_tx_skb(sdata, skb, 1);
 	return 0;
 }
 
@@ -361,10 +361,6 @@ int mesh_plink_open(struct sta_info *sta)
 
 void mesh_plink_block(struct sta_info *sta)
 {
-#ifdef CONFIG_MAC80211_VERBOSE_MPL_DEBUG
-	DECLARE_MAC_BUF(mac);
-#endif
-
 	spin_lock_bh(&sta->lock);
 	__mesh_plink_deactivate(sta);
 	sta->plink_state = PLINK_BLOCKED;

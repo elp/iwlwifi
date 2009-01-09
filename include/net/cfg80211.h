@@ -112,12 +112,14 @@ struct beacon_parameters {
  * @STATION_FLAG_SHORT_PREAMBLE: station is capable of receiving frames
  *	with short preambles
  * @STATION_FLAG_WME: station is WME/QoS capable
+ * @STATION_FLAG_MFP: station uses management frame protection
  */
 enum station_flags {
 	STATION_FLAG_CHANGED		= 1<<0,
 	STATION_FLAG_AUTHORIZED		= 1<<NL80211_STA_FLAG_AUTHORIZED,
 	STATION_FLAG_SHORT_PREAMBLE	= 1<<NL80211_STA_FLAG_SHORT_PREAMBLE,
 	STATION_FLAG_WME		= 1<<NL80211_STA_FLAG_WME,
+	STATION_FLAG_MFP		= 1<<NL80211_STA_FLAG_MFP,
 };
 
 /**
@@ -471,6 +473,8 @@ struct ieee80211_channel;
  *
  * @set_default_key: set the default key on an interface
  *
+ * @set_default_mgmt_key: set the default management frame key on an interface
+ *
  * @add_beacon: Add a beacon with given parameters, @head, @interval
  *	and @dtim_period will be valid, @tail is optional.
  * @set_beacon: Change the beacon parameters for an access point mode
@@ -518,6 +522,9 @@ struct cfg80211_ops {
 	int	(*set_default_key)(struct wiphy *wiphy,
 				   struct net_device *netdev,
 				   u8 key_index);
+	int	(*set_default_mgmt_key)(struct wiphy *wiphy,
+					struct net_device *netdev,
+					u8 key_index);
 
 	int	(*add_beacon)(struct wiphy *wiphy, struct net_device *dev,
 			      struct beacon_parameters *info);

@@ -527,6 +527,8 @@ struct ieee80211_tim_ie {
 	u8 virtual_map[0];
 } __attribute__ ((packed));
 
+#define WLAN_SA_QUERY_TR_ID_LEN 16
+
 struct ieee80211_mgmt {
 	__le16 frame_control;
 	__le16 duration;
@@ -646,6 +648,10 @@ struct ieee80211_mgmt {
 					u8 action_code;
 					u8 variable[0];
 				} __attribute__((packed)) mesh_action;
+				struct {
+					u8 action;
+					u8 trans_id[WLAN_SA_QUERY_TR_ID_LEN];
+				} __attribute__ ((packed)) sa_query;
 			} u;
 		} __attribute__ ((packed)) action;
 	} u;
@@ -654,6 +660,15 @@ struct ieee80211_mgmt {
 /* mgmt header + 1 byte category code */
 #define IEEE80211_MIN_ACTION_SIZE offsetof(struct ieee80211_mgmt, u.action.u)
 
+
+/* Management MIC information element (IEEE 802.11w) */
+struct ieee80211_mmie {
+	u8 element_id;
+	u8 length;
+	__le16 key_id;
+	u8 sequence_number[6];
+	u8 mic[8];
+} __attribute__ ((packed));
 
 /* Control frames */
 struct ieee80211_rts {
@@ -899,6 +914,9 @@ enum ieee80211_statuscode {
 	/* 802.11g */
 	WLAN_STATUS_ASSOC_DENIED_NOSHORTTIME = 25,
 	WLAN_STATUS_ASSOC_DENIED_NODSSSOFDM = 26,
+	/* 802.11w */
+	WLAN_STATUS_ASSOC_REJECTED_TEMPORARILY = 30,
+	WLAN_STATUS_ROBUST_MGMT_FRAME_POLICY_VIOLATION = 31,
 	/* 802.11i */
 	WLAN_STATUS_INVALID_IE = 40,
 	WLAN_STATUS_INVALID_GROUP_CIPHER = 41,
@@ -1018,6 +1036,8 @@ enum ieee80211_eid {
 	WLAN_EID_HT_INFORMATION = 61,
 	/* 802.11i */
 	WLAN_EID_RSN = 48,
+	WLAN_EID_MMIE = 76 /* 802.11w */,
+	WLAN_EID_ASSOC_COMEBACK_TIME = 77,
 	WLAN_EID_WPA = 221,
 	WLAN_EID_GENERIC = 221,
 	WLAN_EID_VENDOR_SPECIFIC = 221,
@@ -1030,6 +1050,8 @@ enum ieee80211_category {
 	WLAN_CATEGORY_QOS = 1,
 	WLAN_CATEGORY_DLS = 2,
 	WLAN_CATEGORY_BACK = 3,
+	WLAN_CATEGORY_PUBLIC = 4,
+	WLAN_CATEGORY_SA_QUERY = 8,
 	WLAN_CATEGORY_WMM = 17,
 };
 
@@ -1118,6 +1140,13 @@ enum ieee80211_back_parties {
 	WLAN_BACK_TIMER = 2,
 };
 
+/* SA Query action */
+enum ieee80211_sa_query_action {
+	WLAN_ACTION_SA_QUERY_REQUEST = 0,
+	WLAN_ACTION_SA_QUERY_RESPONSE = 1,
+};
+
+
 /* A-MSDU 802.11n */
 #define IEEE80211_QOS_CONTROL_A_MSDU_PRESENT 0x0080
 
@@ -1128,6 +1157,7 @@ enum ieee80211_back_parties {
 /* reserved: 				0x000FAC03 */
 #define WLAN_CIPHER_SUITE_CCMP		0x000FAC04
 #define WLAN_CIPHER_SUITE_WEP104	0x000FAC05
+#define WLAN_CIPHER_SUITE_AES_CMAC	0x000FAC06
 
 #define WLAN_MAX_KEY_LEN		32
 
@@ -1183,6 +1213,35 @@ static inline u8 *ieee80211_get_DA(struct ieee80211_hdr *hdr)
 		return hdr->addr3;
 	else
 		return hdr->addr1;
+}
+
+/**
+ * ieee80211_is_robust_mgmt_frame - check if frame is a robust management frame
+ * @hdr: the frame (buffer must include at least the first octet of payload)
+ */
+static inline bool ieee80211_is_robust_mgmt_frame(struct ieee80211_hdr *hdr)
+{
+	if (ieee80211_is_disassoc(hdr->frame_control) ||
+	    ieee80211_is_deauth(hdr->frame_control))
+		return true;
+
+	if (ieee80211_is_action(hdr->frame_control)) {
+		u8 *category;
+
+		/*
+		 * Action frames, excluding Public Action frames, are Robust
+		 * Management Frames. However, if we are looking at a Protected
+		 * frame, skip the check since the data may be encrypted and
+		 * the frame has already been found to be a Robust Management
+		 * Frame (by the other end).
+		 */
+		if (ieee80211_has_protected(hdr->frame_control))
+			return true;
+		category = ((u8 *) hdr) + 24;
+		return *category != WLAN_CATEGORY_PUBLIC;
+	}
+
+	return false;
 }
 
 /**

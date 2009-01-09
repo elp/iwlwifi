@@ -33,7 +33,7 @@
  * Both the link tuner as the rfkill will be called once per second.
  */
 #define LINK_TUNE_INTERVAL	( round_jiffies_relative(HZ) )
-#define RFKILL_POLL_INTERVAL	( round_jiffies_relative(HZ) )
+#define RFKILL_POLL_INTERVAL	( 1000 )
 
 /*
  * rt2x00_rate: Per rate device information
@@ -52,20 +52,9 @@ struct rt2x00_rate {
 
 extern const struct rt2x00_rate rt2x00_supported_rates[12];
 
-static inline u16 rt2x00_create_rate_hw_value(const u16 index,
-					      const u16 short_preamble)
-{
-	return (short_preamble << 8) | (index & 0xff);
-}
-
 static inline const struct rt2x00_rate *rt2x00_get_rate(const u16 hw_value)
 {
 	return &rt2x00_supported_rates[hw_value & 0xff];
-}
-
-static inline int rt2x00_get_rate_preamble(const u16 hw_value)
-{
-	return (hw_value & 0xff00);
 }
 
 /*

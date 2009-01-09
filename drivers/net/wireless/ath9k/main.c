@@ -431,12 +431,14 @@ static void ath_ani_calibrate(unsigned long data)
 /*
  * Update tx/rx chainmask. For legacy association,
  * hard code chainmask to 1x1, for 11n association, use
- * the chainmask configuration.
+ * the chainmask configuration, for bt coexistence, use
+ * the chainmask configuration even in legacy mode.
  */
 static void ath_update_chainmask(struct ath_softc *sc, int is_ht)
 {
 	sc->sc_flags |= SC_OP_CHAINMASK_UPDATE;
-	if (is_ht) {
+	if (is_ht ||
+	    (sc->sc_ah->ah_caps.hw_caps & ATH9K_HW_CAP_BT_COEX)) {
 		sc->sc_tx_chainmask = sc->sc_ah->ah_caps.tx_chainmask;
 		sc->sc_rx_chainmask = sc->sc_ah->ah_caps.rx_chainmask;
 	} else {
@@ -815,7 +817,7 @@ static int ath_key_config(struct ath_softc *sc,
 		hk.kv_type = ATH9K_CIPHER_AES_CCM;
 		break;
 	default:
-		return -EINVAL;
+		return -EOPNOTSUPP;
 	}
 
 	hk.kv_len = key->keylen;
@@ -849,7 +851,7 @@ static int ath_key_config(struct ath_softc *sc,
 		else
 			idx = ath_reserve_key_cache_slot(sc);
 		if (idx < 0)
-			return -EIO; /* no free key cache entries */
+			return -ENOSPC; /* no free key cache entries */
 	}
 
 	if (key->alg == ALG_TKIP)
@@ -1521,6 +1523,9 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 		sc->sbands[IEEE80211_BAND_5GHZ].band = IEEE80211_BAND_5GHZ;
 	}
 
+	if (sc->sc_ah->ah_caps.hw_caps & ATH9K_HW_CAP_BT_COEX)
+		ath9k_hw_btcoex_enable(sc->sc_ah);
+
 	return 0;
 bad2:
 	/* cleanup tx queues */
@@ -1553,6 +1558,9 @@ static int ath_attach(u16 devid, struct ath_softc *sc)
 		IEEE80211_HW_HOST_BROADCAST_PS_BUFFERING |
 		IEEE80211_HW_SIGNAL_DBM |
 		IEEE80211_HW_AMPDU_AGGREGATION;
+
+	if (AR_SREV_9160_10_OR_LATER(sc->sc_ah))
+		hw->flags |= IEEE80211_HW_MFP_CAPABLE;
 
 	hw->wiphy->interface_modes =
 		BIT(NL80211_IFTYPE_AP) |
@@ -2114,8 +2122,7 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	struct ieee80211_conf *conf = &hw->conf;
 
 	mutex_lock(&sc->mutex);
-	if (changed & (IEEE80211_CONF_CHANGE_CHANNEL |
-		       IEEE80211_CONF_CHANGE_HT)) {
+	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
 		struct ieee80211_channel *curchan = hw->conf.channel;
 		int pos;
 
@@ -2141,16 +2148,16 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 
 			sc->sc_ah->ah_channels[pos].chanmode =
 				ath_get_extchanmode(sc, curchan,
-						    conf->ht.channel_type);
+						    conf->channel_type);
 		}
+
+		ath_update_chainmask(sc, conf_is_ht(conf));
 
 		if (ath_set_channel(sc, &sc->sc_ah->ah_channels[pos]) < 0) {
 			DPRINTF(sc, ATH_DBG_FATAL, "Unable to set channel\n");
 			mutex_unlock(&sc->mutex);
 			return -EINVAL;
 		}
-
-		ath_update_chainmask(sc, conf_is_ht(conf));
 	}
 
 	if (changed & IEEE80211_CONF_CHANGE_POWER)
@@ -2348,6 +2355,8 @@ static int ath9k_set_key(struct ieee80211_hw *hw,
 			key->flags |= IEEE80211_KEY_FLAG_GENERATE_IV;
 			if (key->alg == ALG_TKIP)
 				key->flags |= IEEE80211_KEY_FLAG_GENERATE_MMIC;
+			if (sc->sc_ah->sw_mgmt_crypto && key->alg == ALG_CCMP)
+				key->flags |= IEEE80211_KEY_FLAG_SW_MGMT;
 			ret = 0;
 		}
 		break;

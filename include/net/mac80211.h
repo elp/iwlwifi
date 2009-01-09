@@ -508,10 +508,6 @@ static inline int __deprecated __IEEE80211_CONF_SHORT_SLOT_TIME(void)
 }
 #define IEEE80211_CONF_SHORT_SLOT_TIME (__IEEE80211_CONF_SHORT_SLOT_TIME())
 
-struct ieee80211_ht_conf {
-	enum nl80211_channel_type channel_type;
-};
-
 /**
  * enum ieee80211_conf_changed - denotes which configuration changed
  *
@@ -520,10 +516,10 @@ struct ieee80211_ht_conf {
  * @IEEE80211_CONF_CHANGE_LISTEN_INTERVAL: the listen interval changed
  * @IEEE80211_CONF_CHANGE_RADIOTAP: the radiotap flag changed
  * @IEEE80211_CONF_CHANGE_PS: the PS flag changed
+ * @IEEE80211_CONF_CHANGE_DYNPS_TIMEOUT: the dynamic PS timeout changed
  * @IEEE80211_CONF_CHANGE_POWER: the TX power changed
- * @IEEE80211_CONF_CHANGE_CHANNEL: the channel changed
+ * @IEEE80211_CONF_CHANGE_CHANNEL: the channel/channel_type changed
  * @IEEE80211_CONF_CHANGE_RETRY_LIMITS: retry limits changed
- * @IEEE80211_CONF_CHANGE_HT: HT configuration changed
  */
 enum ieee80211_conf_changed {
 	IEEE80211_CONF_CHANGE_RADIO_ENABLED	= BIT(0),
@@ -531,10 +527,10 @@ enum ieee80211_conf_changed {
 	IEEE80211_CONF_CHANGE_LISTEN_INTERVAL	= BIT(2),
 	IEEE80211_CONF_CHANGE_RADIOTAP		= BIT(3),
 	IEEE80211_CONF_CHANGE_PS		= BIT(4),
-	IEEE80211_CONF_CHANGE_POWER		= BIT(5),
-	IEEE80211_CONF_CHANGE_CHANNEL		= BIT(6),
-	IEEE80211_CONF_CHANGE_RETRY_LIMITS	= BIT(7),
-	IEEE80211_CONF_CHANGE_HT		= BIT(8),
+	IEEE80211_CONF_CHANGE_DYNPS_TIMEOUT	= BIT(5),
+	IEEE80211_CONF_CHANGE_POWER		= BIT(6),
+	IEEE80211_CONF_CHANGE_CHANNEL		= BIT(7),
+	IEEE80211_CONF_CHANGE_RETRY_LIMITS	= BIT(8),
 };
 
 /**
@@ -547,9 +543,9 @@ enum ieee80211_conf_changed {
  * @listen_interval: listen interval in units of beacon interval
  * @flags: configuration flags defined above
  * @power_level: requested transmit power (in dBm)
- * @user_power_level: User configured transmit power (in dBm)
+ * @dynamic_ps_timeout: dynamic powersave timeout (in ms)
  * @channel: the channel to tune to
- * @ht: the HT configuration for the device
+ * @channel_type: the channel (HT) type
  * @long_frame_max_tx_count: Maximum number of transmissions for a "long" frame
  *    (a frame not RTS protected), called "dot11LongRetryLimit" in 802.11,
  *    but actually means the number of transmissions not the number of retries
@@ -560,8 +556,7 @@ enum ieee80211_conf_changed {
 struct ieee80211_conf {
 	int beacon_int;
 	u32 flags;
-	int power_level;
-	int user_power_level;
+	int power_level, dynamic_ps_timeout;
 
 	u16 listen_interval;
 	bool radio_enabled;
@@ -569,7 +564,7 @@ struct ieee80211_conf {
 	u8 long_frame_max_tx_count, short_frame_max_tx_count;
 
 	struct ieee80211_channel *channel;
-	struct ieee80211_ht_conf ht;
+	enum nl80211_channel_type channel_type;
 };
 
 /**
@@ -657,11 +652,13 @@ struct ieee80211_if_conf {
  * @ALG_WEP: WEP40 or WEP104
  * @ALG_TKIP: TKIP
  * @ALG_CCMP: CCMP (AES)
+ * @ALG_AES_CMAC: AES-128-CMAC
  */
 enum ieee80211_key_alg {
 	ALG_WEP,
 	ALG_TKIP,
 	ALG_CCMP,
+	ALG_AES_CMAC,
 };
 
 /**
@@ -690,12 +687,16 @@ enum ieee80211_key_len {
  *	generation in software.
  * @IEEE80211_KEY_FLAG_PAIRWISE: Set by mac80211, this flag indicates
  *	that the key is pairwise rather then a shared key.
+ * @IEEE80211_KEY_FLAG_SW_MGMT: This flag should be set by the driver for a
+ *	CCMP key if it requires CCMP encryption of management frames (MFP) to
+ *	be done in software.
  */
 enum ieee80211_key_flags {
 	IEEE80211_KEY_FLAG_WMM_STA	= 1<<0,
 	IEEE80211_KEY_FLAG_GENERATE_IV	= 1<<1,
 	IEEE80211_KEY_FLAG_GENERATE_MMIC= 1<<2,
 	IEEE80211_KEY_FLAG_PAIRWISE	= 1<<3,
+	IEEE80211_KEY_FLAG_SW_MGMT	= 1<<4,
 };
 
 /**
@@ -856,10 +857,18 @@ enum ieee80211_tkip_key_type {
  * @IEEE80211_HW_AMPDU_AGGREGATION:
  *	Hardware supports 11n A-MPDU aggregation.
  *
- * @IEEE80211_HW_NO_STACK_DYNAMIC_PS:
- *	Hardware which has dynamic power save support, meaning
- *	that power save is enabled in idle periods, and don't need support
- *	from stack.
+ * @IEEE80211_HW_SUPPORTS_PS:
+ *	Hardware has power save support (i.e. can go to sleep).
+ *
+ * @IEEE80211_HW_PS_NULLFUNC_STACK:
+ *	Hardware requires nullfunc frame handling in stack, implies
+ *	stack support for dynamic PS.
+ *
+ * @IEEE80211_HW_SUPPORTS_DYNAMIC_PS:
+ *	Hardware has support for dynamic PS.
+ *
+ * @IEEE80211_HW_MFP_CAPABLE:
+ *	Hardware supports management frame protection (MFP, IEEE 802.11w).
  */
 enum ieee80211_hw_flags {
 	IEEE80211_HW_RX_INCLUDES_FCS			= 1<<1,
@@ -872,7 +881,10 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_NOISE_DBM				= 1<<8,
 	IEEE80211_HW_SPECTRUM_MGMT			= 1<<9,
 	IEEE80211_HW_AMPDU_AGGREGATION			= 1<<10,
-	IEEE80211_HW_NO_STACK_DYNAMIC_PS		= 1<<11,
+	IEEE80211_HW_SUPPORTS_PS			= 1<<11,
+	IEEE80211_HW_PS_NULLFUNC_STACK			= 1<<12,
+	IEEE80211_HW_SUPPORTS_DYNAMIC_PS		= 1<<13,
+	IEEE80211_HW_MFP_CAPABLE			= 1<<14,
 };
 
 /**
@@ -1056,6 +1068,42 @@ ieee80211_get_alt_retry_rate(const struct ieee80211_hw *hw,
  * rekeying), it will not include a valid phase 1 key. The valid phase 1 key is
  * provided by update_tkip_key only. The trigger that makes mac80211 call this
  * handler is software decryption with wrap around of iv16.
+ */
+
+/**
+ * DOC: Powersave support
+ *
+ * mac80211 has support for various powersave implementations.
+ *
+ * First, it can support hardware that handles all powersaving by
+ * itself, such hardware should simply set the %IEEE80211_HW_SUPPORTS_PS
+ * hardware flag. In that case, it will be told about the desired
+ * powersave mode depending on the association status, and the driver
+ * must take care of sending nullfunc frames when necessary, i.e. when
+ * entering and leaving powersave mode. The driver is required to look at
+ * the AID in beacons and signal to the AP that it woke up when it finds
+ * traffic directed to it. This mode supports dynamic PS by simply
+ * enabling/disabling PS.
+ *
+ * Additionally, such hardware may set the %IEEE80211_HW_SUPPORTS_DYNAMIC_PS
+ * flag to indicate that it can support dynamic PS mode itself (see below).
+ *
+ * Other hardware designs cannot send nullfunc frames by themselves and also
+ * need software support for parsing the TIM bitmap. This is also supported
+ * by mac80211 by combining the %IEEE80211_HW_SUPPORTS_PS and
+ * %IEEE80211_HW_PS_NULLFUNC_STACK flags. The hardware is of course still
+ * required to pass up beacons. Additionally, in this case, mac80211 will
+ * wake up the hardware when multicast traffic is announced in the beacon.
+ *
+ * FIXME: I don't think we can be fast enough in software when we want to
+ *	  receive multicast traffic?
+ *
+ * Dynamic powersave mode is an extension to normal powersave mode in which
+ * the hardware stays awake for a user-specified period of time after sending
+ * a frame so that reply frames need not be buffered and therefore delayed
+ * to the next wakeup. This can either be supported by hardware, in which case
+ * the driver needs to look at the @dynamic_ps_timeout hardware configuration
+ * value, or by the stack if all nullfunc handling is in the stack.
  */
 
 /**
@@ -1963,19 +2011,19 @@ void ieee80211_rate_control_unregister(struct rate_control_ops *ops);
 static inline bool
 conf_is_ht20(struct ieee80211_conf *conf)
 {
-	return conf->ht.channel_type == NL80211_CHAN_HT20;
+	return conf->channel_type == NL80211_CHAN_HT20;
 }
 
 static inline bool
 conf_is_ht40_minus(struct ieee80211_conf *conf)
 {
-	return conf->ht.channel_type == NL80211_CHAN_HT40MINUS;
+	return conf->channel_type == NL80211_CHAN_HT40MINUS;
 }
 
 static inline bool
 conf_is_ht40_plus(struct ieee80211_conf *conf)
 {
-	return conf->ht.channel_type == NL80211_CHAN_HT40PLUS;
+	return conf->channel_type == NL80211_CHAN_HT40PLUS;
 }
 
 static inline bool
@@ -1987,7 +2035,7 @@ conf_is_ht40(struct ieee80211_conf *conf)
 static inline bool
 conf_is_ht(struct ieee80211_conf *conf)
 {
-	return conf->ht.channel_type != NL80211_CHAN_NO_HT;
+	return conf->channel_type != NL80211_CHAN_NO_HT;
 }
 
 #endif /* MAC80211_H */
