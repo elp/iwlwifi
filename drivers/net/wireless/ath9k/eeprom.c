@@ -1217,12 +1217,12 @@ static bool ath9k_hw_set_4k_power_cal_table(struct ath_hal *ah,
 }
 
 static bool ath9k_hw_set_def_power_per_rate_table(struct ath_hal *ah,
-				       struct ath9k_channel *chan,
-				       int16_t *ratesArray,
-				       u16 cfgCtl,
-				       u16 AntennaReduction,
-				       u16 twiceMaxRegulatoryPower,
-				       u16 powerLimit)
+						  struct ath9k_channel *chan,
+						  int16_t *ratesArray,
+						  u16 cfgCtl,
+						  u16 AntennaReduction,
+						  u16 twiceMaxRegulatoryPower,
+						  u16 powerLimit)
 {
 #define REDUCE_SCALED_POWER_BY_TWO_CHAIN     6  /* 10*log10(2)*2 */
 #define REDUCE_SCALED_POWER_BY_THREE_CHAIN   10 /* 10*log10(3)*2 */
@@ -1508,12 +1508,12 @@ static bool ath9k_hw_set_def_power_per_rate_table(struct ath_hal *ah,
 }
 
 static bool ath9k_hw_set_4k_power_per_rate_table(struct ath_hal *ah,
-				       struct ath9k_channel *chan,
-				       int16_t *ratesArray,
-				       u16 cfgCtl,
-				       u16 AntennaReduction,
-				       u16 twiceMaxRegulatoryPower,
-				       u16 powerLimit)
+						 struct ath9k_channel *chan,
+						 int16_t *ratesArray,
+						 u16 cfgCtl,
+						 u16 AntennaReduction,
+						 u16 twiceMaxRegulatoryPower,
+						 u16 powerLimit)
 {
 	struct ath_hal_5416 *ahp = AH5416(ah);
 	struct ar5416_eeprom_4k *pEepData = &ahp->ah_eeprom.map4k;
@@ -2005,8 +2005,8 @@ static int ath9k_hw_4k_set_txpower(struct ath_hal *ah,
 }
 
 static int (*ath9k_set_txpower[]) (struct ath_hal *,
-			    struct ath9k_channel *,
-			    u16, u8, u8, u8) = {
+				   struct ath9k_channel *,
+				   u16, u8, u8, u8) = {
 	ath9k_hw_def_set_txpower,
 	ath9k_hw_4k_set_txpower
 };
@@ -2553,7 +2553,7 @@ static bool ath9k_hw_eeprom_set_4k_board_values(struct ath_hal *ah,
 }
 
 static bool (*ath9k_eeprom_set_board_values[])(struct ath_hal *,
-					struct ath9k_channel *) = {
+					       struct ath9k_channel *) = {
 	ath9k_hw_eeprom_set_def_board_values,
 	ath9k_hw_eeprom_set_4k_board_values
 };
@@ -2616,8 +2616,8 @@ static int ath9k_hw_get_4k_eeprom_antenna_cfg(struct ath_hal *ah,
 }
 
 static int (*ath9k_get_eeprom_antenna_cfg[])(struct ath_hal *,
-				      struct ath9k_channel *,
-				      u8, u16 *) = {
+					     struct ath9k_channel *,
+					     u8, u16 *) = {
 	ath9k_hw_get_def_eeprom_antenna_cfg,
 	ath9k_hw_get_4k_eeprom_antenna_cfg
 };
@@ -2633,13 +2633,13 @@ int ath9k_hw_get_eeprom_antenna_cfg(struct ath_hal *ah,
 }
 
 static u8 ath9k_hw_get_4k_num_ant_config(struct ath_hal *ah,
-			       enum ieee80211_band freq_band)
+					 enum ieee80211_band freq_band)
 {
 	return 1;
 }
 
 static u8 ath9k_hw_get_def_num_ant_config(struct ath_hal *ah,
-			       enum ieee80211_band freq_band)
+					  enum ieee80211_band freq_band)
 {
 	struct ath_hal_5416 *ahp = AH5416(ah);
 	struct ar5416_eeprom_def *eep = &ahp->ah_eeprom.def;
@@ -2658,9 +2658,9 @@ static u8 ath9k_hw_get_def_num_ant_config(struct ath_hal *ah,
 }
 
 static u8 (*ath9k_get_num_ant_config[])(struct ath_hal *,
-	enum ieee80211_band) = {
-	  ath9k_hw_get_def_num_ant_config,
-	  ath9k_hw_get_4k_num_ant_config
+					enum ieee80211_band) = {
+	ath9k_hw_get_def_num_ant_config,
+	ath9k_hw_get_4k_num_ant_config
 };
 
 u8 ath9k_hw_get_num_ant_config(struct ath_hal *ah,

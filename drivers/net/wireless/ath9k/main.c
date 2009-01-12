@@ -916,12 +916,10 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 				 struct ieee80211_bss_conf *bss_conf)
 {
 	struct ath_vap *avp = (void *)vif->drv_priv;
-	DECLARE_MAC_BUF(mac);
 
 	if (bss_conf->assoc) {
-		DPRINTF(sc, ATH_DBG_CONFIG, "Bss Info ASSOC %d, bssid: %s\n",
-			bss_conf->aid,
-			print_mac(mac, sc->sc_curbssid));
+		DPRINTF(sc, ATH_DBG_CONFIG, "Bss Info ASSOC %d, bssid: %pM\n",
+			bss_conf->aid, sc->sc_curbssid);
 
 		/* New association, store aid */
 		if (avp->av_opmode == NL80211_IFTYPE_STATION) {
@@ -2176,7 +2174,6 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 	struct ath_vap *avp = (void *)vif->drv_priv;
 	u32 rfilt = 0;
 	int error, i;
-	DECLARE_MAC_BUF(mac);
 
 	/* TODO: Need to decide which hw opmode to use for multi-interface
 	 * cases */
@@ -2204,9 +2201,8 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 			sc->sc_config.ath_aggr_prot = 0;
 
 			DPRINTF(sc, ATH_DBG_CONFIG,
-				"RX filter 0x%x bssid %s aid 0x%x\n",
-				rfilt, print_mac(mac, sc->sc_curbssid),
-				sc->sc_curaid);
+				"RX filter 0x%x bssid %pM aid 0x%x\n",
+				rfilt, sc->sc_curbssid, sc->sc_curaid);
 
 			/* need to reconfigure the beacon */
 			sc->sc_flags &= ~SC_OP_BEACONS ;

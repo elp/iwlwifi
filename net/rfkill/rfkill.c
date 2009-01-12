@@ -54,10 +54,10 @@ static unsigned long rfkill_states_lockdflt[BITS_TO_LONGS(RFKILL_TYPE_MAX)];
 static bool rfkill_epo_lock_active;
 
 
+#ifdef CONFIG_RFKILL_LEDS
 static void rfkill_led_trigger(struct rfkill *rfkill,
 			       enum rfkill_state state)
 {
-#ifdef CONFIG_RFKILL_LEDS
 	struct led_trigger *led = &rfkill->led_trigger;
 
 	if (!led->name)
@@ -66,10 +66,8 @@ static void rfkill_led_trigger(struct rfkill *rfkill,
 		led_trigger_event(led, LED_OFF);
 	else
 		led_trigger_event(led, LED_FULL);
-#endif /* CONFIG_RFKILL_LEDS */
 }
 
-#ifdef CONFIG_RFKILL_LEDS
 static void rfkill_led_trigger_activate(struct led_classdev *led)
 {
 	struct rfkill *rfkill = container_of(led->trigger,
@@ -719,7 +717,7 @@ static void rfkill_led_trigger_register(struct rfkill *rfkill)
 	int error;
 
 	if (!rfkill->led_trigger.name)
-		rfkill->led_trigger.name = rfkill->dev.bus_id;
+		rfkill->led_trigger.name = dev_name(&rfkill->dev);
 	if (!rfkill->led_trigger.activate)
 		rfkill->led_trigger.activate = rfkill_led_trigger_activate;
 	error = led_trigger_register(&rfkill->led_trigger);
@@ -760,8 +758,7 @@ int __must_check rfkill_register(struct rfkill *rfkill)
 			"badly initialized rfkill struct\n"))
 		return -EINVAL;
 
-	snprintf(dev->bus_id, sizeof(dev->bus_id),
-		 "rfkill%ld", (long)atomic_inc_return(&rfkill_no) - 1);
+	dev_set_name(dev, "rfkill%ld", (long)atomic_inc_return(&rfkill_no) - 1);
 
 	rfkill_led_trigger_register(rfkill);
 

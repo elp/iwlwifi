@@ -1,4 +1,3 @@
-#include <asm/unaligned.h>
 #include <linux/moduleparam.h>
 #include <linux/delay.h>
 #include <linux/etherdevice.h>
@@ -19,7 +18,7 @@
 static int mesh_get_default_parameters(struct device *dev,
 				       struct mrvl_mesh_defaults *defs)
 {
-	struct lbs_private *priv = to_net_dev(dev)->priv;
+	struct lbs_private *priv = netdev_priv(to_net_dev(dev));
 	struct cmd_ds_mesh_config cmd;
 	int ret;
 
@@ -49,7 +48,7 @@ static ssize_t bootflag_get(struct device *dev,
 	if (ret)
 		return ret;
 
-	return snprintf(buf, 12, "%d\n", get_unaligned_le32(&defs.bootflag));
+	return snprintf(buf, 12, "%d\n", le32_to_cpu(defs.bootflag));
 }
 
 /**
@@ -58,7 +57,7 @@ static ssize_t bootflag_get(struct device *dev,
 static ssize_t bootflag_set(struct device *dev, struct device_attribute *attr,
 			    const char *buf, size_t count)
 {
-	struct lbs_private *priv = to_net_dev(dev)->priv;
+	struct lbs_private *priv = netdev_priv(to_net_dev(dev));
 	struct cmd_ds_mesh_config cmd;
 	uint32_t datum;
 	int ret;
@@ -101,7 +100,7 @@ static ssize_t boottime_get(struct device *dev,
 static ssize_t boottime_set(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct lbs_private *priv = to_net_dev(dev)->priv;
+	struct lbs_private *priv = netdev_priv(to_net_dev(dev));
 	struct cmd_ds_mesh_config cmd;
 	uint32_t datum;
 	int ret;
@@ -144,7 +143,7 @@ static ssize_t channel_get(struct device *dev,
 	if (ret)
 		return ret;
 
-	return snprintf(buf, 12, "%d\n", get_unaligned_le16(&defs.channel));
+	return snprintf(buf, 12, "%d\n", le16_to_cpu(defs.channel));
 }
 
 /**
@@ -153,7 +152,7 @@ static ssize_t channel_get(struct device *dev,
 static ssize_t channel_set(struct device *dev, struct device_attribute *attr,
 			   const char *buf, size_t count)
 {
-	struct lbs_private *priv = to_net_dev(dev)->priv;
+	struct lbs_private *priv = netdev_priv(to_net_dev(dev));
 	struct cmd_ds_mesh_config cmd;
 	uint32_t datum;
 	int ret;
@@ -211,7 +210,7 @@ static ssize_t mesh_id_set(struct device *dev, struct device_attribute *attr,
 	struct cmd_ds_mesh_config cmd;
 	struct mrvl_mesh_defaults defs;
 	struct mrvl_meshie *ie;
-	struct lbs_private *priv = to_net_dev(dev)->priv;
+	struct lbs_private *priv = netdev_priv(to_net_dev(dev));
 	int len;
 	int ret;
 
@@ -270,7 +269,7 @@ static ssize_t protocol_id_set(struct device *dev,
 	struct cmd_ds_mesh_config cmd;
 	struct mrvl_mesh_defaults defs;
 	struct mrvl_meshie *ie;
-	struct lbs_private *priv = to_net_dev(dev)->priv;
+	struct lbs_private *priv = netdev_priv(to_net_dev(dev));
 	uint32_t datum;
 	int ret;
 
@@ -324,7 +323,7 @@ static ssize_t metric_id_set(struct device *dev, struct device_attribute *attr,
 	struct cmd_ds_mesh_config cmd;
 	struct mrvl_mesh_defaults defs;
 	struct mrvl_meshie *ie;
-	struct lbs_private *priv = to_net_dev(dev)->priv;
+	struct lbs_private *priv = netdev_priv(to_net_dev(dev));
 	uint32_t datum;
 	int ret;
 
@@ -378,7 +377,7 @@ static ssize_t capability_set(struct device *dev, struct device_attribute *attr,
 	struct cmd_ds_mesh_config cmd;
 	struct mrvl_mesh_defaults defs;
 	struct mrvl_meshie *ie;
-	struct lbs_private *priv = to_net_dev(dev)->priv;
+	struct lbs_private *priv = netdev_priv(to_net_dev(dev));
 	uint32_t datum;
 	int ret;
 

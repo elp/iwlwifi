@@ -652,7 +652,6 @@ static void rs_get_rate(void *priv_r, struct ieee80211_sta *sta,
 	u16 fc, rate_mask;
 	struct iwl_priv *priv = (struct iwl_priv *)priv_r;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	DECLARE_MAC_BUF(mac);
 
 	IWL_DEBUG_RATE("enter\n");
 
@@ -678,8 +677,8 @@ static void rs_get_rate(void *priv_r, struct ieee80211_sta *sta,
 		u8 sta_id = iwl3945_hw_find_station(priv, hdr->addr1);
 
 		if (sta_id == IWL_INVALID_STATION) {
-			IWL_DEBUG_RATE("LQ: ADD station %s\n",
-				       print_mac(mac, hdr->addr1));
+			IWL_DEBUG_RATE("LQ: ADD station %pm\n",
+				       hdr->addr1);
 			sta_id = iwl3945_add_station(priv,
 				    hdr->addr1, 0, CMD_ASYNC);
 		}

@@ -121,7 +121,6 @@ static void ieee80211_key_enable_hw_accel(struct ieee80211_key *key)
 	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_sta *sta;
 	int ret;
-	DECLARE_MAC_BUF(mac);
 
 	assert_key_lock();
 	might_sleep();
@@ -148,10 +147,9 @@ static void ieee80211_key_enable_hw_accel(struct ieee80211_key *key)
 
 	if (ret && ret != -ENOSPC && ret != -EOPNOTSUPP)
 		printk(KERN_ERR "mac80211-%s: failed to set key "
-		       "(%d, %s) to hardware (%d)\n",
+		       "(%d, %pM) to hardware (%d)\n",
 		       wiphy_name(key->local->hw.wiphy),
-		       key->conf.keyidx,
-		       print_mac(mac, sta ? sta->addr : bcast_addr), ret);
+		       key->conf.keyidx, sta ? sta->addr : bcast_addr, ret);
 }
 
 static void ieee80211_key_disable_hw_accel(struct ieee80211_key *key)
@@ -159,7 +157,6 @@ static void ieee80211_key_disable_hw_accel(struct ieee80211_key *key)
 	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_sta *sta;
 	int ret;
-	DECLARE_MAC_BUF(mac);
 
 	assert_key_lock();
 	might_sleep();
@@ -187,10 +184,9 @@ static void ieee80211_key_disable_hw_accel(struct ieee80211_key *key)
 
 	if (ret)
 		printk(KERN_ERR "mac80211-%s: failed to remove key "
-		       "(%d, %s) from hardware (%d)\n",
+		       "(%d, %pM) from hardware (%d)\n",
 		       wiphy_name(key->local->hw.wiphy),
-		       key->conf.keyidx,
-		       print_mac(mac, sta ? sta->addr : bcast_addr), ret);
+		       key->conf.keyidx, sta ? sta->addr : bcast_addr, ret);
 
 	spin_lock(&todo_lock);
 	key->flags &= ~KEY_FLAG_UPLOADED_TO_HARDWARE;

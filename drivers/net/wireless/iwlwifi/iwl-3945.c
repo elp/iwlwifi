@@ -805,7 +805,6 @@ u8 iwl3945_hw_find_station(struct iwl_priv *priv, const u8 *addr)
 	int i, start = IWL_AP_ID;
 	int ret = IWL_INVALID_STATION;
 	unsigned long flags;
-	DECLARE_MAC_BUF(mac);
 
 	if ((priv->iw_mode == NL80211_IFTYPE_ADHOC) ||
 	    (priv->iw_mode == NL80211_IFTYPE_AP))
@@ -823,8 +822,8 @@ u8 iwl3945_hw_find_station(struct iwl_priv *priv, const u8 *addr)
 			goto out;
 		}
 
-	IWL_DEBUG_INFO("can not find STA %s (total %d)\n",
-		       print_mac(mac, addr), priv->num_stations);
+	IWL_DEBUG_INFO("can not find STA %pM (total %d)\n",
+		       addr, priv->num_stations);
  out:
 	spin_unlock_irqrestore(&priv->sta_lock, flags);
 	return ret;
@@ -2250,7 +2249,7 @@ int iwl3945_txpower_set_from_eeprom(struct iwl_priv *priv)
 		/* set tx power value for all OFDM rates */
 		for (rate_index = 0; rate_index < IWL_OFDM_RATES;
 		     rate_index++) {
-			s32 power_idx;
+			s32 uninitialized_var(power_idx);
 			int rc;
 
 			/* use channel group's clip-power table,

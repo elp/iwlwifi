@@ -56,7 +56,11 @@ obj-$(CONFIG_NETLABEL)		+= netlabel/
 obj-$(CONFIG_IUCV)		+= iucv/
 obj-$(CONFIG_RFKILL)		+= rfkill/
 obj-$(CONFIG_NET_9P)		+= 9p/
+ifneq ($(CONFIG_DCB),)
+obj-y				+= dcb/
+endif
 
 ifeq ($(CONFIG_NET),y)
 obj-$(CONFIG_SYSCTL)		+= sysctl_net.o
 endif
+obj-$(CONFIG_WIMAX)		+= wimax/

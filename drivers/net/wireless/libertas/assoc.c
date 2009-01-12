@@ -1,6 +1,5 @@
 /* Copyright (C) 2006, Red Hat, Inc. */
 
-#include <asm/unaligned.h>
 #include <linux/types.h>
 #include <linux/etherdevice.h>
 #include <linux/ieee80211.h>
@@ -156,7 +155,6 @@ static int lbs_adhoc_join(struct lbs_private *priv,
 	struct cmd_ds_802_11_ad_hoc_join cmd;
 	struct bss_descriptor *bss = &assoc_req->bss;
 	u8 preamble = RADIO_PREAMBLE_LONG;
-	DECLARE_MAC_BUF(mac);
 	DECLARE_SSID_BUF(ssid);
 	u16 ratesize = 0;
 	int ret = 0;
@@ -232,8 +230,8 @@ static int lbs_adhoc_join(struct lbs_private *priv,
 	       bss->capability, CAPINFO_MASK);
 
 	/* information on BSSID descriptor passed to FW */
-	lbs_deb_join("ADHOC_J_CMD: BSSID = %s, SSID = '%s'\n",
-			print_mac(mac, cmd.bss.bssid), cmd.bss.ssid);
+	lbs_deb_join("ADHOC_J_CMD: BSSID = %pM, SSID = '%s'\n",
+			cmd.bss.bssid, cmd.bss.ssid);
 
 	/* Only v8 and below support setting these */
 	if (priv->fwrelease < 0x09000000) {
@@ -265,7 +263,7 @@ static int lbs_adhoc_join(struct lbs_private *priv,
 	cmd.bss.ssparamset.ibssparamset.atimwindow = cpu_to_le16(bss->atimwindow);
 
 	if (assoc_req->secinfo.wep_enabled) {
-		u16 tmp = get_unaligned_le16(&cmd.bss.capability);
+		u16 tmp = le16_to_cpu(cmd.bss.capability);
 		tmp |= WLAN_CAPABILITY_PRIVACY;
 		cmd.bss.capability = cpu_to_le16(tmp);
 	}
@@ -760,17 +758,15 @@ static int assoc_helper_bssid(struct lbs_private *priv,
 {
 	int ret = 0;
 	struct bss_descriptor * bss;
-	DECLARE_MAC_BUF(mac);
 
-	lbs_deb_enter_args(LBS_DEB_ASSOC, "BSSID %s",
-		print_mac(mac, assoc_req->bssid));
+	lbs_deb_enter_args(LBS_DEB_ASSOC, "BSSID %pM", assoc_req->bssid);
 
 	/* Search for index position in list for requested MAC */
 	bss = lbs_find_bssid_in_list(priv, assoc_req->bssid,
 			    assoc_req->mode);
 	if (bss == NULL) {
-		lbs_deb_assoc("ASSOC: WAP: BSSID %s not found, "
-			"cannot associate.\n", print_mac(mac, assoc_req->bssid));
+		lbs_deb_assoc("ASSOC: WAP: BSSID %pM not found, "
+			"cannot associate.\n", assoc_req->bssid);
 		goto out;
 	}
 
@@ -1216,7 +1212,6 @@ void lbs_association_worker(struct work_struct *work)
 	struct assoc_request * assoc_req = NULL;
 	int ret = 0;
 	int find_any_ssid = 0;
-	DECLARE_MAC_BUF(mac);
 	DECLARE_SSID_BUF(ssid);
 
 	lbs_deb_enter(LBS_DEB_ASSOC);
@@ -1237,13 +1232,13 @@ void lbs_association_worker(struct work_struct *work)
 		"    chann:     %d\n"
 		"    band:      %d\n"
 		"    mode:      %d\n"
-		"    BSSID:     %s\n"
+		"    BSSID:     %pM\n"
 		"    secinfo:  %s%s%s\n"
 		"    auth_mode: %d\n",
 		assoc_req->flags,
 		print_ssid(ssid, assoc_req->ssid, assoc_req->ssid_len),
 		assoc_req->channel, assoc_req->band, assoc_req->mode,
-		print_mac(mac, assoc_req->bssid),
+		assoc_req->bssid,
 		assoc_req->secinfo.WPAenabled ? " WPA" : "",
 		assoc_req->secinfo.WPA2enabled ? " WPA2" : "",
 		assoc_req->secinfo.wep_enabled ? " WEP" : "",
@@ -1366,8 +1361,8 @@ void lbs_association_worker(struct work_struct *work)
 		}
 
 		if (success) {
-			lbs_deb_assoc("associated to %s\n",
-				print_mac(mac, priv->curbssparams.bssid));
+			lbs_deb_assoc("associated to %pM\n",
+				priv->curbssparams.bssid);
 			lbs_prepare_and_send_command(priv,
 				CMD_802_11_RSSI,
 				0, CMD_OPTION_WAITFORRSP, 0, NULL);
@@ -1487,7 +1482,6 @@ int lbs_cmd_80211_authenticate(struct lbs_private *priv,
 	struct cmd_ds_802_11_authenticate *pauthenticate = &cmd->params.auth;
 	int ret = -1;
 	u8 *bssid = pdata_buf;
-	DECLARE_MAC_BUF(mac);
 
 	lbs_deb_enter(LBS_DEB_JOIN);
 
@@ -1514,8 +1508,8 @@ int lbs_cmd_80211_authenticate(struct lbs_private *priv,
 
 	memcpy(pauthenticate->macaddr, bssid, ETH_ALEN);
 
-	lbs_deb_join("AUTH_CMD: BSSID %s, auth 0x%x\n",
-		print_mac(mac, bssid), pauthenticate->authtype);
+	lbs_deb_join("AUTH_CMD: BSSID %pM, auth 0x%x\n",
+		bssid, pauthenticate->authtype);
 	ret = 0;
 
 out:
@@ -1708,7 +1702,7 @@ int lbs_ret_80211_associate(struct lbs_private *priv,
 	 *                                    association response from the AP)
 	 */
 
-	status_code = get_unaligned_le16(&passocrsp->statuscode);
+	status_code = le16_to_cpu(passocrsp->statuscode);
 	switch (status_code) {
 	case 0x00:
 		break;
@@ -1740,7 +1734,7 @@ int lbs_ret_80211_associate(struct lbs_private *priv,
 	}
 
 	lbs_deb_hex(LBS_DEB_ASSOC, "ASSOC_RESP", (void *)&resp->params,
-		get_unaligned_le16(&resp->size) - S_DS_GEN);
+		le16_to_cpu(resp->size) - S_DS_GEN);
 
 	/* Send a Media Connected event, according to the Spec */
 	priv->connect_status = LBS_CONNECTED;
@@ -1774,12 +1768,11 @@ done:
 static int lbs_adhoc_post(struct lbs_private *priv, struct cmd_header *resp)
 {
 	int ret = 0;
-	u16 command = get_unaligned_le16(&resp->command);
-	u16 result = get_unaligned_le16(&resp->result);
+	u16 command = le16_to_cpu(resp->command);
+	u16 result = le16_to_cpu(resp->result);
 	struct cmd_ds_802_11_ad_hoc_result *adhoc_resp;
 	union iwreq_data wrqu;
 	struct bss_descriptor *bss;
-	DECLARE_MAC_BUF(mac);
 	DECLARE_SSID_BUF(ssid);
 
 	lbs_deb_enter(LBS_DEB_JOIN);
@@ -1829,9 +1822,9 @@ static int lbs_adhoc_post(struct lbs_private *priv, struct cmd_header *resp)
 	wrqu.ap_addr.sa_family = ARPHRD_ETHER;
 	wireless_send_event(priv->dev, SIOCGIWAP, &wrqu, NULL);
 
-	lbs_deb_join("ADHOC_RESP: Joined/started '%s', BSSID %s, channel %d\n",
+	lbs_deb_join("ADHOC_RESP: Joined/started '%s', BSSID %pM, channel %d\n",
 		     print_ssid(ssid, bss->ssid, bss->ssid_len),
-		     print_mac(mac, priv->curbssparams.bssid),
+		     priv->curbssparams.bssid,
 		     priv->curbssparams.channel);
 
 done:

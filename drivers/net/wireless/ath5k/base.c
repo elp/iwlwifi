@@ -240,7 +240,8 @@ static int ath5k_get_tx_stats(struct ieee80211_hw *hw,
 		struct ieee80211_tx_queue_stats *stats);
 static u64 ath5k_get_tsf(struct ieee80211_hw *hw);
 static void ath5k_reset_tsf(struct ieee80211_hw *hw);
-static int ath5k_beacon_update(struct ath5k_softc *sc, struct sk_buff *skb);
+static int ath5k_beacon_update(struct ath5k_softc *sc,
+		struct sk_buff *skb);
 static void ath5k_bss_info_changed(struct ieee80211_hw *hw,
 		struct ieee80211_vif *vif,
 		struct ieee80211_bss_conf *bss_conf,

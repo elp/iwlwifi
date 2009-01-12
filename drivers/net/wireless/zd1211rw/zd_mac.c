@@ -287,7 +287,7 @@ static void zd_op_stop(struct ieee80211_hw *hw)
  * @skb - a sk-buffer
  * @flags: extra flags to set in the TX status info
  * @ackssi: ACK signal strength
- * @success - True for successfull transmission of the frame
+ * @success - True for successful transmission of the frame
  *
  * This information calls ieee80211_tx_status_irqsafe() if required by the
  * control information. It copies the control information into the status
@@ -854,14 +854,12 @@ static void zd_op_configure_filter(struct ieee80211_hw *hw,
 	if (*new_flags & (FIF_PROMISC_IN_BSS | FIF_ALLMULTI)) {
 		zd_mc_add_all(&hash);
 	} else {
-		DECLARE_MAC_BUF(macbuf);
-
 		zd_mc_clear(&hash);
 		for (i = 0; i < mc_count; i++) {
 			if (!mclist)
 				break;
-			dev_dbg_f(zd_mac_dev(mac), "mc addr %s\n",
-				  print_mac(macbuf, mclist->dmi_addr));
+			dev_dbg_f(zd_mac_dev(mac), "mc addr %pM\n",
+				  mclist->dmi_addr);
 			zd_mc_add_addr(&hash, mclist->dmi_addr);
 			mclist = mclist->next;
 		}

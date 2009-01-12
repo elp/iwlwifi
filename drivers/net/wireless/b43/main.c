@@ -3217,7 +3217,7 @@ static int b43_switch_band(struct b43_wl *wl, struct ieee80211_channel *chan)
 	struct b43_wldev *down_dev;
 	struct b43_wldev *d;
 	int err;
-	bool gmode;
+	bool uninitialized_var(gmode);
 	int prev_status;
 
 	/* Find a device and PHY which supports the band. */
@@ -3484,7 +3484,6 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	u8 algorithm;
 	u8 index;
 	int err;
-	DECLARE_MAC_BUF(mac);
 
 	if (modparam_nohwcrypt)
 		return -ENOSPC; /* User disabled HW-crypto */
@@ -3581,9 +3580,9 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 out_unlock:
 	if (!err) {
 		b43dbg(wl, "%s hardware based encryption for keyidx: %d, "
-		       "mac: %s\n",
+		       "mac: %pM\n",
 		       cmd == SET_KEY ? "Using" : "Disabling", key->keyidx,
-		       sta ? print_mac(mac, sta->addr) : "<group key>");
+		       sta ? sta->addr : "<group key>");
 		b43_dump_keymemory(dev);
 	}
 	write_unlock(&wl->tx_lock);

@@ -772,10 +772,8 @@ int iwl_tx_skb(struct iwl_priv *priv, struct sk_buff *skb)
 	/* Find (or create) index into station table for destination station */
 	sta_id = iwl_get_sta_id(priv, hdr);
 	if (sta_id == IWL_INVALID_STATION) {
-		DECLARE_MAC_BUF(mac);
-
-		IWL_DEBUG_DROP("Dropping - INVALID STATION: %s\n",
-			       print_mac(mac, hdr->addr1));
+		IWL_DEBUG_DROP("Dropping - INVALID STATION: %pM\n",
+			       hdr->addr1);
 		goto drop;
 	}
 
@@ -1188,15 +1186,14 @@ int iwl_tx_agg_start(struct iwl_priv *priv, const u8 *ra, u16 tid, u16 *ssn)
 	int ret;
 	unsigned long flags;
 	struct iwl_tid_data *tid_data;
-	DECLARE_MAC_BUF(mac);
 
 	if (likely(tid < ARRAY_SIZE(default_tid_to_tx_fifo)))
 		tx_fifo = default_tid_to_tx_fifo[tid];
 	else
 		return -EINVAL;
 
-	IWL_WARN(priv, "%s on ra = %s tid = %d\n",
-			__func__, print_mac(mac, ra), tid);
+	IWL_WARN(priv, "%s on ra = %pM tid = %d\n",
+			__func__, ra, tid);
 
 	sta_id = iwl_find_station(priv, ra);
 	if (sta_id == IWL_INVALID_STATION)
@@ -1241,7 +1238,6 @@ int iwl_tx_agg_stop(struct iwl_priv *priv , const u8 *ra, u16 tid)
 	struct iwl_tid_data *tid_data;
 	int ret, write_ptr, read_ptr;
 	unsigned long flags;
-	DECLARE_MAC_BUF(mac);
 
 	if (!ra) {
 		IWL_ERR(priv, "ra = NULL\n");
@@ -1409,7 +1405,6 @@ void iwl_rx_reply_compressed_ba(struct iwl_priv *priv,
 	int index;
 	int sta_id;
 	int tid;
-	DECLARE_MAC_BUF(mac);
 
 	/* "flow" corresponds to Tx queue */
 	u16 scd_flow = le16_to_cpu(ba_resp->scd_flow);
@@ -1434,10 +1429,10 @@ void iwl_rx_reply_compressed_ba(struct iwl_priv *priv,
 
 	/* TODO: Need to get this copy more safely - now good for debug */
 
-	IWL_DEBUG_TX_REPLY("REPLY_COMPRESSED_BA [%d] Received from %s, "
+	IWL_DEBUG_TX_REPLY("REPLY_COMPRESSED_BA [%d] Received from %pM, "
 			   "sta_id = %d\n",
 			   agg->wait_for_ba,
-			   print_mac(mac, (u8 *)&ba_resp->sta_addr_lo32),
+			   (u8 *) &ba_resp->sta_addr_lo32,
 			   ba_resp->sta_id);
 	IWL_DEBUG_TX_REPLY("TID = %d, SeqCtl = %d, bitmap = 0x%llx, scd_flow = "
 			   "%d, scd_ssn = %d\n",

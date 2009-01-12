@@ -1335,7 +1335,6 @@ static void orinoco_rx_monitor(struct net_device *dev, u16 rxfid,
 	skb->pkt_type = PACKET_OTHERHOST;
 	skb->protocol = __constant_htons(ETH_P_802_2);
 	
-	dev->last_rx = jiffies;
 	stats->rx_packets++;
 	stats->rx_bytes += skb->len;
 
@@ -1532,12 +1531,11 @@ static void orinoco_rx(struct net_device *dev,
 			   MICHAEL_MIC_LEN)) {
 			union iwreq_data wrqu;
 			struct iw_michaelmicfailure wxmic;
-			DECLARE_MAC_BUF(mac);
 
 			printk(KERN_WARNING "%s: "
-			       "Invalid Michael MIC in data frame from %s, "
+			       "Invalid Michael MIC in data frame from %pM, "
 			       "using key %i\n",
-			       dev->name, print_mac(mac, src), key_id);
+			       dev->name, src, key_id);
 
 			/* TODO: update stats */
 
@@ -1585,7 +1583,6 @@ static void orinoco_rx(struct net_device *dev,
 	else
 		memcpy(hdr->h_source, desc->addr2, ETH_ALEN);
 
-	dev->last_rx = jiffies;
 	skb->protocol = eth_type_trans(skb, dev);
 	skb->ip_summed = CHECKSUM_NONE;
 	if (fc & IEEE80211_FCTL_TODS)
@@ -3387,7 +3384,6 @@ static int orinoco_init(struct net_device *dev)
 	struct hermes_idstring nickbuf;
 	u16 reclen;
 	int len;
-	DECLARE_MAC_BUF(mac);
 
 	/* No need to lock, the hw_unavailable flag is already set in
 	 * alloc_orinocodev() */
@@ -3462,8 +3458,8 @@ static int orinoco_init(struct net_device *dev)
 		goto out;
 	}
 
-	printk(KERN_DEBUG "%s: MAC address %s\n",
-	       dev->name, print_mac(mac, dev->dev_addr));
+	printk(KERN_DEBUG "%s: MAC address %pM\n",
+	       dev->name, dev->dev_addr);
 
 	/* Get the station name */
 	err = hermes_read_ltv(hw, USER_BAP, HERMES_RID_CNFOWNNAME,
@@ -6112,7 +6108,7 @@ static void orinoco_get_drvinfo(struct net_device *dev,
 	strncpy(info->version, DRIVER_VERSION, sizeof(info->version) - 1);
 	strncpy(info->fw_version, priv->fw_name, sizeof(info->fw_version) - 1);
 	if (dev->dev.parent)
-		strncpy(info->bus_info, dev->dev.parent->bus_id,
+		strncpy(info->bus_info, dev_name(dev->dev.parent),
 			sizeof(info->bus_info) - 1);
 	else
 		snprintf(info->bus_info, sizeof(info->bus_info) - 1,

@@ -4,10 +4,10 @@
   * IOCTL handlers as well as command preperation and response routines
   *  for sending scan commands to the firmware.
   */
-#include <asm/unaligned.h>
 #include <linux/types.h>
 #include <linux/etherdevice.h>
 #include <linux/if_arp.h>
+#include <asm/unaligned.h>
 #include <net/lib80211.h>
 
 #include "host.h"
@@ -331,7 +331,7 @@ static int lbs_do_scan(struct lbs_private *priv, uint8_t bsstype,
 		    tlv - scan_cmd->tlvbuffer);
 
 	ret = __lbs_cmd(priv, CMD_802_11_SCAN, &scan_cmd->hdr,
-			get_unaligned_le16(&scan_cmd->hdr.size),
+			le16_to_cpu(scan_cmd->hdr.size),
 			lbs_ret_80211_scan, 0);
 
 out:
@@ -364,7 +364,6 @@ int lbs_scan_networks(struct lbs_private *priv, int full_scan)
 #ifdef CONFIG_LIBERTAS_DEBUG
 	struct bss_descriptor *iter;
 	int i = 0;
-	DECLARE_MAC_BUF(mac);
 	DECLARE_SSID_BUF(ssid);
 #endif
 
@@ -457,8 +456,8 @@ int lbs_scan_networks(struct lbs_private *priv, int full_scan)
 	mutex_lock(&priv->lock);
 	lbs_deb_scan("scan table:\n");
 	list_for_each_entry(iter, &priv->network_list, list)
-		lbs_deb_scan("%02d: BSSID %s, RSSI %d, SSID '%s'\n",
-			     i++, print_mac(mac, iter->bssid), iter->rssi,
+		lbs_deb_scan("%02d: BSSID %pM, RSSI %d, SSID '%s'\n",
+			     i++, iter->bssid, iter->rssi,
 			     print_ssid(ssid, iter->ssid, iter->ssid_len));
 	mutex_unlock(&priv->lock);
 #endif
@@ -518,7 +517,6 @@ static int lbs_process_bss(struct bss_descriptor *bss,
 	struct ieeetypes_dsparamset *pDS;
 	struct ieeetypes_cfparamset *pCF;
 	struct ieeetypes_ibssparamset *pibss;
-	DECLARE_MAC_BUF(mac);
 	DECLARE_SSID_BUF(ssid);
 	struct ieeetypes_countryinfoset *pcountryinfo;
 	uint8_t *pos, *end, *p;
@@ -551,7 +549,7 @@ static int lbs_process_bss(struct bss_descriptor *bss,
 	*bytesleft -= beaconsize;
 
 	memcpy(bss->bssid, pos, ETH_ALEN);
-	lbs_deb_scan("process_bss: BSSID %s\n", print_mac(mac, bss->bssid));
+	lbs_deb_scan("process_bss: BSSID %pM\n", bss->bssid);
 	pos += ETH_ALEN;
 
 	if ((end - pos) < 12) {
@@ -641,8 +639,7 @@ static int lbs_process_bss(struct bss_descriptor *bss,
 
 		case WLAN_EID_IBSS_PARAMS:
 			pibss = (struct ieeetypes_ibssparamset *) pos;
-			bss->atimwindow =
-				get_unaligned_le16(&pibss->atimwindow);
+			bss->atimwindow = le16_to_cpu(pibss->atimwindow);
 			memmove(&bss->ssparamset.ibssparamset, pibss,
 				sizeof(struct ieeetypes_ibssparamset));
 			lbs_deb_scan("got IBSS IE\n");
@@ -948,7 +945,7 @@ int lbs_set_scan(struct net_device *dev, struct iw_request_info *info,
 		 union iwreq_data *wrqu, char *extra)
 {
 	DECLARE_SSID_BUF(ssid);
-	struct lbs_private *priv = dev->priv;
+	struct lbs_private *priv = netdev_priv(dev);
 	int ret = 0;
 
 	lbs_deb_enter(LBS_DEB_WEXT);
@@ -1011,7 +1008,7 @@ int lbs_get_scan(struct net_device *dev, struct iw_request_info *info,
 		 struct iw_point *dwrq, char *extra)
 {
 #define SCAN_ITEM_SIZE 128
-	struct lbs_private *priv = dev->priv;
+	struct lbs_private *priv = netdev_priv(dev);
 	int err = 0;
 	char *ev = extra;
 	char *stop = ev + dwrq->length;
@@ -1133,10 +1130,10 @@ static int lbs_ret_80211_scan(struct lbs_private *priv, unsigned long dummy,
 		goto done;
 	}
 
-	bytesleft = get_unaligned_le16(&scanresp->bssdescriptsize);
+	bytesleft = le16_to_cpu(scanresp->bssdescriptsize);
 	lbs_deb_scan("SCAN_RESP: bssdescriptsize %d\n", bytesleft);
 
-	scanrespsize = get_unaligned_le16(&resp->size);
+	scanrespsize = le16_to_cpu(resp->size);
 	lbs_deb_scan("SCAN_RESP: scan results %d\n", scanresp->nr_sets);
 
 	bssinfo = scanresp->bssdesc_and_tlvbuffer;
@@ -1160,7 +1157,6 @@ static int lbs_ret_80211_scan(struct lbs_private *priv, unsigned long dummy,
 		struct bss_descriptor new;
 		struct bss_descriptor *found = NULL;
 		struct bss_descriptor *oldest = NULL;
-		DECLARE_MAC_BUF(mac);
 
 		/* Process the data fields and IEs returned for this BSS */
 		memset(&new, 0, sizeof (struct bss_descriptor));
@@ -1199,7 +1195,7 @@ static int lbs_ret_80211_scan(struct lbs_private *priv, unsigned long dummy,
 			continue;
 		}
 
-		lbs_deb_scan("SCAN_RESP: BSSID %s\n", print_mac(mac, new.bssid));
+		lbs_deb_scan("SCAN_RESP: BSSID %pM\n", new.bssid);
 
 		/* Copy the locally created newbssentry to the scan table */
 		memcpy(found, &new, offsetof(struct bss_descriptor, list));

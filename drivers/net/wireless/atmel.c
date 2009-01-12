@@ -919,7 +919,6 @@ static void fast_rx_path(struct atmel_private *priv,
 	else
 		memcpy(&skbp[6], header->addr2, 6); /* source address */
 
-	priv->dev->last_rx = jiffies;
 	skb->protocol = eth_type_trans(skb, priv->dev);
 	skb->ip_summed = CHECKSUM_NONE;
 	netif_rx(skb);
@@ -1026,7 +1025,6 @@ static void frag_rx_path(struct atmel_private *priv,
 				memcpy(skb_put(skb, priv->frag_len + 12),
 				       priv->rx_buf,
 				       priv->frag_len + 12);
-				priv->dev->last_rx = jiffies;
 				skb->protocol = eth_type_trans(skb, priv->dev);
 				skb->ip_summed = CHECKSUM_NONE;
 				netif_rx(skb);
@@ -1479,7 +1477,6 @@ struct net_device *init_atmel_card(unsigned short irq, unsigned long port,
 	struct net_device *dev;
 	struct atmel_private *priv;
 	int rc;
-	DECLARE_MAC_BUF(mac);
 
 	/* Create the network device object. */
         dev = alloc_etherdev(sizeof(*priv));
@@ -1591,8 +1588,8 @@ struct net_device *init_atmel_card(unsigned short irq, unsigned long port,
 	if (!ent)
 		printk(KERN_WARNING "atmel: unable to create /proc entry.\n");
 
-	printk(KERN_INFO "%s: Atmel at76c50x. Version %d.%d. MAC %s\n",
-	       dev->name, DRIVER_MAJOR, DRIVER_MINOR, print_mac(mac, dev->dev_addr));
+	printk(KERN_INFO "%s: Atmel at76c50x. Version %d.%d. MAC %pM\n",
+	       dev->name, DRIVER_MAJOR, DRIVER_MINOR, dev->dev_addr);
 
 	return dev;
 
@@ -3179,7 +3176,7 @@ static void associate(struct atmel_private *priv, u16 frame_len, u16 subtype)
 	}
 }
 
-void atmel_join_bss(struct atmel_private *priv, int bss_index)
+static void atmel_join_bss(struct atmel_private *priv, int bss_index)
 {
 	struct bss_info *bss =  &priv->BSSinfo[bss_index];
 
@@ -3835,7 +3832,7 @@ static int reset_atmel_card(struct net_device *dev)
 	   This routine is also responsible for initialising some
 	   hardware-specific fields in the atmel_private structure,
 	   including a copy of the firmware's hostinfo stucture
-	   which is the route into the rest of the firmare datastructures. */
+	   which is the route into the rest of the firmware datastructures. */
 
 	struct atmel_private *priv = netdev_priv(dev);
 	u8 configuration;
