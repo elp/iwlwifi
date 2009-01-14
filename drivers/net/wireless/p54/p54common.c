@@ -272,13 +272,19 @@ static int p54_convert_rev0(struct ieee80211_hw *dev,
 	unsigned int i, j;
 	void *source, *target;
 
-	priv->curve_data = kmalloc(cd_len, GFP_KERNEL);
+	priv->curve_data = kmalloc(sizeof(*priv->curve_data) + cd_len,
+				   GFP_KERNEL);
 	if (!priv->curve_data)
 		return -ENOMEM;
 
-	memcpy(priv->curve_data, curve_data, sizeof(*curve_data));
+	priv->curve_data->entries = curve_data->channels;
+	priv->curve_data->entry_size = sizeof(__le16) +
+		sizeof(*dst) * curve_data->points_per_channel;
+	priv->curve_data->offset = offsetof(struct pda_pa_curve_data, data);
+	priv->curve_data->len = cd_len;
+	memcpy(priv->curve_data->data, curve_data, sizeof(*curve_data));
 	source = curve_data->data;
-	target = priv->curve_data->data;
+	target = ((struct pda_pa_curve_data *) priv->curve_data->data)->data;
 	for (i = 0; i < curve_data->channels; i++) {
 		__le16 *freq = source;
 		source += sizeof(__le16);
@@ -318,13 +324,19 @@ static int p54_convert_rev1(struct ieee80211_hw *dev,
 	unsigned int i, j;
 	void *source, *target;
 
-	priv->curve_data = kmalloc(cd_len, GFP_KERNEL);
+	priv->curve_data = kzalloc(cd_len + sizeof(*priv->curve_data),
+				   GFP_KERNEL);
 	if (!priv->curve_data)
 		return -ENOMEM;
 
-	memcpy(priv->curve_data, curve_data, sizeof(*curve_data));
+	priv->curve_data->entries = curve_data->channels;
+	priv->curve_data->entry_size = sizeof(__le16) +
+		sizeof(*dst) * curve_data->points_per_channel;
+	priv->curve_data->offset = offsetof(struct pda_pa_curve_data, data);
+	priv->curve_data->len = cd_len;
+	memcpy(priv->curve_data->data, curve_data, sizeof(*curve_data));
 	source = curve_data->data;
-	target = priv->curve_data->data;
+	target = ((struct pda_pa_curve_data *) priv->curve_data->data)->data;
 	for (i = 0; i < curve_data->channels; i++) {
 		__le16 *freq = source;
 		source += sizeof(__le16);
@@ -406,7 +418,72 @@ static void p54_parse_default_country(struct ieee80211_hw *dev,
 	}
 }
 
-static int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
+static int p54_convert_output_limits(struct ieee80211_hw *dev,
+				     u8 *data, size_t len)
+{
+	struct p54_common *priv = dev->priv;
+
+	if (len < 2)
+		return -EINVAL;
+
+	if (data[0] != 0) {
+		printk(KERN_ERR "%s: unknown output power db revision:%x\n",
+		       wiphy_name(dev->wiphy), data[0]);
+		return -EINVAL;
+	}
+
+	if (2 + data[1] * sizeof(struct pda_channel_output_limit) > len)
+		return -EINVAL;
+
+	priv->output_limit = kmalloc(data[1] *
+		sizeof(struct pda_channel_output_limit) +
+		sizeof(*priv->output_limit), GFP_KERNEL);
+
+	if (!priv->output_limit)
+		return -ENOMEM;
+
+	priv->output_limit->offset = 0;
+	priv->output_limit->entries = data[1];
+	priv->output_limit->entry_size =
+		sizeof(struct pda_channel_output_limit);
+	priv->output_limit->len = priv->output_limit->entry_size *
+				  priv->output_limit->entries +
+				  priv->output_limit->offset;
+
+	memcpy(priv->output_limit->data, &data[2],
+	       data[1] * sizeof(struct pda_channel_output_limit));
+
+	return 0;
+}
+
+static struct p54_cal_database *p54_convert_db(struct pda_custom_wrapper *src,
+					       size_t total_len)
+{
+	struct p54_cal_database *dst;
+	size_t payload_len, entries, entry_size, offset;
+
+	payload_len = le16_to_cpu(src->len);
+	entries = le16_to_cpu(src->entries);
+	entry_size = le16_to_cpu(src->entry_size);
+	offset = le16_to_cpu(src->offset);
+	if (((entries * entry_size + offset) != payload_len) ||
+	     (payload_len + sizeof(*src) != total_len))
+		return NULL;
+
+	dst = kmalloc(sizeof(*dst) + payload_len, GFP_KERNEL);
+	if (!dst)
+		return NULL;
+
+	dst->entries = entries;
+	dst->entry_size = entry_size;
+	dst->offset = offset;
+	dst->len = payload_len;
+
+	memcpy(dst->data, src->data, payload_len);
+	return dst;
+}
+
+int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
 {
 	struct p54_common *priv = dev->priv;
 	struct eeprom_pda_wrap *wrap = NULL;
@@ -431,30 +508,17 @@ static int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
 
 		switch (le16_to_cpu(entry->code)) {
 		case PDR_MAC_ADDRESS:
+			if (data_len != ETH_ALEN)
+				break;
 			SET_IEEE80211_PERM_ADDR(dev, entry->data);
 			break;
 		case PDR_PRISM_PA_CAL_OUTPUT_POWER_LIMITS:
-			if (data_len < 2) {
-				err = -EINVAL;
+			if (priv->output_limit)
+				break;
+			err = p54_convert_output_limits(dev, entry->data,
+							data_len);
+			if (err)
 				goto err;
-			}
-
-			if (2 + entry->data[1]*sizeof(*priv->output_limit) > data_len) {
-				err = -EINVAL;
-				goto err;
-			}
-
-			priv->output_limit = kmalloc(entry->data[1] *
-				sizeof(*priv->output_limit), GFP_KERNEL);
-
-			if (!priv->output_limit) {
-				err = -ENOMEM;
-				goto err;
-			}
-
-			memcpy(priv->output_limit, &entry->data[2],
-			       entry->data[1]*sizeof(*priv->output_limit));
-			priv->output_limit_len = entry->data[1];
 			break;
 		case PDR_PRISM_PA_CAL_CURVE_DATA: {
 			struct pda_pa_curve_data *curve_data =
@@ -506,6 +570,8 @@ static int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
 			}
 			break;
 		case PDR_HARDWARE_PLATFORM_COMPONENT_ID:
+			if (data_len < 2)
+				break;
 			priv->version = *(u8 *)(entry->data + 1);
 			break;
 		case PDR_RSSI_LINEAR_APPROXIMATION:
@@ -513,6 +579,34 @@ static int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
 		case PDR_RSSI_LINEAR_APPROXIMATION_EXTENDED:
 			p54_parse_rssical(dev, entry->data, data_len,
 					  le16_to_cpu(entry->code));
+			break;
+		case PDR_RSSI_LINEAR_APPROXIMATION_CUSTOM: {
+			__le16 *src = (void *) entry->data;
+			s16 *dst = (void *) &priv->rssical_db;
+			int i;
+
+			if (data_len != sizeof(priv->rssical_db)) {
+				err = -EINVAL;
+				goto err;
+			}
+			for (i = 0; i < sizeof(priv->rssical_db) /
+					sizeof(*src); i++)
+				*(dst++) = (s16) le16_to_cpu(*(src++));
+			}
+			break;
+		case PDR_PRISM_PA_CAL_OUTPUT_POWER_LIMITS_CUSTOM: {
+			struct pda_custom_wrapper *pda = (void *) entry->data;
+			if (priv->output_limit || data_len < sizeof(*pda))
+				break;
+			priv->output_limit = p54_convert_db(pda, data_len);
+			}
+			break;
+		case PDR_PRISM_PA_CAL_CURVE_DATA_CUSTOM: {
+			struct pda_custom_wrapper *pda = (void *) entry->data;
+			if (priv->curve_data || data_len < sizeof(*pda))
+				break;
+			priv->curve_data = p54_convert_db(pda, data_len);
+			}
 			break;
 		case PDR_END:
 			/* make it overrun */
@@ -557,7 +651,7 @@ static int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
 	}
 
 	priv->rxhw = synth & PDR_SYNTH_FRONTEND_MASK;
-	if (priv->rxhw == 4)
+	if (priv->rxhw == PDR_SYNTH_FRONTEND_XBOW)
 		p54_init_xbow_synth(dev);
 	if (!(synth & PDR_SYNTH_24_GHZ_DISABLED))
 		dev->wiphy->bands[IEEE80211_BAND_2GHZ] = &band_2GHz;
@@ -604,13 +698,21 @@ static int p54_parse_eeprom(struct ieee80211_hw *dev, void *eeprom, int len)
 		wiphy_name(dev->wiphy));
 	return err;
 }
+EXPORT_SYMBOL_GPL(p54_parse_eeprom);
 
 static int p54_rssi_to_dbm(struct ieee80211_hw *dev, int rssi)
 {
 	struct p54_common *priv = dev->priv;
 	int band = dev->conf.channel->band;
 
-	return ((rssi * priv->rssical_db[band].mul) / 64 +
+	if (priv->rxhw != PDR_SYNTH_FRONTEND_LONGBOW)
+		return ((rssi * priv->rssical_db[band].mul) / 64 +
+			 priv->rssical_db[band].add) / 4;
+	else
+		/*
+		 * TODO: find the correct formula
+		 */
+		return ((rssi * priv->rssical_db[band].mul) / 64 +
 			 priv->rssical_db[band].add) / 4;
 }
 
@@ -700,7 +802,7 @@ void p54_free_skb(struct ieee80211_hw *dev, struct sk_buff *skb)
 {
 	struct p54_common *priv = dev->priv;
 	struct ieee80211_tx_info *info;
-	struct memrecord *range;
+	struct p54_tx_info *range;
 	unsigned long flags;
 	u32 freed = 0, last_addr = priv->rx_start;
 
@@ -718,18 +820,18 @@ void p54_free_skb(struct ieee80211_hw *dev, struct sk_buff *skb)
 	range = (void *)info->rate_driver_data;
 	if (skb->prev != (struct sk_buff *)&priv->tx_queue) {
 		struct ieee80211_tx_info *ni;
-		struct memrecord *mr;
+		struct p54_tx_info *mr;
 
 		ni = IEEE80211_SKB_CB(skb->prev);
-		mr = (struct memrecord *)ni->rate_driver_data;
+		mr = (struct p54_tx_info *)ni->rate_driver_data;
 		last_addr = mr->end_addr;
 	}
 	if (skb->next != (struct sk_buff *)&priv->tx_queue) {
 		struct ieee80211_tx_info *ni;
-		struct memrecord *mr;
+		struct p54_tx_info *mr;
 
 		ni = IEEE80211_SKB_CB(skb->next);
-		mr = (struct memrecord *)ni->rate_driver_data;
+		mr = (struct p54_tx_info *)ni->rate_driver_data;
 		freed = mr->start_addr - last_addr;
 	} else
 		freed = priv->rx_end - last_addr;
@@ -771,7 +873,7 @@ static void p54_rx_frame_sent(struct ieee80211_hw *dev, struct sk_buff *skb)
 	struct p54_frame_sent *payload = (struct p54_frame_sent *) hdr->data;
 	struct sk_buff *entry = (struct sk_buff *) priv->tx_queue.next;
 	u32 addr = le32_to_cpu(hdr->req_id) - priv->headroom;
-	struct memrecord *range = NULL;
+	struct p54_tx_info *range = NULL;
 	u32 freed = 0;
 	u32 last_addr = priv->rx_start;
 	unsigned long flags;
@@ -793,10 +895,10 @@ static void p54_rx_frame_sent(struct ieee80211_hw *dev, struct sk_buff *skb)
 
 		if (entry->next != (struct sk_buff *)&priv->tx_queue) {
 			struct ieee80211_tx_info *ni;
-			struct memrecord *mr;
+			struct p54_tx_info *mr;
 
 			ni = IEEE80211_SKB_CB(entry->next);
-			mr = (struct memrecord *)ni->rate_driver_data;
+			mr = (struct p54_tx_info *)ni->rate_driver_data;
 			freed = mr->start_addr - last_addr;
 		} else
 			freed = priv->rx_end - last_addr;
@@ -999,8 +1101,8 @@ EXPORT_SYMBOL_GPL(p54_rx);
  * can find some unused memory to upload our packets to. However, data that we
  * want the card to TX needs to stay intact until the card has told us that
  * it is done with it. This function finds empty places we can upload to and
- * marks allocated areas as reserved if necessary. p54_rx_frame_sent frees
- * allocated areas.
+ * marks allocated areas as reserved if necessary. p54_rx_frame_sent or
+ * p54_free_skb frees allocated areas.
  */
 static int p54_assign_address(struct ieee80211_hw *dev, struct sk_buff *skb,
 			       struct p54_hdr *data, u32 len)
@@ -1009,7 +1111,7 @@ static int p54_assign_address(struct ieee80211_hw *dev, struct sk_buff *skb,
 	struct sk_buff *entry = priv->tx_queue.next;
 	struct sk_buff *target_skb = NULL;
 	struct ieee80211_tx_info *info;
-	struct memrecord *range;
+	struct p54_tx_info *range;
 	u32 last_addr = priv->rx_start;
 	u32 largest_hole = 0;
 	u32 target_addr = priv->rx_start;
@@ -1090,25 +1192,29 @@ static int p54_assign_address(struct ieee80211_hw *dev, struct sk_buff *skb,
 	return 0;
 }
 
-static struct sk_buff *p54_alloc_skb(struct ieee80211_hw *dev,
-		u16 hdr_flags, u16 len, u16 type, gfp_t memflags)
+static struct sk_buff *p54_alloc_skb(struct ieee80211_hw *dev, u16 hdr_flags,
+				     u16 payload_len, u16 type, gfp_t memflags)
 {
 	struct p54_common *priv = dev->priv;
 	struct p54_hdr *hdr;
 	struct sk_buff *skb;
+	size_t frame_len = sizeof(*hdr) + payload_len;
 
-	skb = __dev_alloc_skb(len + priv->tx_hdr_len, memflags);
+	if (frame_len > P54_MAX_CTRL_FRAME_LEN)
+		return NULL;
+
+	skb = __dev_alloc_skb(priv->tx_hdr_len + frame_len, memflags);
 	if (!skb)
 		return NULL;
 	skb_reserve(skb, priv->tx_hdr_len);
 
 	hdr = (struct p54_hdr *) skb_put(skb, sizeof(*hdr));
 	hdr->flags = cpu_to_le16(hdr_flags);
-	hdr->len = cpu_to_le16(len - sizeof(*hdr));
+	hdr->len = cpu_to_le16(payload_len);
 	hdr->type = cpu_to_le16(type);
 	hdr->tries = hdr->rts_tries = 0;
 
-	if (unlikely(p54_assign_address(dev, skb, hdr, len))) {
+	if (p54_assign_address(dev, skb, hdr, frame_len)) {
 		kfree_skb(skb);
 		return NULL;
 	}
@@ -1118,7 +1224,6 @@ static struct sk_buff *p54_alloc_skb(struct ieee80211_hw *dev,
 int p54_read_eeprom(struct ieee80211_hw *dev)
 {
 	struct p54_common *priv = dev->priv;
-	struct p54_hdr *hdr = NULL;
 	struct p54_eeprom_lm86 *eeprom_hdr;
 	struct sk_buff *skb;
 	size_t eeprom_size = 0x2020, offset = 0, blocksize, maxblocksize;
@@ -1131,9 +1236,9 @@ int p54_read_eeprom(struct ieee80211_hw *dev)
 	else
 		maxblocksize -= 0x4;
 
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL, sizeof(*hdr) +
-			    sizeof(*eeprom_hdr) + maxblocksize,
-			    P54_CONTROL_TYPE_EEPROM_READBACK, GFP_KERNEL);
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL, sizeof(*eeprom_hdr) +
+			    maxblocksize, P54_CONTROL_TYPE_EEPROM_READBACK,
+			    GFP_KERNEL);
 	if (!skb)
 		goto free;
 	priv->eeprom = kzalloc(EEPROM_READBACK_LEN, GFP_KERNEL);
@@ -1189,9 +1294,8 @@ static int p54_set_tim(struct ieee80211_hw *dev, struct ieee80211_sta *sta,
 	struct sk_buff *skb;
 	struct p54_tim *tim;
 
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET,
-		      sizeof(struct p54_hdr) + sizeof(*tim),
-		      P54_CONTROL_TYPE_TIM, GFP_KERNEL);
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*tim),
+			    P54_CONTROL_TYPE_TIM, GFP_KERNEL);
 	if (!skb)
 		return -ENOMEM;
 
@@ -1208,9 +1312,8 @@ static int p54_sta_unlock(struct ieee80211_hw *dev, u8 *addr)
 	struct sk_buff *skb;
 	struct p54_sta_unlock *sta;
 
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET,
-		sizeof(struct p54_hdr) + sizeof(*sta),
-		P54_CONTROL_TYPE_PSM_STA_UNLOCK, GFP_ATOMIC);
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*sta),
+			    P54_CONTROL_TYPE_PSM_STA_UNLOCK, GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
 
@@ -1250,9 +1353,8 @@ static int p54_tx_cancel(struct ieee80211_hw *dev, struct sk_buff *entry)
 	struct p54_hdr *hdr;
 	struct p54_txcancel *cancel;
 
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET,
-		sizeof(struct p54_hdr) + sizeof(*cancel),
-		P54_CONTROL_TYPE_TXCANCEL, GFP_ATOMIC);
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*cancel),
+			    P54_CONTROL_TYPE_TXCANCEL, GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
 
@@ -1504,8 +1606,13 @@ static int p54_tx(struct ieee80211_hw *dev, struct sk_buff *skb)
 	memset(txhdr->durations, 0, sizeof(txhdr->durations));
 	txhdr->tx_antenna = ((info->antenna_sel_tx == 0) ?
 		2 : info->antenna_sel_tx - 1) & priv->tx_diversity_mask;
-	txhdr->output_power = priv->output_power;
-	txhdr->cts_rate = cts_rate;
+	if (priv->rxhw == PDR_SYNTH_FRONTEND_LONGBOW) {
+		txhdr->longbow.cts_rate = cts_rate;
+		txhdr->longbow.output_power = cpu_to_le16(priv->output_power);
+	} else {
+		txhdr->normal.output_power = priv->output_power;
+		txhdr->normal.cts_rate = cts_rate;
+	}
 	if (padding)
 		txhdr->align[0] = padding;
 
@@ -1534,9 +1641,8 @@ static int p54_setup_mac(struct ieee80211_hw *dev)
 	struct p54_setup_mac *setup;
 	u16 mode;
 
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*setup) +
-			    sizeof(struct p54_hdr), P54_CONTROL_TYPE_SETUP,
-			    GFP_ATOMIC);
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*setup),
+			    P54_CONTROL_TYPE_SETUP, GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
 
@@ -1608,85 +1714,143 @@ static int p54_scan(struct ieee80211_hw *dev, u16 mode, u16 dwell)
 {
 	struct p54_common *priv = dev->priv;
 	struct sk_buff *skb;
-	struct p54_scan *chan;
+	struct p54_hdr *hdr;
+	struct p54_scan_head *head;
+	struct p54_iq_autocal_entry *iq_autocal;
+	union p54_scan_body_union *body;
+	struct p54_scan_tail_rate *rate;
+	struct pda_rssi_cal_entry *rssi;
 	unsigned int i;
 	void *entry;
-	__le16 freq = cpu_to_le16(dev->conf.channel->center_freq);
 	int band = dev->conf.channel->band;
+	__le16 freq = cpu_to_le16(dev->conf.channel->center_freq);
 
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*chan) +
-			    sizeof(struct p54_hdr), P54_CONTROL_TYPE_SCAN,
-			    GFP_ATOMIC);
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*head) +
+			    2 + sizeof(*iq_autocal) + sizeof(*body) +
+			    sizeof(*rate) + 2 * sizeof(*rssi),
+			    P54_CONTROL_TYPE_SCAN, GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
 
-	chan = (struct p54_scan *) skb_put(skb, sizeof(*chan));
-	memset(chan->padding1, 0, sizeof(chan->padding1));
-	chan->mode = cpu_to_le16(mode);
-	chan->dwell = cpu_to_le16(dwell);
+	head = (struct p54_scan_head *) skb_put(skb, sizeof(*head));
+	memset(head->scan_params, 0, sizeof(head->scan_params));
+	head->mode = cpu_to_le16(mode);
+	head->dwell = cpu_to_le16(dwell);
+	head->freq = freq;
 
+	if (priv->rxhw == PDR_SYNTH_FRONTEND_LONGBOW) {
+		__le16 *pa_power_points = (__le16 *) skb_put(skb, 2);
+		*pa_power_points = cpu_to_le16(0x0c);
+	}
+
+	iq_autocal = (void *) skb_put(skb, sizeof(*iq_autocal));
 	for (i = 0; i < priv->iq_autocal_len; i++) {
 		if (priv->iq_autocal[i].freq != freq)
 			continue;
 
-		memcpy(&chan->iq_autocal, &priv->iq_autocal[i],
-		       sizeof(*priv->iq_autocal));
+		memcpy(iq_autocal, &priv->iq_autocal[i].params,
+		       sizeof(struct p54_iq_autocal_entry));
 		break;
 	}
 	if (i == priv->iq_autocal_len)
 		goto err;
 
-	for (i = 0; i < priv->output_limit_len; i++) {
-		if (priv->output_limit[i].freq != freq)
+	if (priv->rxhw == PDR_SYNTH_FRONTEND_LONGBOW)
+		body = (void *) skb_put(skb, sizeof(body->longbow));
+	else
+		body = (void *) skb_put(skb, sizeof(body->normal));
+
+	for (i = 0; i < priv->output_limit->entries; i++) {
+		__le16 *entry_freq = (void *) (priv->output_limit->data +
+				     priv->output_limit->entry_size * i);
+
+		if (*entry_freq != freq)
 			continue;
 
-		chan->val_barker = 0x38;
-		chan->val_bpsk = chan->dup_bpsk =
-			priv->output_limit[i].val_bpsk;
-		chan->val_qpsk = chan->dup_qpsk =
-			priv->output_limit[i].val_qpsk;
-		chan->val_16qam = chan->dup_16qam =
-			priv->output_limit[i].val_16qam;
-		chan->val_64qam = chan->dup_64qam =
-			priv->output_limit[i].val_64qam;
+		if (priv->rxhw == PDR_SYNTH_FRONTEND_LONGBOW) {
+			memcpy(&body->longbow.power_limits,
+			       (void *) entry_freq + sizeof(__le16),
+			       priv->output_limit->entry_size);
+		} else {
+			struct pda_channel_output_limit *limits =
+			       (void *) entry_freq;
+
+			body->normal.val_barker = 0x38;
+			body->normal.val_bpsk = body->normal.dup_bpsk =
+				limits->val_bpsk;
+			body->normal.val_qpsk = body->normal.dup_qpsk =
+				limits->val_qpsk;
+			body->normal.val_16qam = body->normal.dup_16qam =
+				limits->val_16qam;
+			body->normal.val_64qam = body->normal.dup_64qam =
+				limits->val_64qam;
+		}
 		break;
 	}
-	if (i == priv->output_limit_len)
+	if (i == priv->output_limit->entries)
 		goto err;
 
-	entry = priv->curve_data->data;
-	for (i = 0; i < priv->curve_data->channels; i++) {
+	entry = (void *)(priv->curve_data->data + priv->curve_data->offset);
+	for (i = 0; i < priv->curve_data->entries; i++) {
 		if (*((__le16 *)entry) != freq) {
-			entry += sizeof(__le16);
-			entry += sizeof(struct p54_pa_curve_data_sample) *
-				 priv->curve_data->points_per_channel;
+			entry += priv->curve_data->entry_size;
 			continue;
 		}
 
-		entry += sizeof(__le16);
-		chan->pa_points_per_curve = 8;
-		memset(chan->curve_data, 0, sizeof(*chan->curve_data));
-		memcpy(chan->curve_data, entry,
-		       sizeof(struct p54_pa_curve_data_sample) *
-		       min((u8)8, priv->curve_data->points_per_channel));
+		if (priv->rxhw == PDR_SYNTH_FRONTEND_LONGBOW) {
+			memcpy(&body->longbow.curve_data,
+				(void *) entry + sizeof(__le16),
+				priv->curve_data->entry_size);
+		} else {
+			struct p54_scan_body *chan = &body->normal;
+			struct pda_pa_curve_data *curve_data =
+				(void *) priv->curve_data->data;
+
+			entry += sizeof(__le16);
+			chan->pa_points_per_curve = 8;
+			memset(chan->curve_data, 0, sizeof(*chan->curve_data));
+			memcpy(chan->curve_data, entry,
+			       sizeof(struct p54_pa_curve_data_sample) *
+			       min((u8)8, curve_data->points_per_channel));
+		}
 		break;
 	}
+	if (i == priv->curve_data->entries)
+		goto err;
 
-	if (priv->fw_var < 0x500) {
-		chan->v1_rssi.mul = cpu_to_le16(priv->rssical_db[band].mul);
-		chan->v1_rssi.add = cpu_to_le16(priv->rssical_db[band].add);
-	} else {
-		chan->v2.rssi.mul = cpu_to_le16(priv->rssical_db[band].mul);
-		chan->v2.rssi.add = cpu_to_le16(priv->rssical_db[band].add);
-		chan->v2.basic_rate_mask = cpu_to_le32(priv->basic_rate_mask);
-		memset(chan->v2.rts_rates, 0, 8);
+	if ((priv->fw_var >= 0x500) && (priv->fw_var < 0x509)) {
+		rate = (void *) skb_put(skb, sizeof(*rate));
+		rate->basic_rate_mask = cpu_to_le32(priv->basic_rate_mask);
+		for (i = 0; i < sizeof(rate->rts_rates); i++)
+			rate->rts_rates[i] = i;
 	}
+
+	rssi = (struct pda_rssi_cal_entry *) skb_put(skb, sizeof(*rssi));
+	rssi->mul = cpu_to_le16(priv->rssical_db[band].mul);
+	rssi->add = cpu_to_le16(priv->rssical_db[band].add);
+	if (priv->rxhw == PDR_SYNTH_FRONTEND_LONGBOW) {
+		/* Longbow frontend needs ever more */
+		rssi = (void *) skb_put(skb, sizeof(*rssi));
+		rssi->mul = cpu_to_le16(priv->rssical_db[band].longbow_unkn);
+		rssi->add = cpu_to_le16(priv->rssical_db[band].longbow_unk2);
+	}
+
+	if (priv->fw_var >= 0x509) {
+		rate = (void *) skb_put(skb, sizeof(*rate));
+		rate->basic_rate_mask = cpu_to_le32(priv->basic_rate_mask);
+		for (i = 0; i < sizeof(rate->rts_rates); i++)
+			rate->rts_rates[i] = i;
+	}
+
+	hdr = (struct p54_hdr *) skb->data;
+	hdr->len = cpu_to_le16(skb->len - sizeof(*hdr));
+
 	priv->tx(dev, skb);
 	return 0;
 
  err:
 	printk(KERN_ERR "%s: frequency change failed\n", wiphy_name(dev->wiphy));
-	kfree_skb(skb);
+	p54_free_skb(dev, skb);
 	return -EINVAL;
 }
 
@@ -1696,9 +1860,8 @@ static int p54_set_leds(struct ieee80211_hw *dev, int mode, int link, int act)
 	struct sk_buff *skb;
 	struct p54_led *led;
 
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*led) +
-			sizeof(struct p54_hdr),	P54_CONTROL_TYPE_LED,
-			GFP_ATOMIC);
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*led),
+			    P54_CONTROL_TYPE_LED, GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
 
@@ -1725,9 +1888,8 @@ static int p54_set_edcf(struct ieee80211_hw *dev)
 	struct sk_buff *skb;
 	struct p54_edcf *edcf;
 
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*edcf) +
-			sizeof(struct p54_hdr), P54_CONTROL_TYPE_DCFINIT,
-			GFP_ATOMIC);
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*edcf),
+			    P54_CONTROL_TYPE_DCFINIT, GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
 
@@ -1764,9 +1926,8 @@ static int p54_set_ps(struct ieee80211_hw *dev)
 	else
 		mode = P54_PSM_CAM;
 
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*psm) +
-			sizeof(struct p54_hdr), P54_CONTROL_TYPE_PSM,
-			GFP_ATOMIC);
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*psm),
+			    P54_CONTROL_TYPE_PSM, GFP_ATOMIC);
 	if (!skb)
 		return -ENOMEM;
 
@@ -2069,10 +2230,8 @@ static int p54_init_xbow_synth(struct ieee80211_hw *dev)
 	struct sk_buff *skb;
 	struct p54_xbow_synth *xbow;
 
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*xbow) +
-			    sizeof(struct p54_hdr),
-			    P54_CONTROL_TYPE_XBOW_SYNTH_CFG,
-			    GFP_KERNEL);
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*xbow),
+			    P54_CONTROL_TYPE_XBOW_SYNTH_CFG, GFP_KERNEL);
 	if (!skb)
 		return -ENOMEM;
 
@@ -2101,7 +2260,7 @@ static void p54_work(struct work_struct *work)
 	 *      2. cancel stuck frames / reset the device if necessary.
 	 */
 
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL, sizeof(struct p54_hdr) +
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL,
 			    sizeof(struct p54_statistics),
 			    P54_CONTROL_TYPE_STAT_READBACK, GFP_KERNEL);
 	if (!skb)
@@ -2212,9 +2371,8 @@ static int p54_set_key(struct ieee80211_hw *dev, enum set_key_cmd cmd,
 	}
 
 	mutex_lock(&priv->conf_mutex);
-	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*rxkey) +
-			sizeof(struct p54_hdr),	P54_CONTROL_TYPE_RX_KEYCACHE,
-			GFP_ATOMIC);
+	skb = p54_alloc_skb(dev, P54_HDR_FLAG_CONTROL_OPSET, sizeof(*rxkey),
+			    P54_CONTROL_TYPE_RX_KEYCACHE, GFP_ATOMIC);
 	if (!skb) {
 		mutex_unlock(&priv->conf_mutex);
 		return -ENOMEM;

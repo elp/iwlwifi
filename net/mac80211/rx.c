@@ -158,7 +158,7 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 		 */
 		*pos = 0;
 	} else {
-		rthdr->it_present |= (1 << IEEE80211_RADIOTAP_RATE);
+		rthdr->it_present |= cpu_to_le32(1 << IEEE80211_RADIOTAP_RATE);
 		*pos = rate->bitrate / 5;
 	}
 	pos++;
@@ -1667,9 +1667,9 @@ ieee80211_rx_h_ctrl(struct ieee80211_rx_data *rx)
 	return RX_CONTINUE;
 }
 
-void ieee80211_process_sa_query_req(struct ieee80211_sub_if_data *sdata,
-				    struct ieee80211_mgmt *mgmt,
-				    size_t len)
+static void ieee80211_process_sa_query_req(struct ieee80211_sub_if_data *sdata,
+					   struct ieee80211_mgmt *mgmt,
+					   size_t len)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct sk_buff *skb;
