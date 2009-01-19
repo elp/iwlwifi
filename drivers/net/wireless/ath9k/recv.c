@@ -291,15 +291,15 @@ int ath_rx_init(struct ath_softc *sc, int nbufs)
 			}
 
 			bf->bf_mpdu = skb;
-			bf->bf_buf_addr = pci_map_single(sc->pdev, skb->data,
+			bf->bf_buf_addr = dma_map_single(sc->dev, skb->data,
 							 sc->rx.bufsize,
-							 PCI_DMA_FROMDEVICE);
-			if (unlikely(pci_dma_mapping_error(sc->pdev,
+							 DMA_FROM_DEVICE);
+			if (unlikely(dma_mapping_error(sc->dev,
 				  bf->bf_buf_addr))) {
 				dev_kfree_skb_any(skb);
 				bf->bf_mpdu = NULL;
 				DPRINTF(sc, ATH_DBG_CONFIG,
-					"pci_dma_mapping_error() on RX init\n");
+					"dma_mapping_error() on RX init\n");
 				error = -ENOMEM;
 				break;
 			}
@@ -524,9 +524,9 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 		 * 1. accessing the frame
 		 * 2. requeueing the same buffer to h/w
 		 */
-		pci_dma_sync_single_for_cpu(sc->pdev, bf->bf_buf_addr,
+		dma_sync_single_for_cpu(sc->dev, bf->bf_buf_addr,
 				sc->rx.bufsize,
-				PCI_DMA_FROMDEVICE);
+				DMA_FROM_DEVICE);
 
 		/*
 		 * If we're asked to flush receive queue, directly
@@ -557,9 +557,9 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 			goto requeue;
 
 		/* Unmap the frame */
-		pci_unmap_single(sc->pdev, bf->bf_buf_addr,
+		dma_unmap_single(sc->dev, bf->bf_buf_addr,
 				 sc->rx.bufsize,
-				 PCI_DMA_FROMDEVICE);
+				 DMA_FROM_DEVICE);
 
 		skb_put(skb, ds->ds_rxstat.rs_datalen);
 		skb->protocol = cpu_to_be16(ETH_P_CONTROL);
@@ -605,15 +605,15 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 
 		/* We will now give hardware our shiny new allocated skb */
 		bf->bf_mpdu = requeue_skb;
-		bf->bf_buf_addr = pci_map_single(sc->pdev, requeue_skb->data,
+		bf->bf_buf_addr = dma_map_single(sc->dev, requeue_skb->data,
 					 sc->rx.bufsize,
-					 PCI_DMA_FROMDEVICE);
-		if (unlikely(pci_dma_mapping_error(sc->pdev,
+					 DMA_FROM_DEVICE);
+		if (unlikely(dma_mapping_error(sc->dev,
 			  bf->bf_buf_addr))) {
 			dev_kfree_skb_any(requeue_skb);
 			bf->bf_mpdu = NULL;
 			DPRINTF(sc, ATH_DBG_CONFIG,
-				"pci_dma_mapping_error() on RX\n");
+				"dma_mapping_error() on RX\n");
 			break;
 		}
 		bf->bf_dmacontext = bf->bf_buf_addr;
