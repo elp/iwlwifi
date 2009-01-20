@@ -7212,13 +7212,9 @@ static void __devexit iwl3945_pci_remove(struct pci_dev *pdev)
 
 	sysfs_remove_group(&pdev->dev.kobj, &iwl3945_attribute_group);
 
-<<<<<<< HEAD:drivers/net/wireless/iwlwifi/iwl3945-base.c
 	iwl_rfkill_unregister(priv);
-=======
-	iwl3945_rfkill_unregister(priv);
 	cancel_delayed_work(&priv->rfkill_poll);
 
->>>>>>> upstream:drivers/net/wireless/iwlwifi/iwl3945-base.c
 	iwl3945_dealloc_ucode_pci(priv);
 
 	if (priv->rxq.bd)
