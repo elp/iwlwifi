@@ -837,7 +837,7 @@ struct ieee802_11_elems {
 	u8 *country_elem;
 	u8 *pwr_constr_elem;
 	u8 *quiet_elem; 	/* first quite element */
-	u8 *assoc_comeback;
+	u8 *timeout_int;
 
 	/* length of them, respectively */
 	u8 ssid_len;
@@ -865,7 +865,7 @@ struct ieee802_11_elems {
 	u8 pwr_constr_elem_len;
 	u8 quiet_elem_len;
 	u8 num_of_quiet_elem;	/* can be more the one */
-	u8 assoc_comeback_len;
+	u8 timeout_int_len;
 };
 
 static inline struct ieee80211_local *hw_to_local(
@@ -1005,6 +1005,10 @@ void ieee80211_process_chanswitch(struct ieee80211_sub_if_data *sdata,
 void ieee80211_handle_pwr_constr(struct ieee80211_sub_if_data *sdata,
 				 u16 capab_info, u8 *pwr_constr_elem,
 				 u8 pwr_constr_elem_len);
+
+/* Suspend/resume */
+int __ieee80211_suspend(struct ieee80211_hw *hw);
+int __ieee80211_resume(struct ieee80211_hw *hw);
 
 /* utility functions/constants */
 extern void *mac80211_wiphy_privid; /* for wiphy privid */

@@ -432,7 +432,10 @@ ieee80211_tx_h_select_key(struct ieee80211_tx_data *tx)
 		tx->key = key;
 	else if (tx->sdata->drop_unencrypted &&
 		 (tx->skb->protocol != cpu_to_be16(ETH_P_PAE)) &&
-		 !(info->flags & IEEE80211_TX_CTL_INJECTED)) {
+		 !(info->flags & IEEE80211_TX_CTL_INJECTED) &&
+		 (!ieee80211_is_robust_mgmt_frame(hdr) ||
+		  (ieee80211_is_action(hdr->frame_control) &&
+		   tx->sta && test_sta_flags(tx->sta, WLAN_STA_MFP)))) {
 		I802_DEBUG_INC(tx->local->tx_handlers_drop_unencrypted);
 		return TX_DROP;
 	} else
@@ -1349,8 +1352,10 @@ int ieee80211_master_start_xmit(struct sk_buff *skb, struct net_device *dev)
 		if (is_multicast_ether_addr(hdr->addr3))
 			memcpy(hdr->addr1, hdr->addr3, ETH_ALEN);
 		else
-			if (mesh_nexthop_lookup(skb, osdata))
-				return  0;
+			if (mesh_nexthop_lookup(skb, osdata)) {
+				dev_put(odev);
+				return 0;
+			}
 		if (memcmp(odev->dev_addr, hdr->addr4, ETH_ALEN) != 0)
 			IEEE80211_IFSTA_MESH_CTR_INC(&osdata->u.mesh,
 							    fwded_frames);
