@@ -707,7 +707,7 @@ static u8 iwl_count_chain_bitmap(u32 chain_bitmap)
  */
 static bool iwl_is_monitor_mode(struct iwl_priv *priv)
 {
-	return priv->staging_rxon.filter_flags & RXON_FILTER_PROMISC_MSK;
+	return !!(priv->staging_rxon.filter_flags & RXON_FILTER_PROMISC_MSK);
 }
 
 /**
@@ -758,12 +758,12 @@ void iwl_set_rxon_chain(struct iwl_priv *priv)
 	 * Avoid A (0x1) because of its off-channel reception on A-band.
 	 * MIMO is not used here, but value is required */
 	if (iwl_is_monitor_mode(priv) &&
-	     !(priv->staging_rxon.flags & RXON_FLG_BAND_24G_MSK) &&
+	    !(priv->staging_rxon.flags & RXON_FLG_BAND_24G_MSK) &&
 	    ((priv->hw_rev & CSR_HW_REV_TYPE_MSK) == CSR_HW_REV_TYPE_4965)) {
 		rx_chain = 0x07 << RXON_RX_CHAIN_VALID_POS;
 		rx_chain |= 0x06 << RXON_RX_CHAIN_FORCE_SEL_POS;
 		rx_chain |= 0x07 << RXON_RX_CHAIN_FORCE_MIMO_SEL_POS;
-		rx_chain |= RXON_RX_CHAIN_DRIVER_FORCE_MSK;
+		rx_chain |= 0x01 << RXON_RX_CHAIN_DRIVER_FORCE_POS;
 	}
 
 	priv->staging_rxon.rx_chain = cpu_to_le16(rx_chain);
