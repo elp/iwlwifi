@@ -28,6 +28,77 @@ MODULE_DESCRIPTION("Support for Atheros 802.11n wireless LAN cards.");
 MODULE_SUPPORTED_DEVICE("Atheros 802.11n WLAN cards");
 MODULE_LICENSE("Dual BSD/GPL");
 
+/* We use the hw_value as an index into our private channel structure */
+
+#define CHAN2G(_freq, _idx)  { \
+	.center_freq = (_freq), \
+	.hw_value = (_idx), \
+	.max_power = 30, \
+}
+
+#define CHAN5G(_freq, _idx) { \
+	.band = IEEE80211_BAND_5GHZ, \
+	.center_freq = (_freq), \
+	.hw_value = (_idx), \
+	.max_power = 30, \
+}
+
+/* Some 2 GHz radios are actually tunable on 2312-2732
+ * on 5 MHz steps, we support the channels which we know
+ * we have calibration data for all cards though to make
+ * this static */
+static struct ieee80211_channel ath9k_2ghz_chantable[] = {
+	CHAN2G(2412, 0), /* Channel 1 */
+	CHAN2G(2417, 1), /* Channel 2 */
+	CHAN2G(2422, 2), /* Channel 3 */
+	CHAN2G(2427, 3), /* Channel 4 */
+	CHAN2G(2432, 4), /* Channel 5 */
+	CHAN2G(2437, 5), /* Channel 6 */
+	CHAN2G(2442, 6), /* Channel 7 */
+	CHAN2G(2447, 7), /* Channel 8 */
+	CHAN2G(2452, 8), /* Channel 9 */
+	CHAN2G(2457, 9), /* Channel 10 */
+	CHAN2G(2462, 10), /* Channel 11 */
+	CHAN2G(2467, 11), /* Channel 12 */
+	CHAN2G(2472, 12), /* Channel 13 */
+	CHAN2G(2484, 13), /* Channel 14 */
+};
+
+/* Some 5 GHz radios are actually tunable on XXXX-YYYY
+ * on 5 MHz steps, we support the channels which we know
+ * we have calibration data for all cards though to make
+ * this static */
+static struct ieee80211_channel ath9k_5ghz_chantable[] = {
+	/* _We_ call this UNII 1 */
+	CHAN5G(5180, 14), /* Channel 36 */
+	CHAN5G(5200, 15), /* Channel 40 */
+	CHAN5G(5220, 16), /* Channel 44 */
+	CHAN5G(5240, 17), /* Channel 48 */
+	/* _We_ call this UNII 2 */
+	CHAN5G(5260, 18), /* Channel 52 */
+	CHAN5G(5280, 19), /* Channel 56 */
+	CHAN5G(5300, 20), /* Channel 60 */
+	CHAN5G(5320, 21), /* Channel 64 */
+	/* _We_ call this "Middle band" */
+	CHAN5G(5500, 22), /* Channel 100 */
+	CHAN5G(5520, 23), /* Channel 104 */
+	CHAN5G(5540, 24), /* Channel 108 */
+	CHAN5G(5560, 25), /* Channel 112 */
+	CHAN5G(5580, 26), /* Channel 116 */
+	CHAN5G(5600, 27), /* Channel 120 */
+	CHAN5G(5620, 28), /* Channel 124 */
+	CHAN5G(5640, 29), /* Channel 128 */
+	CHAN5G(5660, 30), /* Channel 132 */
+	CHAN5G(5680, 31), /* Channel 136 */
+	CHAN5G(5700, 32), /* Channel 140 */
+	/* _We_ call this UNII 3 */
+	CHAN5G(5745, 33), /* Channel 149 */
+	CHAN5G(5765, 34), /* Channel 153 */
+	CHAN5G(5785, 35), /* Channel 157 */
+	CHAN5G(5805, 36), /* Channel 161 */
+	CHAN5G(5825, 37), /* Channel 165 */
+};
+
 static void ath_cache_conf_rate(struct ath_softc *sc,
 				struct ieee80211_conf *conf)
 {
@@ -152,75 +223,6 @@ static void ath_setup_rates(struct ath_softc *sc, enum ieee80211_band band)
 	}
 }
 
-static int ath_setup_channels(struct ath_softc *sc)
-{
-	struct ath_hal *ah = sc->sc_ah;
-	int nchan, i, a = 0, b = 0;
-	u8 regclassids[ATH_REGCLASSIDS_MAX];
-	u32 nregclass = 0;
-	struct ieee80211_supported_band *band_2ghz;
-	struct ieee80211_supported_band *band_5ghz;
-	struct ieee80211_channel *chan_2ghz;
-	struct ieee80211_channel *chan_5ghz;
-	struct ath9k_channel *c;
-
-	/* Fill in ah->ah_channels */
-	if (!ath9k_regd_init_channels(ah, ATH_CHAN_MAX, (u32 *)&nchan,
-				      regclassids, ATH_REGCLASSIDS_MAX,
-				      &nregclass, CTRY_DEFAULT, false, 1)) {
-		u32 rd = ah->ah_currentRD;
-		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to collect channel list; "
-			"regdomain likely %u country code %u\n",
-			rd, CTRY_DEFAULT);
-		return -EINVAL;
-	}
-
-	band_2ghz = &sc->sbands[IEEE80211_BAND_2GHZ];
-	band_5ghz = &sc->sbands[IEEE80211_BAND_5GHZ];
-	chan_2ghz = sc->channels[IEEE80211_BAND_2GHZ];
-	chan_5ghz = sc->channels[IEEE80211_BAND_5GHZ];
-
-	for (i = 0; i < nchan; i++) {
-		c = &ah->ah_channels[i];
-		if (IS_CHAN_2GHZ(c)) {
-			chan_2ghz[a].band = IEEE80211_BAND_2GHZ;
-			chan_2ghz[a].center_freq = c->channel;
-			chan_2ghz[a].max_power = c->maxTxPower;
-			c->chan = &chan_2ghz[a];
-
-			if (c->privFlags & CHANNEL_DISALLOW_ADHOC)
-				chan_2ghz[a].flags |= IEEE80211_CHAN_NO_IBSS;
-			if (c->channelFlags & CHANNEL_PASSIVE)
-				chan_2ghz[a].flags |= IEEE80211_CHAN_PASSIVE_SCAN;
-
-			band_2ghz->n_channels = ++a;
-
-			DPRINTF(sc, ATH_DBG_CONFIG, "2MHz channel: %d, "
-				"channelFlags: 0x%x\n",
-				c->channel, c->channelFlags);
-		} else if (IS_CHAN_5GHZ(c)) {
-			chan_5ghz[b].band = IEEE80211_BAND_5GHZ;
-			chan_5ghz[b].center_freq = c->channel;
-			chan_5ghz[b].max_power = c->maxTxPower;
-			c->chan = &chan_5ghz[a];
-
-			if (c->privFlags & CHANNEL_DISALLOW_ADHOC)
-				chan_5ghz[b].flags |= IEEE80211_CHAN_NO_IBSS;
-			if (c->channelFlags & CHANNEL_PASSIVE)
-				chan_5ghz[b].flags |= IEEE80211_CHAN_PASSIVE_SCAN;
-
-			band_5ghz->n_channels = ++b;
-
-			DPRINTF(sc, ATH_DBG_CONFIG, "5MHz channel: %d, "
-				"channelFlags: 0x%x\n",
-				c->channel, c->channelFlags);
-		}
-	}
-
-	return 0;
-}
-
 /*
  * Set/change channels.  If the channel is really being changed, it's done
  * by reseting the chip.  To accomplish this we must first cleanup any pending
@@ -236,6 +238,8 @@ static int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
 
 	if (sc->sc_flags & SC_OP_INVALID)
 		return -EIO;
+
+	ath9k_ps_wakeup(sc);
 
 	/*
 	 * This is only performed if the channel settings have
@@ -287,6 +291,7 @@ static int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
 	ath_cache_conf_rate(sc, &hw->conf);
 	ath_update_txpow(sc);
 	ath9k_hw_set_interrupts(ah, sc->sc_imask);
+	ath9k_ps_restore(sc);
 	return 0;
 }
 
@@ -559,8 +564,10 @@ irqreturn_t ath_isr(int irq, void *dev)
 				      ATH9K_HW_CAP_AUTOSLEEP)) {
 					/* Clear RxAbort bit so that we can
 					 * receive frames */
+					ath9k_hw_setpower(ah, ATH9K_PM_AWAKE);
 					ath9k_hw_setrxabort(ah, 0);
 					sched = true;
+					sc->sc_flags |= SC_OP_WAIT_FOR_BEACON;
 				}
 			}
 		}
@@ -575,19 +582,6 @@ irqreturn_t ath_isr(int irq, void *dev)
 	}
 
 	return IRQ_HANDLED;
-}
-
-static int ath_get_channel(struct ath_softc *sc,
-			   struct ieee80211_channel *chan)
-{
-	int i;
-
-	for (i = 0; i < sc->sc_ah->ah_nchan; i++) {
-		if (sc->sc_ah->ah_channels[i].channel == chan->center_freq)
-			return i;
-	}
-
-	return -1;
 }
 
 static u32 ath_get_extchanmode(struct ath_softc *sc,
@@ -860,7 +854,8 @@ static void ath_key_delete(struct ath_softc *sc, struct ieee80211_key_conf *key)
 	}
 }
 
-static void setup_ht_cap(struct ieee80211_sta_ht_cap *ht_info)
+static void setup_ht_cap(struct ath_softc *sc,
+			 struct ieee80211_sta_ht_cap *ht_info)
 {
 #define	ATH9K_HT_CAP_MAXRXAMPDU_65536 0x3	/* 2 ^ 16 */
 #define	ATH9K_HT_CAP_MPDUDENSITY_8 0x6		/* 8 usec */
@@ -873,10 +868,22 @@ static void setup_ht_cap(struct ieee80211_sta_ht_cap *ht_info)
 
 	ht_info->ampdu_factor = ATH9K_HT_CAP_MAXRXAMPDU_65536;
 	ht_info->ampdu_density = ATH9K_HT_CAP_MPDUDENSITY_8;
+
 	/* set up supported mcs set */
 	memset(&ht_info->mcs, 0, sizeof(ht_info->mcs));
-	ht_info->mcs.rx_mask[0] = 0xff;
-	ht_info->mcs.rx_mask[1] = 0xff;
+
+	switch(sc->sc_rx_chainmask) {
+	case 1:
+		ht_info->mcs.rx_mask[0] = 0xff;
+		break;
+	case 5:
+	case 7:
+	default:
+		ht_info->mcs.rx_mask[0] = 0xff;
+		ht_info->mcs.rx_mask[1] = 0xff;
+		break;
+	}
+
 	ht_info->mcs.tx_params = IEEE80211_HT_MCS_TX_DEFINED;
 }
 
@@ -1044,6 +1051,7 @@ static void ath_radio_enable(struct ath_softc *sc)
 	struct ieee80211_channel *channel = sc->hw->conf.channel;
 	int r;
 
+	ath9k_ps_wakeup(sc);
 	spin_lock_bh(&sc->sc_resetlock);
 
 	r = ath9k_hw_reset(ah, ah->ah_curchan, false);
@@ -1075,6 +1083,7 @@ static void ath_radio_enable(struct ath_softc *sc)
 	ath9k_hw_set_gpio(ah, ATH_LED_PIN, 0);
 
 	ieee80211_wake_queues(sc->hw);
+	ath9k_ps_restore(sc);
 }
 
 static void ath_radio_disable(struct ath_softc *sc)
@@ -1083,6 +1092,7 @@ static void ath_radio_disable(struct ath_softc *sc)
 	struct ieee80211_channel *channel = sc->hw->conf.channel;
 	int r;
 
+	ath9k_ps_wakeup(sc);
 	ieee80211_stop_queues(sc->hw);
 
 	/* Disable LED */
@@ -1108,6 +1118,7 @@ static void ath_radio_disable(struct ath_softc *sc)
 
 	ath9k_hw_phy_disable(ah);
 	ath9k_hw_setpower(ah, ATH9K_PM_FULL_SLEEP);
+	ath9k_ps_restore(sc);
 }
 
 static bool ath_is_rfkill_set(struct ath_softc *sc)
@@ -1259,6 +1270,8 @@ void ath_detach(struct ath_softc *sc)
 	struct ieee80211_hw *hw = sc->hw;
 	int i = 0;
 
+	ath9k_ps_wakeup(sc);
+
 	DPRINTF(sc, ATH_DBG_CONFIG, "Detach ATH hw\n");
 
 #if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
@@ -1283,6 +1296,7 @@ void ath_detach(struct ath_softc *sc)
 
 	ath9k_hw_detach(sc->sc_ah);
 	ath9k_exit_debug(sc);
+	ath9k_ps_restore(sc);
 }
 
 static int ath_init(u16 devid, struct ath_softc *sc)
@@ -1337,15 +1351,11 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	for (i = 0; i < sc->sc_keymax; i++)
 		ath9k_hw_keyreset(ah, (u16) i);
 
-	/* Collect the channel list using the default country code */
-
-	error = ath_setup_channels(sc);
-	if (error)
+	if (ath9k_regd_init(sc->sc_ah))
 		goto bad;
 
 	/* default to MONITOR mode */
 	sc->sc_ah->ah_opmode = NL80211_IFTYPE_MONITOR;
-
 
 	/* Setup rate tables */
 
@@ -1478,18 +1488,20 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 
 	/* setup channels and rates */
 
-	sc->sbands[IEEE80211_BAND_2GHZ].channels =
-		sc->channels[IEEE80211_BAND_2GHZ];
+	sc->sbands[IEEE80211_BAND_2GHZ].channels = ath9k_2ghz_chantable;
 	sc->sbands[IEEE80211_BAND_2GHZ].bitrates =
 		sc->rates[IEEE80211_BAND_2GHZ];
 	sc->sbands[IEEE80211_BAND_2GHZ].band = IEEE80211_BAND_2GHZ;
+	sc->sbands[IEEE80211_BAND_2GHZ].n_channels =
+		ARRAY_SIZE(ath9k_2ghz_chantable);
 
 	if (test_bit(ATH9K_MODE_11A, sc->sc_ah->ah_caps.wireless_modes)) {
-		sc->sbands[IEEE80211_BAND_5GHZ].channels =
-			sc->channels[IEEE80211_BAND_5GHZ];
+		sc->sbands[IEEE80211_BAND_5GHZ].channels = ath9k_5ghz_chantable;
 		sc->sbands[IEEE80211_BAND_5GHZ].bitrates =
 			sc->rates[IEEE80211_BAND_5GHZ];
 		sc->sbands[IEEE80211_BAND_5GHZ].band = IEEE80211_BAND_5GHZ;
+		sc->sbands[IEEE80211_BAND_5GHZ].n_channels =
+			ARRAY_SIZE(ath9k_5ghz_chantable);
 	}
 
 	if (sc->sc_ah->ah_caps.hw_caps & ATH9K_HW_CAP_BT_COEX)
@@ -1526,7 +1538,9 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 	hw->flags = IEEE80211_HW_RX_INCLUDES_FCS |
 		IEEE80211_HW_HOST_BROADCAST_PS_BUFFERING |
 		IEEE80211_HW_SIGNAL_DBM |
-		IEEE80211_HW_AMPDU_AGGREGATION;
+		IEEE80211_HW_AMPDU_AGGREGATION |
+		IEEE80211_HW_SUPPORTS_PS |
+		IEEE80211_HW_PS_NULLFUNC_STACK;
 
 	if (AR_SREV_9160_10_OR_LATER(sc->sc_ah))
 		hw->flags |= IEEE80211_HW_MFP_CAPABLE;
@@ -1535,6 +1549,9 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 		BIT(NL80211_IFTYPE_AP) |
 		BIT(NL80211_IFTYPE_STATION) |
 		BIT(NL80211_IFTYPE_ADHOC);
+
+	hw->wiphy->reg_notifier = ath9k_reg_notifier;
+	hw->wiphy->strict_regulatory = true;
 
 	hw->queues = 4;
 	hw->max_rates = 4;
@@ -1545,9 +1562,9 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 	hw->rate_control_algorithm = "ath9k_rate_control";
 
 	if (sc->sc_ah->ah_caps.hw_caps & ATH9K_HW_CAP_HT) {
-		setup_ht_cap(&sc->sbands[IEEE80211_BAND_2GHZ].ht_cap);
+		setup_ht_cap(sc, &sc->sbands[IEEE80211_BAND_2GHZ].ht_cap);
 		if (test_bit(ATH9K_MODE_11A, sc->sc_ah->ah_caps.wireless_modes))
-			setup_ht_cap(&sc->sbands[IEEE80211_BAND_5GHZ].ht_cap);
+			setup_ht_cap(sc, &sc->sbands[IEEE80211_BAND_5GHZ].ht_cap);
 	}
 
 	hw->wiphy->bands[IEEE80211_BAND_2GHZ] =	&sc->sbands[IEEE80211_BAND_2GHZ];
@@ -1574,10 +1591,35 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 		goto detach;
 #endif
 
+	if (ath9k_is_world_regd(sc->sc_ah)) {
+		/* Anything applied here (prior to wiphy registratoin) gets
+		 * saved on the wiphy orig_* parameters */
+		const struct ieee80211_regdomain *regd =
+			ath9k_world_regdomain(sc->sc_ah);
+		hw->wiphy->custom_regulatory = true;
+		hw->wiphy->strict_regulatory = false;
+		wiphy_apply_custom_regulatory(sc->hw->wiphy, regd);
+		ath9k_reg_apply_radar_flags(hw->wiphy);
+		ath9k_reg_apply_world_flags(hw->wiphy, REGDOM_SET_BY_INIT);
+	} else {
+		/* This gets applied in the case of the absense of CRDA,
+		 * its our own custom world regulatory domain, similar to
+		 * cfg80211's but we enable passive scanning */
+		const struct ieee80211_regdomain *regd =
+			ath9k_default_world_regdomain();
+		wiphy_apply_custom_regulatory(sc->hw->wiphy, regd);
+		ath9k_reg_apply_radar_flags(hw->wiphy);
+		ath9k_reg_apply_world_flags(hw->wiphy, REGDOM_SET_BY_INIT);
+	}
+
 	error = ieee80211_register_hw(hw);
+
+	if (!ath9k_is_world_regd(sc->sc_ah))
+		regulatory_hint(hw->wiphy, sc->sc_ah->alpha2);
 
 	/* Initialize LED control */
 	ath_init_leds(sc);
+
 
 	return 0;
 detach:
@@ -1804,6 +1846,37 @@ int ath_get_mac80211_qnum(u32 queue, struct ath_softc *sc)
 	return qnum;
 }
 
+/* XXX: Remove me once we don't depend on ath9k_channel for all
+ * this redundant data */
+static void ath9k_update_ichannel(struct ath_softc *sc,
+			  struct ath9k_channel *ichan)
+{
+	struct ieee80211_hw *hw = sc->hw;
+	struct ieee80211_channel *chan = hw->conf.channel;
+	struct ieee80211_conf *conf = &hw->conf;
+
+	ichan->channel = chan->center_freq;
+	ichan->chan = chan;
+
+	if (chan->band == IEEE80211_BAND_2GHZ) {
+		ichan->chanmode = CHANNEL_G;
+		ichan->channelFlags = CHANNEL_2GHZ | CHANNEL_OFDM;
+	} else {
+		ichan->chanmode = CHANNEL_A;
+		ichan->channelFlags = CHANNEL_5GHZ | CHANNEL_OFDM;
+	}
+
+	sc->tx_chan_width = ATH9K_HT_MACMODE_20;
+
+	if (conf_is_ht(conf)) {
+		if (conf_is_ht40(conf))
+			sc->tx_chan_width = ATH9K_HT_MACMODE_2040;
+
+		ichan->chanmode = ath_get_extchanmode(sc, chan,
+					    conf->channel_type);
+	}
+}
+
 /**********************/
 /* mac80211 callbacks */
 /**********************/
@@ -1820,16 +1893,10 @@ static int ath9k_start(struct ieee80211_hw *hw)
 
 	/* setup initial channel */
 
-	pos = ath_get_channel(sc, curchan);
-	if (pos == -1) {
-		DPRINTF(sc, ATH_DBG_FATAL, "Invalid channel: %d\n", curchan->center_freq);
-		return -EINVAL;
-	}
+	pos = curchan->hw_value;
 
-	sc->tx_chan_width = ATH9K_HT_MACMODE_20;
-	sc->sc_ah->ah_channels[pos].chanmode =
-		(curchan->band == IEEE80211_BAND_2GHZ) ? CHANNEL_G : CHANNEL_A;
 	init_channel = &sc->sc_ah->ah_channels[pos];
+	ath9k_update_ichannel(sc, init_channel);
 
 	/* Reset SERDES registers */
 	ath9k_hw_configpcipowersave(sc->sc_ah, 0);
@@ -2090,34 +2157,36 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	struct ieee80211_conf *conf = &hw->conf;
 
 	mutex_lock(&sc->mutex);
+	if (changed & IEEE80211_CONF_CHANGE_PS) {
+		if (conf->flags & IEEE80211_CONF_PS) {
+			if ((sc->sc_imask & ATH9K_INT_TIM_TIMER) == 0) {
+				sc->sc_imask |= ATH9K_INT_TIM_TIMER;
+				ath9k_hw_set_interrupts(sc->sc_ah,
+						sc->sc_imask);
+			}
+			ath9k_hw_setrxabort(sc->sc_ah, 1);
+			ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_NETWORK_SLEEP);
+		} else {
+			ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_AWAKE);
+			ath9k_hw_setrxabort(sc->sc_ah, 0);
+			sc->sc_flags &= ~SC_OP_WAIT_FOR_BEACON;
+			if (sc->sc_imask & ATH9K_INT_TIM_TIMER) {
+				sc->sc_imask &= ~ATH9K_INT_TIM_TIMER;
+				ath9k_hw_set_interrupts(sc->sc_ah,
+						sc->sc_imask);
+			}
+		}
+	}
+
 	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
 		struct ieee80211_channel *curchan = hw->conf.channel;
-		int pos;
+		int pos = curchan->hw_value;
 
 		DPRINTF(sc, ATH_DBG_CONFIG, "Set channel: %d MHz\n",
 			curchan->center_freq);
 
-		pos = ath_get_channel(sc, curchan);
-		if (pos == -1) {
-			DPRINTF(sc, ATH_DBG_FATAL, "Invalid channel: %d\n",
-				curchan->center_freq);
-			mutex_unlock(&sc->mutex);
-			return -EINVAL;
-		}
-
-		sc->tx_chan_width = ATH9K_HT_MACMODE_20;
-		sc->sc_ah->ah_channels[pos].chanmode =
-			(curchan->band == IEEE80211_BAND_2GHZ) ?
-			CHANNEL_G : CHANNEL_A;
-
-		if (conf_is_ht(conf)) {
-			if (conf_is_ht40(conf))
-				sc->tx_chan_width = ATH9K_HT_MACMODE_2040;
-
-			sc->sc_ah->ah_channels[pos].chanmode =
-				ath_get_extchanmode(sc, curchan,
-						    conf->channel_type);
-		}
+		/* XXX: remove me eventualy */
+		ath9k_update_ichannel(sc, &sc->sc_ah->ah_channels[pos]);
 
 		ath_update_chainmask(sc, conf_is_ht(conf));
 
@@ -2310,6 +2379,7 @@ static int ath9k_set_key(struct ieee80211_hw *hw,
 	struct ath_softc *sc = hw->priv;
 	int ret = 0;
 
+	ath9k_ps_wakeup(sc);
 	DPRINTF(sc, ATH_DBG_KEYCACHE, "Set HW Key\n");
 
 	switch (cmd) {
@@ -2333,6 +2403,7 @@ static int ath9k_set_key(struct ieee80211_hw *hw,
 		ret = -EINVAL;
 	}
 
+	ath9k_ps_restore(sc);
 	return ret;
 }
 

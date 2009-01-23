@@ -1021,6 +1021,8 @@ ath5k_setup_bands(struct ieee80211_hw *hw)
  * it's done by reseting the chip.  To accomplish this we must
  * first cleanup any pending DMA, then restart stuff after a la
  * ath5k_init.
+ *
+ * Called with sc->lock.
  */
 static int
 ath5k_chan_set(struct ath5k_softc *sc, struct ieee80211_channel *chan)
@@ -1179,6 +1181,10 @@ ath5k_txbuf_setup(struct ath5k_softc *sc, struct ath5k_buf *bf)
 	struct ieee80211_rate *rate;
 	unsigned int mrr_rate[3], mrr_tries[3];
 	int i, ret;
+	u16 hw_rate;
+	u16 cts_rate = 0;
+	u16 duration = 0;
+	u8 rc_flags;
 
 	flags = AR5K_TXDESC_INTREQ | AR5K_TXDESC_CLRDMASK;
 
@@ -1186,10 +1192,29 @@ ath5k_txbuf_setup(struct ath5k_softc *sc, struct ath5k_buf *bf)
 	bf->skbaddr = pci_map_single(sc->pdev, skb->data, skb->len,
 			PCI_DMA_TODEVICE);
 
+	rate = ieee80211_get_tx_rate(sc->hw, info);
+
 	if (info->flags & IEEE80211_TX_CTL_NO_ACK)
 		flags |= AR5K_TXDESC_NOACK;
 
+	rc_flags = info->control.rates[0].flags;
+	hw_rate = (rc_flags & IEEE80211_TX_RC_USE_SHORT_PREAMBLE) ?
+		rate->hw_value_short : rate->hw_value;
+
 	pktlen = skb->len;
+
+	if (rc_flags & IEEE80211_TX_RC_USE_RTS_CTS) {
+		flags |= AR5K_TXDESC_RTSENA;
+		cts_rate = ieee80211_get_rts_cts_rate(sc->hw, info)->hw_value;
+		duration = le16_to_cpu(ieee80211_rts_duration(sc->hw,
+			sc->vif, pktlen, info));
+	}
+	if (rc_flags & IEEE80211_TX_RC_USE_CTS_PROTECT) {
+		flags |= AR5K_TXDESC_CTSENA;
+		cts_rate = ieee80211_get_rts_cts_rate(sc->hw, info)->hw_value;
+		duration = le16_to_cpu(ieee80211_ctstoself_duration(sc->hw,
+			sc->vif, pktlen, info));
+	}
 
 	if (info->control.hw_key) {
 		keyidx = info->control.hw_key->hw_key_idx;
@@ -1198,8 +1223,9 @@ ath5k_txbuf_setup(struct ath5k_softc *sc, struct ath5k_buf *bf)
 	ret = ah->ah_setup_tx_desc(ah, ds, pktlen,
 		ieee80211_get_hdrlen_from_skb(skb), AR5K_PKT_TYPE_NORMAL,
 		(sc->power_level * 2),
-		ieee80211_get_tx_rate(sc->hw, info)->hw_value,
-		info->control.rates[0].count, keyidx, 0, flags, 0, 0);
+		hw_rate,
+		info->control.rates[0].count, keyidx, 0, flags,
+		cts_rate, duration);
 	if (ret)
 		goto err_unmap;
 
@@ -2825,11 +2851,17 @@ ath5k_config(struct ieee80211_hw *hw, u32 changed)
 {
 	struct ath5k_softc *sc = hw->priv;
 	struct ieee80211_conf *conf = &hw->conf;
+	int ret;
+
+	mutex_lock(&sc->lock);
 
 	sc->bintval = conf->beacon_int;
 	sc->power_level = conf->power_level;
 
-	return ath5k_chan_set(sc, conf->channel);
+	ret = ath5k_chan_set(sc, conf->channel);
+
+	mutex_unlock(&sc->lock);
+	return ret;
 }
 
 static int

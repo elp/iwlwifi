@@ -42,38 +42,6 @@
 #include "core.h"
 #include "reg.h"
 
-/**
- * struct regulatory_request - receipt of last regulatory request
- *
- * @wiphy: this is set if this request's initiator is
- * 	%REGDOM_SET_BY_COUNTRY_IE or %REGDOM_SET_BY_DRIVER. This
- * 	can be used by the wireless core to deal with conflicts
- * 	and potentially inform users of which devices specifically
- * 	cased the conflicts.
- * @initiator: indicates who sent this request, could be any of
- * 	of those set in reg_set_by, %REGDOM_SET_BY_*
- * @alpha2: the ISO / IEC 3166 alpha2 country code of the requested
- * 	regulatory domain. We have a few special codes:
- * 	00 - World regulatory domain
- * 	99 - built by driver but a specific alpha2 cannot be determined
- * 	98 - result of an intersection between two regulatory domains
- * @intersect: indicates whether the wireless core should intersect
- * 	the requested regulatory domain with the presently set regulatory
- * 	domain.
- * @country_ie_checksum: checksum of the last processed and accepted
- * 	country IE
- * @country_ie_env: lets us know if the AP is telling us we are outdoor,
- * 	indoor, or if it doesn't matter
- */
-struct regulatory_request {
-	struct wiphy *wiphy;
-	enum reg_set_by initiator;
-	char alpha2[2];
-	bool intersect;
-	u32 country_ie_checksum;
-	enum environment_cap country_ie_env;
-};
-
 /* Receipt of information from last regulatory request */
 static struct regulatory_request *last_request;
 
@@ -498,6 +466,7 @@ static struct ieee80211_regdomain *country_ie_2_rd(
 	 * calculate the number of reg rules we will need. We will need one
 	 * for each channel subband */
 	while (country_ie_len >= 3) {
+		int end_channel = 0;
 		struct ieee80211_country_ie_triplet *triplet =
 			(struct ieee80211_country_ie_triplet *) country_ie;
 		int cur_sub_max_channel = 0, cur_channel = 0;
@@ -509,9 +478,25 @@ static struct ieee80211_regdomain *country_ie_2_rd(
 			continue;
 		}
 
+		/* 2 GHz */
+		if (triplet->chans.first_channel <= 14)
+			end_channel = triplet->chans.first_channel +
+				triplet->chans.num_channels;
+		else
+			/*
+			 * 5 GHz -- For example in country IEs if the first
+			 * channel given is 36 and the number of channels is 4
+			 * then the individual channel numbers defined for the
+			 * 5 GHz PHY by these parameters are: 36, 40, 44, and 48
+			 * and not 36, 37, 38, 39.
+			 *
+			 * See: http://tinyurl.com/11d-clarification
+			 */
+			end_channel =  triplet->chans.first_channel +
+				(4 * (triplet->chans.num_channels - 1));
+
 		cur_channel = triplet->chans.first_channel;
-		cur_sub_max_channel = ieee80211_channel_to_frequency(
-			cur_channel + triplet->chans.num_channels);
+		cur_sub_max_channel = end_channel;
 
 		/* Basic sanity check */
 		if (cur_sub_max_channel < cur_channel)
@@ -590,15 +575,6 @@ static struct ieee80211_regdomain *country_ie_2_rd(
 			end_channel = triplet->chans.first_channel +
 				triplet->chans.num_channels;
 		else
-			/*
-			 * 5 GHz -- For example in country IEs if the first
-			 * channel given is 36 and the number of channels is 4
-			 * then the individual channel numbers defined for the
-			 * 5 GHz PHY by these parameters are: 36, 40, 44, and 48
-			 * and not 36, 37, 38, 39.
-			 *
-			 * See: http://tinyurl.com/11d-clarification
-			 */
 			end_channel =  triplet->chans.first_channel +
 				(4 * (triplet->chans.num_channels - 1));
 
@@ -782,40 +758,23 @@ static u32 map_regdom_flags(u32 rd_flags)
 	return channel_flags;
 }
 
-/**
- * freq_reg_info - get regulatory information for the given frequency
- * @wiphy: the wiphy for which we want to process this rule for
- * @center_freq: Frequency in KHz for which we want regulatory information for
- * @bandwidth: the bandwidth requirement you have in KHz, if you do not have one
- * 	you can set this to 0. If this frequency is allowed we then set
- * 	this value to the maximum allowed bandwidth.
- * @reg_rule: the regulatory rule which we have for this frequency
- *
- * Use this function to get the regulatory rule for a specific frequency on
- * a given wireless device. If the device has a specific regulatory domain
- * it wants to follow we respect that unless a country IE has been received
- * and processed already.
- *
- * Returns 0 if it was able to find a valid regulatory rule which does
- * apply to the given center_freq otherwise it returns non-zero. It will
- * also return -ERANGE if we determine the given center_freq does not even have
- * a regulatory rule for a frequency range in the center_freq's band. See
- * freq_in_rule_band() for our current definition of a band -- this is purely
- * subjective and right now its 802.11 specific.
- */
-static int freq_reg_info(struct wiphy *wiphy, u32 center_freq, u32 *bandwidth,
-			 const struct ieee80211_reg_rule **reg_rule)
+static int freq_reg_info_regd(struct wiphy *wiphy,
+			      u32 center_freq,
+			      u32 *bandwidth,
+			      const struct ieee80211_reg_rule **reg_rule,
+			      const struct ieee80211_regdomain *custom_regd)
 {
 	int i;
 	bool band_rule_found = false;
 	const struct ieee80211_regdomain *regd;
 	u32 max_bandwidth = 0;
 
-	regd = cfg80211_regdomain;
+	regd = custom_regd ? custom_regd : cfg80211_regdomain;
 
 	/* Follow the driver's regulatory domain, if present, unless a country
-	 * IE has been processed */
+	 * IE has been processed or a user wants to help complaince further */
 	if (last_request->initiator != REGDOM_SET_BY_COUNTRY_IE &&
+	    last_request->initiator != REGDOM_SET_BY_USER &&
 	    wiphy->regd)
 		regd = wiphy->regd;
 
@@ -850,6 +809,14 @@ static int freq_reg_info(struct wiphy *wiphy, u32 center_freq, u32 *bandwidth,
 		return -ERANGE;
 
 	return !max_bandwidth;
+}
+EXPORT_SYMBOL(freq_reg_info);
+
+int freq_reg_info(struct wiphy *wiphy, u32 center_freq, u32 *bandwidth,
+			 const struct ieee80211_reg_rule **reg_rule)
+{
+	return freq_reg_info_regd(wiphy, center_freq,
+		bandwidth, reg_rule, NULL);
 }
 
 static void handle_channel(struct wiphy *wiphy, enum ieee80211_band band,
@@ -909,6 +876,22 @@ static void handle_channel(struct wiphy *wiphy, enum ieee80211_band band,
 
 	power_rule = &reg_rule->power_rule;
 
+	if (last_request->initiator == REGDOM_SET_BY_DRIVER &&
+	    last_request->wiphy && last_request->wiphy == wiphy &&
+	    last_request->wiphy->strict_regulatory) {
+		/* This gaurantees the driver's requested regulatory domain
+		 * will always be used as a base for further regulatory
+		 * settings */
+		chan->flags = chan->orig_flags =
+			map_regdom_flags(reg_rule->flags);
+		chan->max_antenna_gain = chan->orig_mag =
+			(int) MBI_TO_DBI(power_rule->max_antenna_gain);
+		chan->max_bandwidth = KHZ_TO_MHZ(max_bandwidth);
+		chan->max_power = chan->orig_mpwr =
+			(int) MBM_TO_DBM(power_rule->max_eirp);
+		return;
+	}
+
 	chan->flags = flags | map_regdom_flags(reg_rule->flags);
 	chan->max_antenna_gain = min(chan->orig_mag,
 		(int) MBI_TO_DBI(power_rule->max_antenna_gain));
@@ -937,7 +920,12 @@ static bool ignore_reg_update(struct wiphy *wiphy, enum reg_set_by setby)
 	if (!last_request)
 		return true;
 	if (setby == REGDOM_SET_BY_CORE &&
-		  wiphy->fw_handles_regulatory)
+		  wiphy->custom_regulatory)
+		return true;
+	/* wiphy->regd will be set once the device has its own
+	 * desired regulatory domain set */
+	if (wiphy->strict_regulatory && !wiphy->regd &&
+	    !is_world_regdom(last_request->alpha2))
 		return true;
 	return false;
 }
@@ -947,20 +935,79 @@ static void update_all_wiphy_regulatory(enum reg_set_by setby)
 	struct cfg80211_registered_device *drv;
 
 	list_for_each_entry(drv, &cfg80211_drv_list, list)
-		if (!ignore_reg_update(&drv->wiphy, setby))
-			wiphy_update_regulatory(&drv->wiphy, setby);
+		wiphy_update_regulatory(&drv->wiphy, setby);
 }
 
 void wiphy_update_regulatory(struct wiphy *wiphy, enum reg_set_by setby)
 {
 	enum ieee80211_band band;
+
+	if (ignore_reg_update(wiphy, setby))
+		return;
 	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
 		if (wiphy->bands[band])
 			handle_band(wiphy, band);
 	}
 	if (wiphy->reg_notifier)
-		wiphy->reg_notifier(wiphy, setby);
+		wiphy->reg_notifier(wiphy, last_request);
 }
+
+static void handle_channel_custom(struct wiphy *wiphy,
+				  enum ieee80211_band band,
+				  unsigned int chan_idx,
+				  const struct ieee80211_regdomain *regd)
+{
+	int r;
+	u32 max_bandwidth = 0;
+	const struct ieee80211_reg_rule *reg_rule = NULL;
+	const struct ieee80211_power_rule *power_rule = NULL;
+	struct ieee80211_supported_band *sband;
+	struct ieee80211_channel *chan;
+
+	sband = wiphy->bands[band];
+	BUG_ON(chan_idx >= sband->n_channels);
+	chan = &sband->channels[chan_idx];
+
+	r = freq_reg_info_regd(wiphy, MHZ_TO_KHZ(chan->center_freq),
+		&max_bandwidth, &reg_rule, regd);
+
+	if (r) {
+		chan->flags = IEEE80211_CHAN_DISABLED;
+		return;
+	}
+
+	power_rule = &reg_rule->power_rule;
+
+	chan->flags |= map_regdom_flags(reg_rule->flags);
+	chan->max_antenna_gain = (int) MBI_TO_DBI(power_rule->max_antenna_gain);
+	chan->max_bandwidth = KHZ_TO_MHZ(max_bandwidth);
+	chan->max_power = (int) MBM_TO_DBM(power_rule->max_eirp);
+}
+
+static void handle_band_custom(struct wiphy *wiphy, enum ieee80211_band band,
+			       const struct ieee80211_regdomain *regd)
+{
+	unsigned int i;
+	struct ieee80211_supported_band *sband;
+
+	BUG_ON(!wiphy->bands[band]);
+	sband = wiphy->bands[band];
+
+	for (i = 0; i < sband->n_channels; i++)
+		handle_channel_custom(wiphy, band, i, regd);
+}
+
+/* Used by drivers prior to wiphy registration */
+void wiphy_apply_custom_regulatory(struct wiphy *wiphy,
+				   const struct ieee80211_regdomain *regd)
+{
+	enum ieee80211_band band;
+	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
+		if (wiphy->bands[band])
+			handle_band_custom(wiphy, band, regd);
+	}
+}
+EXPORT_SYMBOL(wiphy_apply_custom_regulatory);
 
 static int reg_copy_regd(const struct ieee80211_regdomain **dst_regd,
 			 const struct ieee80211_regdomain *src_regd)
@@ -1033,8 +1080,13 @@ static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
 		}
 		return REG_INTERSECT;
 	case REGDOM_SET_BY_DRIVER:
-		if (last_request->initiator == REGDOM_SET_BY_CORE)
-			return 0;
+		if (last_request->initiator == REGDOM_SET_BY_CORE) {
+			if (is_old_static_regdom(cfg80211_regdomain))
+				return 0;
+			if (!alpha2_equal(cfg80211_regdomain->alpha2, alpha2))
+				return 0;
+			return -EALREADY;
+		}
 		return REG_INTERSECT;
 	case REGDOM_SET_BY_USER:
 		if (last_request->initiator == REGDOM_SET_BY_COUNTRY_IE)
@@ -1044,6 +1096,20 @@ static int ignore_request(struct wiphy *wiphy, enum reg_set_by set_by,
 		if (last_request->initiator == REGDOM_SET_BY_USER &&
 			  last_request->intersect)
 			return -EOPNOTSUPP;
+		/* Process user requests only after previous user/driver/core
+		 * requests have been processed */
+		if (last_request->initiator == REGDOM_SET_BY_CORE ||
+		    last_request->initiator == REGDOM_SET_BY_DRIVER ||
+		    last_request->initiator == REGDOM_SET_BY_USER) {
+			if (!alpha2_equal(last_request->alpha2,
+			    cfg80211_regdomain->alpha2))
+				return -EAGAIN;
+		}
+
+		if (!is_old_static_regdom(cfg80211_regdomain) &&
+		    alpha2_equal(cfg80211_regdomain->alpha2, alpha2))
+			return -EALREADY;
+
 		return 0;
 	}
 
@@ -1119,10 +1185,15 @@ new_request:
 
 void regulatory_hint(struct wiphy *wiphy, const char *alpha2)
 {
+	int r;
 	BUG_ON(!alpha2);
 
 	mutex_lock(&cfg80211_drv_mutex);
-	__regulatory_hint(wiphy, REGDOM_SET_BY_DRIVER, alpha2, 0, ENVIRON_ANY);
+	r = __regulatory_hint(wiphy, REGDOM_SET_BY_DRIVER,
+		alpha2, 0, ENVIRON_ANY);
+	/* This is required so that the orig_* parameters are saved */
+	if (r == -EALREADY && wiphy->strict_regulatory)
+		wiphy_update_regulatory(wiphy, REGDOM_SET_BY_DRIVER);
 	mutex_unlock(&cfg80211_drv_mutex);
 }
 EXPORT_SYMBOL(regulatory_hint);
@@ -1332,7 +1403,7 @@ static void reg_country_ie_process_debug(
 	if (intersected_rd) {
 		printk(KERN_DEBUG "cfg80211: We intersect both of these "
 			"and get:\n");
-		print_regdomain_info(rd);
+		print_regdomain_info(intersected_rd);
 		return;
 	}
 	printk(KERN_DEBUG "cfg80211: Intersection between both failed\n");

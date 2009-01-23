@@ -496,39 +496,41 @@ typedef struct {
  * so all rid access should use the read/writeXXXRid routines.
  */
 
-/* This is redundant for x86 archs, but it seems necessary for ARM */
-#pragma pack(1)
-
 /* This structure came from an email sent to me from an engineer at
    aironet for inclusion into this driver */
-typedef struct {
+typedef struct WepKeyRid WepKeyRid;
+struct WepKeyRid {
 	__le16 len;
 	__le16 kindex;
 	u8 mac[ETH_ALEN];
 	__le16 klen;
 	u8 key[16];
-} WepKeyRid;
+} __attribute__ ((packed));
 
 /* These structures are from the Aironet's PC4500 Developers Manual */
-typedef struct {
+typedef struct Ssid Ssid;
+struct Ssid {
 	__le16 len;
 	u8 ssid[32];
-} Ssid;
+} __attribute__ ((packed));
 
-typedef struct {
+typedef struct SsidRid SsidRid;
+struct SsidRid {
 	__le16 len;
 	Ssid ssids[3];
-} SsidRid;
+} __attribute__ ((packed));
 
-typedef struct {
+typedef struct ModulationRid ModulationRid;
+struct ModulationRid {
         __le16 len;
         __le16 modulation;
 #define MOD_DEFAULT cpu_to_le16(0)
 #define MOD_CCK cpu_to_le16(1)
 #define MOD_MOK cpu_to_le16(2)
-} ModulationRid;
+} __attribute__ ((packed));
 
-typedef struct {
+typedef struct ConfigRid ConfigRid;
+struct ConfigRid {
 	__le16 len; /* sizeof(ConfigRid) */
 	__le16 opmode; /* operating mode */
 #define MODE_STA_IBSS cpu_to_le16(0)
@@ -649,9 +651,10 @@ typedef struct {
 #define MAGIC_STAY_IN_CAM (1<<10)
 	u8 magicControl;
 	__le16 autoWake;
-} ConfigRid;
+} __attribute__ ((packed));
 
-typedef struct {
+typedef struct StatusRid StatusRid;
+struct StatusRid {
 	__le16 len;
 	u8 mac[ETH_ALEN];
 	__le16 mode;
@@ -707,21 +710,23 @@ typedef struct {
 #define STAT_LEAPFAILED 91
 #define STAT_LEAPTIMEDOUT 92
 #define STAT_LEAPCOMPLETE 93
-} StatusRid;
+} __attribute__ ((packed));
 
-typedef struct {
+typedef struct StatsRid StatsRid;
+struct StatsRid {
 	__le16 len;
 	__le16 spacer;
 	__le32 vals[100];
-} StatsRid;
+} __attribute__ ((packed));
 
-
-typedef struct {
+typedef struct APListRid APListRid;
+struct APListRid {
 	__le16 len;
 	u8 ap[4][ETH_ALEN];
-} APListRid;
+} __attribute__ ((packed));
 
-typedef struct {
+typedef struct CapabilityRid CapabilityRid;
+struct CapabilityRid {
 	__le16 len;
 	char oui[3];
 	char zero;
@@ -748,17 +753,18 @@ typedef struct {
 	__le16 bootBlockVer;
 	__le16 requiredHard;
 	__le16 extSoftCap;
-} CapabilityRid;
-
+} __attribute__ ((packed));
 
 /* Only present on firmware >= 5.30.17 */
-typedef struct {
+typedef struct BSSListRidExtra BSSListRidExtra;
+struct BSSListRidExtra {
   __le16 unknown[4];
   u8 fixed[12]; /* WLAN management frame */
   u8 iep[624];
-} BSSListRidExtra;
+} __attribute__ ((packed));
 
-typedef struct {
+typedef struct BSSListRid BSSListRid;
+struct BSSListRid {
   __le16 len;
   __le16 index; /* First is 0 and 0xffff means end of list */
 #define RADIO_FH 1 /* Frequency hopping radio type */
@@ -789,33 +795,37 @@ typedef struct {
 
   /* Only present on firmware >= 5.30.17 */
   BSSListRidExtra extra;
-} BSSListRid;
+} __attribute__ ((packed));
 
 typedef struct {
   BSSListRid bss;
   struct list_head list;
 } BSSListElement;
 
-typedef struct {
+typedef struct tdsRssiEntry tdsRssiEntry;
+struct tdsRssiEntry {
   u8 rssipct;
   u8 rssidBm;
-} tdsRssiEntry;
+} __attribute__ ((packed));
 
-typedef struct {
+typedef struct tdsRssiRid tdsRssiRid;
+struct tdsRssiRid {
   u16 len;
   tdsRssiEntry x[256];
-} tdsRssiRid;
+} __attribute__ ((packed));
 
-typedef struct {
-	u16 len;
-	u16 state;
-	u16 multicastValid;
+typedef struct MICRid MICRid;
+struct MICRid {
+	__le16 len;
+	__le16 state;
+	__le16 multicastValid;
 	u8  multicast[16];
-	u16 unicastValid;
+	__le16 unicastValid;
 	u8  unicast[16];
-} MICRid;
+} __attribute__ ((packed));
 
-typedef struct {
+typedef struct MICBuffer MICBuffer;
+struct MICBuffer {
 	__be16 typelen;
 
 	union {
@@ -830,14 +840,12 @@ typedef struct {
 	} u;
 	__be32 mic;
 	__be32 seq;
-} MICBuffer;
+} __attribute__ ((packed));
 
 typedef struct {
 	u8 da[ETH_ALEN];
 	u8 sa[ETH_ALEN];
 } etherHead;
-
-#pragma pack()
 
 #define TXCTL_TXOK (1<<1) /* report if tx is ok */
 #define TXCTL_TXEX (1<<2) /* report if tx fails */
@@ -1078,12 +1086,6 @@ typedef struct wep_key_t {
 	u8	key[16];	/* 40-bit and 104-bit keys */
 } wep_key_t;
 
-/* Backward compatibility */
-#ifndef IW_ENCODE_NOKEY
-#define IW_ENCODE_NOKEY         0x0800  /* Key is write only, so not present */
-#define IW_ENCODE_MODE  (IW_ENCODE_DISABLED | IW_ENCODE_RESTRICTED | IW_ENCODE_OPEN)
-#endif /* IW_ENCODE_NOKEY */
-
 /* List of Wireless Handlers (new API) */
 static const struct iw_handler_def	airo_handler_def;
 
@@ -1283,6 +1285,29 @@ static void emmh32_update(emmh32_context *context, u8 *pOctets, int len);
 static void emmh32_final(emmh32_context *context, u8 digest[4]);
 static int flashpchar(struct airo_info *ai,int byte,int dwelltime);
 
+static void age_mic_context(miccntx *cur, miccntx *old, u8 *key, int key_len,
+			    struct crypto_cipher *tfm)
+{
+	/* If the current MIC context is valid and its key is the same as
+	 * the MIC register, there's nothing to do.
+	 */
+	if (cur->valid && (memcmp(cur->key, key, key_len) == 0))
+		return;
+
+	/* Age current mic Context */
+	memcpy(old, cur, sizeof(*cur));
+
+	/* Initialize new context */
+	memcpy(cur->key, key, key_len);
+	cur->window  = 33; /* Window always points to the middle */
+	cur->rx      = 0;  /* Rx Sequence numbers */
+	cur->tx      = 0;  /* Tx sequence numbers */
+	cur->valid   = 1;  /* Key is now valid */
+
+	/* Give key to mic seed */
+	emmh32_setseed(&cur->seed, key, key_len, tfm);
+}
+
 /* micinit - Initialize mic seed */
 
 static void micinit(struct airo_info *ai)
@@ -1293,49 +1318,26 @@ static void micinit(struct airo_info *ai)
 	PC4500_readrid(ai, RID_MIC, &mic_rid, sizeof(mic_rid), 0);
 	up(&ai->sem);
 
-	ai->micstats.enabled = (mic_rid.state & 0x00FF) ? 1 : 0;
-
-	if (ai->micstats.enabled) {
-		/* Key must be valid and different */
-		if (mic_rid.multicastValid && (!ai->mod[0].mCtx.valid ||
-		    (memcmp (ai->mod[0].mCtx.key, mic_rid.multicast,
-			     sizeof(ai->mod[0].mCtx.key)) != 0))) {
-			/* Age current mic Context */
-			memcpy(&ai->mod[1].mCtx,&ai->mod[0].mCtx,sizeof(miccntx));
-			/* Initialize new context */
-			memcpy(&ai->mod[0].mCtx.key,mic_rid.multicast,sizeof(mic_rid.multicast));
-			ai->mod[0].mCtx.window  = 33; //Window always points to the middle
-			ai->mod[0].mCtx.rx      = 0;  //Rx Sequence numbers
-			ai->mod[0].mCtx.tx      = 0;  //Tx sequence numbers
-			ai->mod[0].mCtx.valid   = 1;  //Key is now valid
-  
-			/* Give key to mic seed */
-			emmh32_setseed(&ai->mod[0].mCtx.seed,mic_rid.multicast,sizeof(mic_rid.multicast), ai->tfm);
-		}
-
-		/* Key must be valid and different */
-		if (mic_rid.unicastValid && (!ai->mod[0].uCtx.valid || 
-		    (memcmp(ai->mod[0].uCtx.key, mic_rid.unicast,
-			    sizeof(ai->mod[0].uCtx.key)) != 0))) {
-			/* Age current mic Context */
-			memcpy(&ai->mod[1].uCtx,&ai->mod[0].uCtx,sizeof(miccntx));
-			/* Initialize new context */
-			memcpy(&ai->mod[0].uCtx.key,mic_rid.unicast,sizeof(mic_rid.unicast));
-	
-			ai->mod[0].uCtx.window  = 33; //Window always points to the middle
-			ai->mod[0].uCtx.rx      = 0;  //Rx Sequence numbers
-			ai->mod[0].uCtx.tx      = 0;  //Tx sequence numbers
-			ai->mod[0].uCtx.valid   = 1;  //Key is now valid
-	
-			//Give key to mic seed
-			emmh32_setseed(&ai->mod[0].uCtx.seed, mic_rid.unicast, sizeof(mic_rid.unicast), ai->tfm);
-		}
-	} else {
-      /* So next time we have a valid key and mic is enabled, we will update
-       * the sequence number if the key is the same as before.
-       */
+	ai->micstats.enabled = (le16_to_cpu(mic_rid.state) & 0x00FF) ? 1 : 0;
+	if (!ai->micstats.enabled) {
+		/* So next time we have a valid key and mic is enabled, we will
+		 * update the sequence number if the key is the same as before.
+		 */
 		ai->mod[0].uCtx.valid = 0;
 		ai->mod[0].mCtx.valid = 0;
+		return;
+	}
+
+	if (mic_rid.multicastValid) {
+		age_mic_context(&ai->mod[0].mCtx, &ai->mod[1].mCtx,
+		                mic_rid.multicast, sizeof(mic_rid.multicast),
+		                ai->tfm);
+	}
+
+	if (mic_rid.unicastValid) {
+		age_mic_context(&ai->mod[0].uCtx, &ai->mod[1].uCtx,
+				mic_rid.unicast, sizeof(mic_rid.unicast),
+				ai->tfm);
 	}
 }
 

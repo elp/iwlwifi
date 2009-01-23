@@ -207,7 +207,7 @@ struct ieee80211_bss_conf {
 	u16 beacon_int;
 	u16 assoc_capability;
 	u64 timestamp;
-	u64 basic_rates;
+	u32 basic_rates;
 	struct ieee80211_bss_ht_conf ht;
 };
 
@@ -262,6 +262,26 @@ enum mac80211_tx_control_flags {
 	IEEE80211_TX_CTL_RATE_CTRL_PROBE	= BIT(12),
 };
 
+/**
+ * enum mac80211_rate_control_flags - per-rate flags set by the
+ *	Rate Control algorithm.
+ *
+ * These flags are set by the Rate control algorithm for each rate during tx,
+ * in the @flags member of struct ieee80211_tx_rate.
+ *
+ * @IEEE80211_TX_RC_USE_RTS_CTS: Use RTS/CTS exchange for this rate.
+ * @IEEE80211_TX_RC_USE_CTS_PROTECT: CTS-to-self protection is required.
+ *	This is set if the current BSS requires ERP protection.
+ * @IEEE80211_TX_RC_USE_SHORT_PREAMBLE: Use short preamble.
+ * @IEEE80211_TX_RC_MCS: HT rate.
+ * @IEEE80211_TX_RC_GREEN_FIELD: Indicates whether this rate should be used in
+ *	Greenfield mode.
+ * @IEEE80211_TX_RC_40_MHZ_WIDTH: Indicates if the Channel Width should be 40 MHz.
+ * @IEEE80211_TX_RC_DUP_DATA: The frame should be transmitted on both of the
+ *	adjacent 20 MHz channels, if the current channel type is
+ *	NL80211_CHAN_HT40MINUS or NL80211_CHAN_HT40PLUS.
+ * @IEEE80211_TX_RC_SHORT_GI: Short Guard interval should be used for this rate.
+ */
 enum mac80211_rate_control_flags {
 	IEEE80211_TX_RC_USE_RTS_CTS		= BIT(0),
 	IEEE80211_TX_RC_USE_CTS_PROTECT		= BIT(1),
@@ -626,10 +646,12 @@ struct ieee80211_if_init_conf {
  * @IEEE80211_IFCC_BSSID: The BSSID changed.
  * @IEEE80211_IFCC_BEACON: The beacon for this interface changed
  *	(currently AP and MESH only), use ieee80211_beacon_get().
+ * @IEEE80211_IFCC_BEACON_ENABLED: The enable_beacon value changed.
  */
 enum ieee80211_if_conf_change {
-	IEEE80211_IFCC_BSSID	= BIT(0),
-	IEEE80211_IFCC_BEACON	= BIT(1),
+	IEEE80211_IFCC_BSSID		= BIT(0),
+	IEEE80211_IFCC_BEACON		= BIT(1),
+	IEEE80211_IFCC_BEACON_ENABLED	= BIT(2),
 };
 
 /**
@@ -637,13 +659,16 @@ enum ieee80211_if_conf_change {
  *
  * @changed: parameters that have changed, see &enum ieee80211_if_conf_change.
  * @bssid: BSSID of the network we are associated to/creating.
+ * @enable_beacon: Indicates whether beacons can be sent.
+ *	This is valid only for AP/IBSS/MESH modes.
  *
  * This structure is passed to the config_interface() callback of
  * &struct ieee80211_hw.
  */
 struct ieee80211_if_conf {
 	u32 changed;
-	u8 *bssid;
+	const u8 *bssid;
+	bool enable_beacon;
 };
 
 /**
@@ -761,7 +786,7 @@ enum set_key_cmd {
  *	sizeof(void *), size is determined in hw information.
  */
 struct ieee80211_sta {
-	u64 supp_rates[IEEE80211_NUM_BANDS];
+	u32 supp_rates[IEEE80211_NUM_BANDS];
 	u8 addr[ETH_ALEN];
 	u16 aid;
 	struct ieee80211_sta_ht_cap ht_cap;
@@ -963,6 +988,19 @@ struct ieee80211_hw {
 	u8 max_rates;
 	u8 max_rate_tries;
 };
+
+/**
+ * wiphy_to_ieee80211_hw - return a mac80211 driver hw struct from a wiphy
+ *
+ * @wiphy: the &struct wiphy which we want to query
+ *
+ * mac80211 drivers can use this to get to their respective
+ * &struct ieee80211_hw. Drivers wishing to get to their own private
+ * structure can then access it via hw->priv. Note that mac802111 drivers should
+ * not use wiphy_priv() to try to get their private driver structure as this
+ * is already used internally by mac80211.
+ */
+struct ieee80211_hw *wiphy_to_ieee80211_hw(struct wiphy *wiphy);
 
 /**
  * SET_IEEE80211_DEV - set device for 802.11 hardware

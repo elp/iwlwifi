@@ -396,7 +396,7 @@ struct rt2x00lib_erp {
 	int ack_timeout;
 	int ack_consume_time;
 
-	u64 basic_rates;
+	u32 basic_rates;
 
 	int slot_time;
 
@@ -575,7 +575,6 @@ enum rt2x00_flags {
 	DEVICE_STATE_REGISTERED_HW,
 	DEVICE_STATE_INITIALIZED,
 	DEVICE_STATE_STARTED,
-	DEVICE_STATE_STARTED_SUSPEND,
 	DEVICE_STATE_ENABLED_RADIO,
 	DEVICE_STATE_DISABLED_RADIO_HW,
 
@@ -868,7 +867,7 @@ static inline char rt2x00_rf(const struct rt2x00_chip *chipset, const u16 chip)
 	return (chipset->rf == chip);
 }
 
-static inline u16 rt2x00_rev(const struct rt2x00_chip *chipset)
+static inline u32 rt2x00_rev(const struct rt2x00_chip *chipset)
 {
 	return chipset->rev;
 }
