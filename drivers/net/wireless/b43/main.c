@@ -4,7 +4,7 @@
 
   Copyright (c) 2005 Martin Langer <martin-langer@gmx.de>
   Copyright (c) 2005 Stefano Brivio <stefano.brivio@polimi.it>
-  Copyright (c) 2005, 2006 Michael Buesch <mb@bu3sch.de>
+  Copyright (c) 2005-2009 Michael Buesch <mb@bu3sch.de>
   Copyright (c) 2005 Danny van Dyk <kugelfang@gentoo.org>
   Copyright (c) 2005 Andreas Jaggi <andreas.jaggi@waterwave.ch>
 
@@ -87,6 +87,10 @@ MODULE_PARM_DESC(qos, "Enable QOS support (default on)");
 static int modparam_btcoex = 1;
 module_param_named(btcoex, modparam_btcoex, int, 0444);
 MODULE_PARM_DESC(btcoex, "Enable Bluetooth coexistance (default on)");
+
+int b43_modparam_verbose = B43_VERBOSITY_DEFAULT;
+module_param_named(verbose, b43_modparam_verbose, int, 0644);
+MODULE_PARM_DESC(verbose, "Log message verbosity: 0=error, 1=warn, 2=info(default), 3=debug");
 
 
 static const struct ssb_device_id b43_ssb_tbl[] = {
@@ -300,6 +304,8 @@ void b43info(struct b43_wl *wl, const char *fmt, ...)
 {
 	va_list args;
 
+	if (b43_modparam_verbose < B43_VERBOSITY_INFO)
+		return;
 	if (!b43_ratelimit(wl))
 		return;
 	va_start(args, fmt);
@@ -313,6 +319,8 @@ void b43err(struct b43_wl *wl, const char *fmt, ...)
 {
 	va_list args;
 
+	if (b43_modparam_verbose < B43_VERBOSITY_ERROR)
+		return;
 	if (!b43_ratelimit(wl))
 		return;
 	va_start(args, fmt);
@@ -326,6 +334,8 @@ void b43warn(struct b43_wl *wl, const char *fmt, ...)
 {
 	va_list args;
 
+	if (b43_modparam_verbose < B43_VERBOSITY_WARN)
+		return;
 	if (!b43_ratelimit(wl))
 		return;
 	va_start(args, fmt);
@@ -335,18 +345,18 @@ void b43warn(struct b43_wl *wl, const char *fmt, ...)
 	va_end(args);
 }
 
-#if B43_DEBUG
 void b43dbg(struct b43_wl *wl, const char *fmt, ...)
 {
 	va_list args;
 
+	if (b43_modparam_verbose < B43_VERBOSITY_DEBUG)
+		return;
 	va_start(args, fmt);
 	printk(KERN_DEBUG "b43-%s debug: ",
 	       (wl && wl->hw) ? wiphy_name(wl->hw->wiphy) : "wlan");
 	vprintk(fmt, args);
 	va_end(args);
 }
-#endif /* DEBUG */
 
 static void b43_ram_write(struct b43_wldev *dev, u16 offset, u32 val)
 {
@@ -3245,6 +3255,43 @@ static int b43_op_get_stats(struct ieee80211_hw *hw,
 	return 0;
 }
 
+static u64 b43_op_get_tsf(struct ieee80211_hw *hw)
+{
+	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev;
+	u64 tsf;
+
+	mutex_lock(&wl->mutex);
+	spin_lock_irq(&wl->irq_lock);
+	dev = wl->current_dev;
+
+	if (dev && (b43_status(dev) >= B43_STAT_INITIALIZED))
+		b43_tsf_read(dev, &tsf);
+	else
+		tsf = 0;
+
+	spin_unlock_irq(&wl->irq_lock);
+	mutex_unlock(&wl->mutex);
+
+	return tsf;
+}
+
+static void b43_op_set_tsf(struct ieee80211_hw *hw, u64 tsf)
+{
+	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev;
+
+	mutex_lock(&wl->mutex);
+	spin_lock_irq(&wl->irq_lock);
+	dev = wl->current_dev;
+
+	if (dev && (b43_status(dev) >= B43_STAT_INITIALIZED))
+		b43_tsf_write(dev, tsf);
+
+	spin_unlock_irq(&wl->irq_lock);
+	mutex_unlock(&wl->mutex);
+}
+
 static void b43_put_phy_into_reset(struct b43_wldev *dev)
 {
 	struct ssb_device *sdev = dev->dev;
@@ -3552,9 +3599,7 @@ static int b43_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	u8 algorithm;
 	u8 index;
 	int err;
-#if B43_DEBUG
-	static const u8 bcast_addr[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-#endif
+	static const u8 bcast_addr[ETH_ALEN] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
 	if (modparam_nohwcrypt)
 		return -ENOSPC; /* User disabled HW-crypto */
@@ -4364,6 +4409,8 @@ static const struct ieee80211_ops b43_hw_ops = {
 	.set_key		= b43_op_set_key,
 	.get_stats		= b43_op_get_stats,
 	.get_tx_stats		= b43_op_get_tx_stats,
+	.get_tsf		= b43_op_get_tsf,
+	.set_tsf		= b43_op_set_tsf,
 	.start			= b43_op_start,
 	.stop			= b43_op_stop,
 	.set_tim		= b43_op_beacon_set_tim,
@@ -4705,9 +4752,10 @@ static int b43_wireless_init(struct ssb_device *dev)
 	INIT_WORK(&wl->txpower_adjust_work, b43_phy_txpower_adjust_work);
 
 	ssb_set_devtypedata(dev, wl);
-	b43info(wl, "Broadcom %04X WLAN found\n", dev->bus->chip_id);
+	b43info(wl, "Broadcom %04X WLAN found (core revision %u)\n",
+		dev->bus->chip_id, dev->id.revision);
 	err = 0;
-      out:
+out:
 	return err;
 }
 

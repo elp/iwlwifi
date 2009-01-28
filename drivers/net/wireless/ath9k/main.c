@@ -217,7 +217,13 @@ static void ath_setup_rates(struct ath_softc *sc, enum ieee80211_band band)
 	for (i = 0; i < maxrates; i++) {
 		rate[i].bitrate = rate_table->info[i].ratekbps / 100;
 		rate[i].hw_value = rate_table->info[i].ratecode;
+		if (rate_table->info[i].short_preamble) {
+			rate[i].hw_value_short = rate_table->info[i].ratecode |
+				rate_table->info[i].short_preamble;
+			rate[i].flags = IEEE80211_RATE_SHORT_PREAMBLE;
+		}
 		sband->n_bitrates++;
+
 		DPRINTF(sc, ATH_DBG_CONFIG, "Rate: %2dMbps, ratecode: %2d\n",
 			rate[i].bitrate / 10, rate[i].hw_value);
 	}
@@ -876,6 +882,7 @@ static void setup_ht_cap(struct ath_softc *sc,
 	case 1:
 		ht_info->mcs.rx_mask[0] = 0xff;
 		break;
+	case 3:
 	case 5:
 	case 7:
 	default:
@@ -2252,24 +2259,27 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 		}
 	}
 
-	if ((conf->changed & IEEE80211_IFCC_BEACON) &&
-	    ((vif->type == NL80211_IFTYPE_ADHOC) ||
-	     (vif->type == NL80211_IFTYPE_AP))) {
-		/*
-		 * Allocate and setup the beacon frame.
-		 *
-		 * Stop any previous beacon DMA.  This may be
-		 * necessary, for example, when an ibss merge
-		 * causes reconfiguration; we may be called
-		 * with beacon transmission active.
-		 */
-		ath9k_hw_stoptxdma(sc->sc_ah, sc->beacon.beaconq);
+	if ((vif->type == NL80211_IFTYPE_ADHOC) ||
+	    (vif->type == NL80211_IFTYPE_AP)) {
+		if ((conf->changed & IEEE80211_IFCC_BEACON) ||
+		    (conf->changed & IEEE80211_IFCC_BEACON_ENABLED &&
+		     conf->enable_beacon)) {
+			/*
+			 * Allocate and setup the beacon frame.
+			 *
+			 * Stop any previous beacon DMA.  This may be
+			 * necessary, for example, when an ibss merge
+			 * causes reconfiguration; we may be called
+			 * with beacon transmission active.
+			 */
+			ath9k_hw_stoptxdma(sc->sc_ah, sc->beacon.beaconq);
 
-		error = ath_beacon_alloc(sc, 0);
-		if (error != 0)
-			return error;
+			error = ath_beacon_alloc(sc, 0);
+			if (error != 0)
+				return error;
 
-		ath_beacon_sync(sc, 0);
+			ath_beacon_sync(sc, 0);
+		}
 	}
 
 	/* Check for WLAN_CAPABILITY_PRIVACY ? */
@@ -2451,6 +2461,14 @@ static u64 ath9k_get_tsf(struct ieee80211_hw *hw)
 	return tsf;
 }
 
+static void ath9k_set_tsf(struct ieee80211_hw *hw, u64 tsf)
+{
+	struct ath_softc *sc = hw->priv;
+	struct ath_hal *ah = sc->sc_ah;
+
+	ath9k_hw_settsf64(ah, tsf);
+}
+
 static void ath9k_reset_tsf(struct ieee80211_hw *hw)
 {
 	struct ath_softc *sc = hw->priv;
@@ -2514,6 +2532,7 @@ struct ieee80211_ops ath9k_ops = {
 	.bss_info_changed   = ath9k_bss_info_changed,
 	.set_key            = ath9k_set_key,
 	.get_tsf 	    = ath9k_get_tsf,
+	.set_tsf 	    = ath9k_set_tsf,
 	.reset_tsf 	    = ath9k_reset_tsf,
 	.ampdu_action       = ath9k_ampdu_action,
 };
@@ -2579,13 +2598,12 @@ static int __init ath9k_init(void)
 {
 	int error;
 
-	printk(KERN_INFO "%s: %s\n", dev_info, ATH_PCI_VERSION);
-
 	/* Register rate control algorithm */
 	error = ath_rate_control_register();
 	if (error != 0) {
 		printk(KERN_ERR
-			"Unable to register rate control algorithm: %d\n",
+			"ath9k: Unable to register rate control "
+			"algorithm: %d\n",
 			error);
 		goto err_out;
 	}
@@ -2593,7 +2611,7 @@ static int __init ath9k_init(void)
 	error = ath_pci_init();
 	if (error < 0) {
 		printk(KERN_ERR
-			"ath_pci: No devices found, driver not installed.\n");
+			"ath9k: No PCI devices found, driver not installed.\n");
 		error = -ENODEV;
 		goto err_rate_unregister;
 	}
