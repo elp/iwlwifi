@@ -1028,6 +1028,7 @@ void ieee80211_tx_skb(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 		      int encrypt);
 void ieee802_11_parse_elems(u8 *start, size_t len,
 			    struct ieee802_11_elems *elems);
+int ieee80211_filter_ie(u8 *ie);
 int ieee80211_set_freq(struct ieee80211_sub_if_data *sdata, int freq);
 u32 ieee80211_mandatory_rates(struct ieee80211_local *local,
 			      enum ieee80211_band band);

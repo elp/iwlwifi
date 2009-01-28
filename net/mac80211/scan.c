@@ -31,6 +31,11 @@
 #define IEEE80211_CHANNEL_TIME (HZ / 33)
 #define IEEE80211_PASSIVE_CHANNEL_TIME (HZ / 5)
 
+static int ieee80211_scan_ie_filter;
+module_param(ieee80211_scan_ie_filter, bool, 0644);
+MODULE_PARM_DESC(ieee80211_scan_ie_filter,
+		 "Filter IEs from scan results");
+
 void ieee80211_rx_bss_list_init(struct ieee80211_local *local)
 {
 	spin_lock_init(&local->bss_lock);
@@ -725,33 +730,51 @@ static void ieee80211_scan_add_ies(struct iw_request_info *info,
 	if (bss == NULL || bss->ies == NULL)
 		return;
 
-	/*
-	 * If needed, fragment the IEs buffer (at IE boundaries) into short
-	 * enough fragments to fit into IW_GENERIC_IE_MAX octet messages.
-	 */
 	pos = bss->ies;
 	end = pos + bss->ies_len;
 
-	while (end - pos > IW_GENERIC_IE_MAX) {
-		next = pos + 2 + pos[1];
-		while (next + 2 + next[1] - pos < IW_GENERIC_IE_MAX)
-			next = next + 2 + next[1];
+	if (ieee80211_scan_ie_filter) {
+		while (pos - end) {
+			next = pos + 2 + pos[1];
+			if (ieee80211_filter_ie(pos)) {
+				memset(&iwe, 0, sizeof(iwe));
+				iwe.cmd = IWEVGENIE;
+				iwe.u.data.length = next - pos;
+				*current_ev =
+					iwe_stream_add_point(info, *current_ev,
+							     end_buf, &iwe,
+							     pos);
+			}
+			pos = next;
+		}
+	} else {
+		/*
+		 * If needed, fragment the IEs buffer (at IE boundaries) into
+		 * short enough fragments to fit into IW_GENERIC_IE_MAX octet
+		 * messages.
+		 */
 
-		memset(&iwe, 0, sizeof(iwe));
-		iwe.cmd = IWEVGENIE;
-		iwe.u.data.length = next - pos;
-		*current_ev = iwe_stream_add_point(info, *current_ev,
-						   end_buf, &iwe, pos);
+		while (end - pos > IW_GENERIC_IE_MAX) {
+			next = pos + 2 + pos[1];
+			while (next + 2 + next[1] - pos < IW_GENERIC_IE_MAX)
+				next = next + 2 + next[1];
 
-		pos = next;
-	}
+			memset(&iwe, 0, sizeof(iwe));
+			iwe.cmd = IWEVGENIE;
+			iwe.u.data.length = next - pos;
+			*current_ev = iwe_stream_add_point(info, *current_ev,
+							   end_buf, &iwe, pos);
 
-	if (end > pos) {
-		memset(&iwe, 0, sizeof(iwe));
-		iwe.cmd = IWEVGENIE;
-		iwe.u.data.length = end - pos;
-		*current_ev = iwe_stream_add_point(info, *current_ev,
-						   end_buf, &iwe, pos);
+			pos = next;
+		}
+
+		if (end > pos) {
+			memset(&iwe, 0, sizeof(iwe));
+			iwe.cmd = IWEVGENIE;
+			iwe.u.data.length = end - pos;
+			*current_ev = iwe_stream_add_point(info, *current_ev,
+							   end_buf, &iwe, pos);
+		}
 	}
 }
 
