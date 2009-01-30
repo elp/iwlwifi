@@ -862,10 +862,10 @@ static int iwl5000_hw_set_hw_params(struct iwl_priv *priv)
 
 	priv->hw_params.sens = &iwl5000_sensitivity;
 
-	priv->hw_params.tx_chains_num = priv->cfg->valid_tx_ant;
-	priv->hw_params.rx_chains_num = priv->cfg->valid_rx_ant;
-	priv->hw_params.valid_tx_ant = num_of_ant(priv->cfg->valid_tx_ant);
-	priv->hw_params.valid_rx_ant = num_of_ant(priv->cfg->valid_rx_ant);
+	priv->hw_params.tx_chains_num = num_of_ant(priv->cfg->valid_tx_ant);
+	priv->hw_params.rx_chains_num = num_of_ant(priv->cfg->valid_rx_ant);
+	priv->hw_params.valid_tx_ant = priv->cfg->valid_tx_ant;
+	priv->hw_params.valid_rx_ant = priv->cfg->valid_rx_ant;
 
 	switch (priv->hw_rev & CSR_HW_REV_TYPE_MSK) {
 	case CSR_HW_REV_TYPE_5150:
