@@ -1571,7 +1571,7 @@ struct iwl_cfg iwl5100_bg_cfg = {
 	.eeprom_ver = EEPROM_5000_EEPROM_VERSION,
 	.eeprom_calib_ver = EEPROM_5000_TX_POWER_VERSION,
 	.mod_params = &iwl50_mod_params,
-	.valid_tx_ant = ANT_A,
+	.valid_tx_ant = ANT_B,
 	.valid_rx_ant = ANT_AB,
 	.need_pll_cfg = true,
 };
@@ -1635,7 +1635,7 @@ struct iwl_cfg iwl5150_agn_cfg = {
 	.eeprom_ver = EEPROM_5050_EEPROM_VERSION,
 	.eeprom_calib_ver = EEPROM_5050_TX_POWER_VERSION,
 	.mod_params = &iwl50_mod_params,
-	.valid_tx_ant = ANT_B,
+	.valid_tx_ant = ANT_A,
 	.valid_rx_ant = ANT_AB,
 	.need_pll_cfg = true,
 };
