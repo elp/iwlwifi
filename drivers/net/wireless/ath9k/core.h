@@ -131,8 +131,20 @@ struct ath_interrupt_stats {
 	u32 dtim;
 };
 
+struct ath_legacy_rc_stats {
+	u32 success;
+};
+
+struct ath_11n_rc_stats {
+	u32 success;
+	u32 retries;
+	u32 xretries;
+};
+
 struct ath_stats {
 	struct ath_interrupt_stats istats;
+	struct ath_legacy_rc_stats legacy_rcstats[12]; /* max(11a,11b,11g) */
+	struct ath_11n_rc_stats n_rcstats[16]; /* 0..15 MCS rates */
 };
 
 struct ath9k_debug {
@@ -141,6 +153,7 @@ struct ath9k_debug {
 	struct dentry *debugfs_phy;
 	struct dentry *debugfs_dma;
 	struct dentry *debugfs_interrupt;
+	struct dentry *debugfs_rcstat;
 	struct ath_stats stats;
 };
 
@@ -148,6 +161,9 @@ void DPRINTF(struct ath_softc *sc, int dbg_mask, const char *fmt, ...);
 int ath9k_init_debug(struct ath_softc *sc);
 void ath9k_exit_debug(struct ath_softc *sc);
 void ath_debug_stat_interrupt(struct ath_softc *sc, enum ath9k_int status);
+void ath_debug_stat_rc(struct ath_softc *sc, struct sk_buff *skb);
+void ath_debug_stat_retries(struct ath_softc *sc, int rix,
+			    int xretries, int retries);
 
 #else
 
@@ -170,12 +186,21 @@ static inline void ath_debug_stat_interrupt(struct ath_softc *sc,
 {
 }
 
+static inline void ath_debug_stat_rc(struct ath_softc *sc,
+				     struct sk_buff *skb)
+{
+}
+
+static inline void ath_debug_stat_retries(struct ath_softc *sc, int rix,
+					  int xretries, int retries)
+{
+}
+
 #endif /* CONFIG_ATH9K_DEBUG */
 
 struct ath_config {
 	u32 ath_aggr_prot;
 	u16 txpowlimit;
-	u16 txpowlimit_override;
 	u8 cabqReadytime;
 	u8 swBeaconProcess;
 };
@@ -189,21 +214,25 @@ struct ath_config {
 		(_bf)->bf_lastbf = NULL;			\
 		(_bf)->bf_next = NULL;				\
 		memset(&((_bf)->bf_state), 0,			\
-			    sizeof(struct ath_buf_state));	\
+		       sizeof(struct ath_buf_state));		\
 	} while (0)
 
+/**
+ * enum buffer_type - Buffer type flags
+ *
+ * @BUF_HT: Send this buffer using HT capabilities
+ * @BUF_AMPDU: This buffer is an ampdu, as part of an aggregate (during TX)
+ * @BUF_AGGR: Indicates whether the buffer can be aggregated
+ *	(used in aggregation scheduling)
+ * @BUF_RETRY: Indicates whether the buffer is retried
+ * @BUF_XRETRY: To denote excessive retries of the buffer
+ */
 enum buffer_type {
-	BUF_DATA		= BIT(0),
-	BUF_AGGR		= BIT(1),
+	BUF_HT			= BIT(1),
 	BUF_AMPDU		= BIT(2),
-	BUF_HT			= BIT(3),
+	BUF_AGGR		= BIT(3),
 	BUF_RETRY		= BIT(4),
 	BUF_XRETRY		= BIT(5),
-	BUF_SHORT_PREAMBLE	= BIT(6),
-	BUF_BAR			= BIT(7),
-	BUF_PSPOLL		= BIT(8),
-	BUF_AGGR_BURST		= BIT(9),
-	BUF_CALC_AIRTIME	= BIT(10),
 };
 
 struct ath_buf_state {
@@ -224,19 +253,13 @@ struct ath_buf_state {
 #define bf_retries      	bf_state.bfs_retries
 #define bf_seqno        	bf_state.bfs_seqno
 #define bf_tidno        	bf_state.bfs_tidno
-#define bf_rcs          	bf_state.bfs_rcs
 #define bf_keyix                bf_state.bfs_keyix
 #define bf_keytype      	bf_state.bfs_keytype
-#define bf_isdata(bf)		(bf->bf_state.bf_type & BUF_DATA)
-#define bf_isaggr(bf)		(bf->bf_state.bf_type & BUF_AGGR)
-#define bf_isampdu(bf)		(bf->bf_state.bf_type & BUF_AMPDU)
 #define bf_isht(bf)		(bf->bf_state.bf_type & BUF_HT)
+#define bf_isampdu(bf)		(bf->bf_state.bf_type & BUF_AMPDU)
+#define bf_isaggr(bf)		(bf->bf_state.bf_type & BUF_AGGR)
 #define bf_isretried(bf)	(bf->bf_state.bf_type & BUF_RETRY)
 #define bf_isxretried(bf)	(bf->bf_state.bf_type & BUF_XRETRY)
-#define bf_isshpreamble(bf)	(bf->bf_state.bf_type & BUF_SHORT_PREAMBLE)
-#define bf_isbar(bf)		(bf->bf_state.bf_type & BUF_BAR)
-#define bf_ispspoll(bf) 	(bf->bf_state.bf_type & BUF_PSPOLL)
-#define bf_isaggrburst(bf)	(bf->bf_state.bf_type & BUF_AGGR_BURST)
 
 /*
  * Abstraction of a contiguous buffer to transmit/receive.  There is only
@@ -342,8 +365,6 @@ enum ATH_AGGR_STATUS {
 	ATH_AGGR_DONE,
 	ATH_AGGR_BAW_CLOSED,
 	ATH_AGGR_LIMITED,
-	ATH_AGGR_SHORTPKT,
-	ATH_AGGR_8K_LIMITED,
 };
 
 struct ath_txq {
@@ -600,6 +621,8 @@ struct ath_ani {
 /********************/
 
 #define ATH_LED_PIN	1
+#define ATH_LED_ON_DURATION_IDLE	350	/* in msecs */
+#define ATH_LED_OFF_DURATION_IDLE	250	/* in msecs */
 
 enum ath_led_type {
 	ATH_LED_RADIO,
@@ -640,7 +663,7 @@ struct ath_rfkill {
 #define ATH_MAX_SW_RETRIES      10
 #define ATH_CHAN_MAX            255
 #define IEEE80211_WEP_NKID      4       /* number of key ids */
-#define IEEE80211_RATE_VAL      0x7f
+
 /*
  * The key cache is used for h/w cipher state and also for
  * tracking station state such as the current tx antenna.
@@ -655,12 +678,6 @@ struct ath_rfkill {
 #define ATH_TXPOWER_MAX         100     /* .5 dBm units */
 #define ATH_RSSI_DUMMY_MARKER   0x127
 #define ATH_RATE_DUMMY_MARKER   0
-
-enum PROT_MODE {
-	PROT_M_NONE = 0,
-	PROT_M_RTSCTS,
-	PROT_M_CTSONLY
-};
 
 #define SC_OP_INVALID		BIT(0)
 #define SC_OP_BEACONS		BIT(1)
@@ -677,6 +694,7 @@ enum PROT_MODE {
 #define SC_OP_RFKILL_SW_BLOCKED	BIT(12)
 #define SC_OP_RFKILL_HW_BLOCKED	BIT(13)
 #define SC_OP_WAIT_FOR_BEACON	BIT(14)
+#define SC_OP_LED_ON		BIT(15)
 
 struct ath_bus_ops {
 	void		(*read_cachesize)(struct ath_softc *sc, int *csz);
@@ -712,7 +730,6 @@ struct ath_softc {
 	u8 sc_splitmic;
 	atomic_t ps_usecount;
 	enum ath9k_int sc_imask;
-	enum PROT_MODE sc_protmode;
 	enum ath9k_ht_extprotspacing sc_ht_extprotspacing;
 	enum ath9k_ht_macmode tx_chan_width;
 
@@ -725,10 +742,17 @@ struct ath_softc {
 	struct ath_rate_table *hw_rate_table[ATH9K_MODE_MAX];
 	struct ath_rate_table *cur_rate_table;
 	struct ieee80211_supported_band sbands[IEEE80211_NUM_BANDS];
+
 	struct ath_led radio_led;
 	struct ath_led assoc_led;
 	struct ath_led tx_led;
 	struct ath_led rx_led;
+	struct delayed_work ath_led_blink_work;
+	int led_on_duration;
+	int led_off_duration;
+	int led_on_cnt;
+	int led_off_cnt;
+
 	struct ath_rfkill rf_kill;
 	struct ath_ani sc_ani;
 	struct ath9k_node_stats sc_halstats;

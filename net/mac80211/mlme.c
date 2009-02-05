@@ -840,6 +840,14 @@ static void ieee80211_direct_probe(struct ieee80211_sub_if_data *sdata,
 		       sdata->dev->name, ifsta->bssid);
 		ifsta->state = IEEE80211_STA_MLME_DISABLED;
 		ieee80211_sta_send_apinfo(sdata, ifsta);
+
+		/*
+		 * Most likely AP is not in the range so remove the
+		 * bss information associated to the AP
+		 */
+		ieee80211_rx_bss_remove(sdata, ifsta->bssid,
+				sdata->local->hw.conf.channel->center_freq,
+				ifsta->ssid, ifsta->ssid_len);
 		return;
 	}
 
@@ -871,6 +879,9 @@ static void ieee80211_authenticate(struct ieee80211_sub_if_data *sdata,
 		       sdata->dev->name, ifsta->bssid);
 		ifsta->state = IEEE80211_STA_MLME_DISABLED;
 		ieee80211_sta_send_apinfo(sdata, ifsta);
+		ieee80211_rx_bss_remove(sdata, ifsta->bssid,
+				sdata->local->hw.conf.channel->center_freq,
+				ifsta->ssid, ifsta->ssid_len);
 		return;
 	}
 
@@ -933,8 +944,12 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_sta_send_apinfo(sdata, ifsta);
 
-	if (self_disconnected || reason == WLAN_REASON_DISASSOC_STA_HAS_LEFT)
+	if (self_disconnected || reason == WLAN_REASON_DISASSOC_STA_HAS_LEFT) {
 		ifsta->state = IEEE80211_STA_MLME_DISABLED;
+		ieee80211_rx_bss_remove(sdata, ifsta->bssid,
+				sdata->local->hw.conf.channel->center_freq,
+				ifsta->ssid, ifsta->ssid_len);
+	}
 
 	rcu_read_unlock();
 
@@ -1017,6 +1032,9 @@ static void ieee80211_associate(struct ieee80211_sub_if_data *sdata,
 		       sdata->dev->name, ifsta->bssid);
 		ifsta->state = IEEE80211_STA_MLME_DISABLED;
 		ieee80211_sta_send_apinfo(sdata, ifsta);
+		ieee80211_rx_bss_remove(sdata, ifsta->bssid,
+				sdata->local->hw.conf.channel->center_freq,
+				ifsta->ssid, ifsta->ssid_len);
 		return;
 	}
 
@@ -1503,12 +1521,21 @@ static int ieee80211_sta_join_ibss(struct ieee80211_sub_if_data *sdata,
 				   struct ieee80211_bss *bss)
 {
 	struct ieee80211_local *local = sdata->local;
-	int res, rates, i, j;
+	int res = 0, rates, i, j;
 	struct sk_buff *skb;
 	struct ieee80211_mgmt *mgmt;
 	u8 *pos;
 	struct ieee80211_supported_band *sband;
 	union iwreq_data wrqu;
+
+	if (local->ops->reset_tsf) {
+		/* Reset own TSF to allow time synchronization work. */
+		local->ops->reset_tsf(local_to_hw(local));
+	}
+
+	if ((ifsta->flags & IEEE80211_STA_PREV_BSSID_SET) &&
+	   memcmp(ifsta->bssid, bss->bssid, ETH_ALEN) == 0)
+		return res;
 
 	skb = dev_alloc_skb(local->hw.extra_tx_headroom + 400 +
 			    sdata->u.sta.ie_proberesp_len);
@@ -1520,13 +1547,11 @@ static int ieee80211_sta_join_ibss(struct ieee80211_sub_if_data *sdata,
 
 	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
 
-	/* Remove possible STA entries from other IBSS networks. */
-	sta_info_flush_delayed(sdata);
-
-	if (local->ops->reset_tsf) {
-		/* Reset own TSF to allow time synchronization work. */
-		local->ops->reset_tsf(local_to_hw(local));
+	if (!(ifsta->flags & IEEE80211_STA_PREV_BSSID_SET)) {
+		/* Remove possible STA entries from other IBSS networks. */
+		sta_info_flush_delayed(sdata);
 	}
+
 	memcpy(ifsta->bssid, bss->bssid, ETH_ALEN);
 	res = ieee80211_if_config(sdata, IEEE80211_IFCC_BSSID);
 	if (res)
@@ -2415,8 +2440,10 @@ static int ieee80211_sta_config_auth(struct ieee80211_sub_if_data *sdata,
 							 ifsta->ssid_len);
 			ifsta->state = IEEE80211_STA_MLME_AUTHENTICATE;
 			set_bit(IEEE80211_STA_REQ_AUTH, &ifsta->request);
-		} else
+		} else {
+			ifsta->assoc_scan_tries = 0;
 			ifsta->state = IEEE80211_STA_MLME_DISABLED;
+		}
 	}
 	return -1;
 }
@@ -2720,9 +2747,8 @@ void ieee80211_mlme_notify_scan_completed(struct ieee80211_local *local)
 
 	if (sdata && sdata->vif.type == NL80211_IFTYPE_ADHOC) {
 		ifsta = &sdata->u.sta;
-		if (!(ifsta->flags & IEEE80211_STA_BSSID_SET) ||
-		    (!(ifsta->state == IEEE80211_STA_MLME_IBSS_JOINED) &&
-		    !ieee80211_sta_active_ibss(sdata)))
+		if ((!(ifsta->flags & IEEE80211_STA_PREV_BSSID_SET)) ||
+		    !ieee80211_sta_active_ibss(sdata))
 			ieee80211_sta_find_ibss(sdata, ifsta);
 	}
 
