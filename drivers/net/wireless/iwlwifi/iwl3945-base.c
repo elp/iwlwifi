@@ -5020,6 +5020,8 @@ static int iwl3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 
 	hw->wiphy->custom_regulatory = true;
 
+	hw->wiphy->max_scan_ssids = 1;
+
 	/* 4 EDCA QOS priorities */
 	hw->queues = 4;
 
