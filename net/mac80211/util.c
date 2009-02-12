@@ -675,46 +675,6 @@ void ieee802_11_parse_elems(u8 *start, size_t len,
 	}
 }
 
-/*
- * ieee80211_filter_ie() tries to keep only the relevant IEs for
- * userspace (mostly hostap code).
- */
-int ieee80211_filter_ie(u8 *ie)
-{
-	u8 id, ie_len, *pos;
-	u8 microsoft_oui[4] = {0x00, 0x50, 0xf2};
-	u8 wpa2_oui[3] = {0x00, 0x0f, 0xac};
-
-	pos = ie;
-	id = *pos++;
-	ie_len = *pos++;
-
-	switch (id) {
-	case WLAN_EID_RSN:
-		/* WPA2 */
-		if (ie_len >= 3 &&
-		    !memcmp(pos, wpa2_oui, 3))
-			return 1;
-
-		return 0;
-
-	case WLAN_EID_VENDOR_SPECIFIC:
-		/* We're trying to catch WPA1, WMM and WPS IEs. */
-		if (ie_len >= 3 &&
-		    !memcmp(pos, microsoft_oui, 3)) {
-			if ((pos[3] == 1) || /* WPA1 */
-			    (pos[3] == 2) || /* WMM */
-			    (pos[3] == 4))   /* WPS */
-				return 1;
-		}
-
-		return 0;
-
-	default:
-		return 0;
-	}
-}
-
 void ieee80211_set_wmm_default(struct ieee80211_sub_if_data *sdata)
 {
 	struct ieee80211_local *local = sdata->local;
