@@ -43,7 +43,7 @@ void orinoco_mic_free(struct orinoco_private *priv)
 		crypto_free_hash(priv->rx_tfm_mic);
 }
 
-int michael_mic(struct crypto_hash *tfm_michael, u8 *key,
+int orinoco_mic(struct crypto_hash *tfm_michael, u8 *key,
 		u8 *da, u8 *sa, u8 priority,
 		u8 *data, size_t data_len, u8 *mic)
 {
@@ -52,7 +52,7 @@ int michael_mic(struct crypto_hash *tfm_michael, u8 *key,
 	u8 hdr[ETH_HLEN + 2]; /* size of header + padding */
 
 	if (tfm_michael == NULL) {
-		printk(KERN_WARNING "michael_mic: tfm_michael == NULL\n");
+		printk(KERN_WARNING "orinoco_mic: tfm_michael == NULL\n");
 		return -1;
 	}
 

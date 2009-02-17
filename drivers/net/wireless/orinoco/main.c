@@ -468,7 +468,7 @@ static int orinoco_xmit(struct sk_buff *skb, struct net_device *dev)
 			len = MICHAEL_MIC_LEN;
 		}
 
-		michael_mic(priv->tx_tfm_mic,
+		orinoco_mic(priv->tx_tfm_mic,
 			    priv->tkip_key[priv->tx_key].tx_mic,
 			    eh->h_dest, eh->h_source, 0 /* priority */,
 			    skb->data + ETH_HLEN, skb->len - ETH_HLEN, mic);
@@ -927,7 +927,7 @@ static void orinoco_rx(struct net_device *dev,
 		skb_trim(skb, skb->len - MICHAEL_MIC_LEN);
 		length -= MICHAEL_MIC_LEN;
 
-		michael_mic(priv->rx_tfm_mic,
+		orinoco_mic(priv->rx_tfm_mic,
 			    priv->tkip_key[key_id].rx_mic,
 			    desc->addr1,
 			    src,
@@ -2076,8 +2076,20 @@ static int orinoco_pm_notifier(struct notifier_block *notifier,
 
 	return NOTIFY_DONE;
 }
+
+static void orinoco_register_pm_notifier(struct orinoco_private *priv)
+{
+	priv->pm_notifier.notifier_call = orinoco_pm_notifier;
+	register_pm_notifier(&priv->pm_notifier);
+}
+
+static void orinoco_unregister_pm_notifier(struct orinoco_private *priv)
+{
+	unregister_pm_notifier(&priv->pm_notifier);
+}
 #else /* !PM_SLEEP || HERMES_CACHE_FW_ON_INIT */
-#define orinoco_pm_notifier NULL
+#define orinoco_register_pm_notifier(priv) do { } while(0)
+#define orinoco_unregister_pm_notifier(priv) do { } while(0)
 #endif
 
 /********************************************************************/
@@ -2572,8 +2584,7 @@ struct net_device
 	priv->cached_fw = NULL;
 
 	/* Register PM notifiers */
-	priv->pm_notifier.notifier_call = orinoco_pm_notifier;
-	register_pm_notifier(&priv->pm_notifier);
+	orinoco_register_pm_notifier(priv);
 
 	return dev;
 }
@@ -2598,7 +2609,7 @@ void free_orinocodev(struct net_device *dev)
 		kfree(rx_data);
 	}
 
-	unregister_pm_notifier(&priv->pm_notifier);
+	orinoco_unregister_pm_notifier(priv);
 	orinoco_uncache_fw(priv);
 
 	priv->wpa_ie_len = 0;
