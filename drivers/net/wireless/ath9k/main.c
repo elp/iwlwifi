@@ -574,6 +574,10 @@ irqreturn_t ath_isr(int irq, void *dev)
 					sc->sc_flags |= SC_OP_WAIT_FOR_BEACON;
 				}
 			}
+			if (status & ATH9K_INT_TSFOOR) {
+				/* FIXME: Handle this interrupt for power save */
+				sched = true;
+			}
 		}
 	} while (0);
 
@@ -1566,6 +1570,7 @@ bad:
 int ath_attach(u16 devid, struct ath_softc *sc)
 {
 	struct ieee80211_hw *hw = sc->hw;
+	const struct ieee80211_regdomain *regd;
 	int error = 0, i;
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Attach ATH hw\n");
@@ -1598,6 +1603,7 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 
 	hw->queues = 4;
 	hw->max_rates = 4;
+	hw->channel_change_time = 5000;
 	hw->max_rate_tries = ATH_11N_TXMAXTRY;
 	hw->sta_data_size = sizeof(struct ath_node);
 	hw->vif_data_size = sizeof(struct ath_vif);
@@ -1636,25 +1642,20 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 #endif
 
 	if (ath9k_is_world_regd(sc->sc_ah)) {
-		/* Anything applied here (prior to wiphy registratoin) gets
+		/* Anything applied here (prior to wiphy registration) gets
 		 * saved on the wiphy orig_* parameters */
-		const struct ieee80211_regdomain *regd =
-			ath9k_world_regdomain(sc->sc_ah);
+		regd = ath9k_world_regdomain(sc->sc_ah);
 		hw->wiphy->custom_regulatory = true;
 		hw->wiphy->strict_regulatory = false;
-		wiphy_apply_custom_regulatory(sc->hw->wiphy, regd);
-		ath9k_reg_apply_radar_flags(hw->wiphy);
-		ath9k_reg_apply_world_flags(hw->wiphy, REGDOM_SET_BY_INIT);
 	} else {
 		/* This gets applied in the case of the absense of CRDA,
-		 * its our own custom world regulatory domain, similar to
+		 * it's our own custom world regulatory domain, similar to
 		 * cfg80211's but we enable passive scanning */
-		const struct ieee80211_regdomain *regd =
-			ath9k_default_world_regdomain();
-		wiphy_apply_custom_regulatory(sc->hw->wiphy, regd);
-		ath9k_reg_apply_radar_flags(hw->wiphy);
-		ath9k_reg_apply_world_flags(hw->wiphy, REGDOM_SET_BY_INIT);
+		regd = ath9k_default_world_regdomain();
 	}
+	wiphy_apply_custom_regulatory(hw->wiphy, regd);
+	ath9k_reg_apply_radar_flags(hw->wiphy);
+	ath9k_reg_apply_world_flags(hw->wiphy, REGDOM_SET_BY_INIT);
 
 	error = ieee80211_register_hw(hw);
 
@@ -2165,10 +2166,13 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 	 * Enable MIB interrupts when there are hardware phy counters.
 	 * Note we only do this (at the moment) for station mode.
 	 */
-	if (ath9k_hw_phycounters(sc->sc_ah) &&
-	    ((conf->type == NL80211_IFTYPE_STATION) ||
-	     (conf->type == NL80211_IFTYPE_ADHOC)))
-		sc->imask |= ATH9K_INT_MIB;
+	if ((conf->type == NL80211_IFTYPE_STATION) ||
+	    (conf->type == NL80211_IFTYPE_ADHOC)) {
+		if (ath9k_hw_phycounters(sc->sc_ah))
+			sc->imask |= ATH9K_INT_MIB;
+		sc->imask |= ATH9K_INT_TSFOOR;
+	}
+
 	/*
 	 * Some hardware processes the TIM IE and fires an
 	 * interrupt when the TIM bit is set.  For hardware

@@ -106,19 +106,20 @@ static const struct ieee80211_regdomain ath9k_world_regdom_67_68_6A = {
 	}
 };
 
+static inline bool is_wwr_sku(u16 regd)
+{
+	return ((regd & WORLD_SKU_MASK) == WORLD_SKU_PREFIX) ||
+		(regd == WORLD);
+}
+
 static u16 ath9k_regd_get_eepromRD(struct ath_hw *ah)
 {
 	return ah->regulatory.current_rd & ~WORLDWIDE_ROAMING_FLAG;
 }
 
-u16 ath9k_regd_get_rd(struct ath_hw *ah)
-{
-	return ath9k_regd_get_eepromRD(ah);
-}
-
 bool ath9k_is_world_regd(struct ath_hw *ah)
 {
-	return isWwrSKU(ah);
+	return is_wwr_sku(ath9k_regd_get_eepromRD(ah));
 }
 
 const struct ieee80211_regdomain *ath9k_default_world_regdomain(void)
@@ -371,11 +372,8 @@ ath9k_regd_find_country_by_rd(int regdmn)
 }
 
 /* Returns the map of the EEPROM set RD to a country code */
-static u16 ath9k_regd_get_default_country(struct ath_hw *ah)
+static u16 ath9k_regd_get_default_country(u16 rd)
 {
-	u16 rd;
-
-	rd = ath9k_regd_get_eepromRD(ah);
 	if (rd & COUNTRY_ERD_FLAG) {
 		struct country_code_to_enum_rd *country = NULL;
 		u16 cc = rd & ~COUNTRY_ERD_FLAG;
@@ -405,7 +403,7 @@ ath9k_get_regpair(int regdmn)
 int ath9k_regd_init(struct ath_hw *ah)
 {
 	struct country_code_to_enum_rd *country = NULL;
-	int regdmn;
+	u16 regdmn;
 
 	if (!ath9k_regd_is_eeprom_valid(ah)) {
 		DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY,
@@ -413,14 +411,14 @@ int ath9k_regd_init(struct ath_hw *ah)
 		return -EINVAL;
 	}
 
-	ah->regulatory.country_code = ath9k_regd_get_default_country(ah);
+	regdmn = ath9k_regd_get_eepromRD(ah);
+	ah->regulatory.country_code = ath9k_regd_get_default_country(regdmn);
 
 	if (ah->regulatory.country_code == CTRY_DEFAULT &&
-	    ath9k_regd_get_eepromRD(ah) == CTRY_DEFAULT)
+	    regdmn == CTRY_DEFAULT)
 		ah->regulatory.country_code = CTRY_UNITED_STATES;
 
 	if (ah->regulatory.country_code == CTRY_DEFAULT) {
-		regdmn = ath9k_regd_get_eepromRD(ah);
 		country = NULL;
 	} else {
 		country = ath9k_regd_find_country(ah->regulatory.country_code);
@@ -433,7 +431,6 @@ int ath9k_regd_init(struct ath_hw *ah)
 			regdmn = country->regDmnEnum;
 	}
 
-	ah->regulatory.current_rd_inuse = regdmn;
 	ah->regulatory.regpair = ath9k_get_regpair(regdmn);
 
 	if (!ah->regulatory.regpair) {
@@ -467,7 +464,8 @@ u32 ath9k_regd_get_ctl(struct ath_hw *ah, struct ath9k_channel *chan)
 	u32 ctl = NO_CTL;
 
 	if (!ah->regulatory.regpair ||
-	    (ah->regulatory.country_code == CTRY_DEFAULT && isWwrSKU(ah))) {
+	    (ah->regulatory.country_code == CTRY_DEFAULT &&
+	     is_wwr_sku(ath9k_regd_get_eepromRD(ah)))) {
 		if (IS_CHAN_B(chan))
 			ctl = SD_NO_CTL | CTL_11B;
 		else if (IS_CHAN_G(chan))
