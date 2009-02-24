@@ -443,7 +443,7 @@ EXPORT_SYMBOL(iwl_scan_initiate);
 #define IWL_DELAY_NEXT_SCAN (HZ*2)
 
 int iwl_mac_hw_scan(struct ieee80211_hw *hw,
-		    struct cfg80211_scan_request *req)
+		     struct cfg80211_scan_request *req)
 {
 	unsigned long flags;
 	struct iwl_priv *priv = hw->priv;
@@ -490,7 +490,7 @@ int iwl_mac_hw_scan(struct ieee80211_hw *hw,
 
 	if (ssid_len) {
 		priv->one_direct_scan = 1;
-		priv->direct_ssid_len = ssid_len;
+		priv->direct_ssid_len =  ssid_len;
 		memcpy(priv->direct_ssid, ssid, priv->direct_ssid_len);
 	} else {
 		priv->one_direct_scan = 0;

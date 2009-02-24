@@ -18,14 +18,10 @@
  *
  * Some iw_handler code was taken from airo.c, (C) 1999 Benjamin Reed
  *
- * TODO for the mac80211 port:
- * o adhoc support
- * o RTS/CTS support
- * o Power Save Mode support
- * o support for short/long preambles
- * o export variables through debugfs/sysfs
- * o remove hex2str
- * o remove mac2str
+ * TODO list is at the wiki:
+ *
+ * http://wireless.kernel.org/en/users/Drivers/at76c50x-usb#TODO
+ *
  */
 
 #include <linux/init.h>
@@ -580,18 +576,25 @@ static int at76_remap(struct usb_device *udev)
 static int at76_get_op_mode(struct usb_device *udev)
 {
 	int ret;
-	u8 op_mode;
+	u8 saved;
+	u8 *op_mode;
 
+	op_mode = kmalloc(1, GFP_NOIO);
+	if (!op_mode)
+		return -ENOMEM;
 	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0), 0x33,
 			      USB_TYPE_VENDOR | USB_DIR_IN |
-			      USB_RECIP_INTERFACE, 0x01, 0, &op_mode, 1,
+			      USB_RECIP_INTERFACE, 0x01, 0, op_mode, 1,
 			      USB_CTRL_GET_TIMEOUT);
+	saved = *op_mode;
+	kfree(op_mode);
+
 	if (ret < 0)
 		return ret;
 	else if (ret < 1)
 		return -EIO;
 	else
-		return op_mode;
+		return saved;
 }
 
 /* Load a block of the second ("external") part of the firmware */
@@ -704,21 +707,25 @@ static inline int at76_get_mib(struct usb_device *udev, u16 mib, void *buf,
 /* Return positive number for status, negative for an error */
 static inline int at76_get_cmd_status(struct usb_device *udev, u8 cmd)
 {
-	u8 stat_buf[40];
+	u8 *stat_buf;
 	int ret;
 
-	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0), 0x22,
-			      USB_TYPE_VENDOR | USB_DIR_IN |
-			      USB_RECIP_INTERFACE, cmd, 0, stat_buf,
-			      sizeof(stat_buf), USB_CTRL_GET_TIMEOUT);
-	if (ret < 0)
-		return ret;
+	stat_buf = kmalloc(40, GFP_NOIO);
+	if (!stat_buf)
+		return -ENOMEM;
 
-	return stat_buf[5];
+	ret = usb_control_msg(udev, usb_rcvctrlpipe(udev, 0), 0x22,
+			USB_TYPE_VENDOR | USB_DIR_IN |
+			USB_RECIP_INTERFACE, cmd, 0, stat_buf,
+			40, USB_CTRL_GET_TIMEOUT);
+	if (ret >= 0)
+		ret = stat_buf[5];
+	kfree(stat_buf);
+
+	return ret;
 }
 
 #define MAKE_CMD_CASE(c) case (c): return #c
-
 static const char *at76_get_cmd_string(u8 cmd_status)
 {
 	switch (cmd_status) {
@@ -735,7 +742,7 @@ static const char *at76_get_cmd_string(u8 cmd_status)
 	return "UNKNOWN";
 }
 
-static int at76_set_card_command(struct usb_device *udev, int cmd, void *buf,
+static int at76_set_card_command(struct usb_device *udev, u8 cmd, void *buf,
 				 int buf_size)
 {
 	int ret;
@@ -1486,6 +1493,9 @@ static void at76_work_set_promisc(struct work_struct *work)
 					      work_set_promisc);
 	int ret = 0;
 
+	if (priv->device_unplugged)
+		return;
+
 	mutex_lock(&priv->mtx);
 
 	priv->mib_buf.type = MIB_LOCAL;
@@ -1848,6 +1858,9 @@ static void at76_dwork_hw_scan(struct work_struct *work)
 					      dwork_hw_scan.work);
 	int ret;
 
+	if (priv->device_unplugged)
+		return;
+
 	mutex_lock(&priv->mtx);
 
 	ret = at76_get_cmd_status(priv->udev, CMD_SCAN);
@@ -1881,6 +1894,9 @@ static int at76_hw_scan(struct ieee80211_hw *hw,
 	int ret, len = 0;
 
 	at76_dbg(DBG_MAC80211, "%s():", __func__);
+
+	if (priv->device_unplugged)
+		return 0;
 
 	mutex_lock(&priv->mtx);
 
@@ -1985,6 +2001,10 @@ static void at76_configure_filter(struct ieee80211_hw *hw,
 	flags = changed_flags & AT76_SUPPORTED_FILTERS;
 	*total_flags = AT76_SUPPORTED_FILTERS;
 
+	/* Bail out after updating flags to prevent a WARN_ON in mac80211. */
+	if (priv->device_unplugged)
+		return;
+
 	/* FIXME: access to priv->promisc should be protected with
 	 * priv->mtx, but it's impossible because this function needs to be
 	 * atomic */
@@ -2085,8 +2105,7 @@ static struct at76_priv *at76_alloc_new_device(struct usb_device *udev)
 	INIT_WORK(&priv->work_submit_rx, at76_work_submit_rx);
 	INIT_DELAYED_WORK(&priv->dwork_hw_scan, at76_dwork_hw_scan);
 
-	priv->rx_tasklet.func = at76_rx_tasklet;
-	priv->rx_tasklet.data = 0;
+	tasklet_init(&priv->rx_tasklet, at76_rx_tasklet, 0);
 
 	priv->pm_mode = AT76_PM_OFF;
 	priv->pm_period = 0;
@@ -2225,6 +2244,7 @@ static int at76_init_new_device(struct at76_priv *priv,
 	priv->scan_min_time = DEF_SCAN_MIN_TIME;
 	priv->scan_max_time = DEF_SCAN_MAX_TIME;
 	priv->scan_mode = SCAN_TYPE_ACTIVE;
+	priv->device_unplugged = 0;
 
 	/* mac80211 initialisation */
 	priv->hw->wiphy->max_scan_ssids = 1;
@@ -2266,13 +2286,13 @@ static void at76_delete_device(struct at76_priv *priv)
 	/* The device is gone, don't bother turning it off */
 	priv->device_unplugged = 1;
 
-	if (priv->mac80211_registered)
+	tasklet_kill(&priv->rx_tasklet);
+
+	if (priv->mac80211_registered) {
+		cancel_delayed_work(&priv->dwork_hw_scan);
+		flush_workqueue(priv->hw->workqueue);
 		ieee80211_unregister_hw(priv->hw);
-
-	/* assuming we used keventd, it must quiesce too */
-	flush_scheduled_work();
-
-	kfree(priv->bulk_out_buffer);
+	}
 
 	if (priv->tx_urb) {
 		usb_kill_urb(priv->tx_urb);
@@ -2284,6 +2304,10 @@ static void at76_delete_device(struct at76_priv *priv)
 	}
 
 	at76_dbg(DBG_PROC_ENTRY, "%s: unlinked urbs", __func__);
+
+	kfree(priv->bulk_out_buffer);
+
+	del_timer_sync(&ledtrig_tx_timer);
 
 	if (priv->rx_skb)
 		kfree_skb(priv->rx_skb);

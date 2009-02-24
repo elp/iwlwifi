@@ -29,6 +29,7 @@
 #define IEEE80211_IBSS_JOIN_TIMEOUT (7 * HZ)
 
 #define IEEE80211_IBSS_MERGE_INTERVAL (30 * HZ)
+#define IEEE80211_IBSS_MERGE_DELAY 0x400000
 #define IEEE80211_IBSS_INACTIVITY_LIMIT (60 * HZ)
 
 #define IEEE80211_IBSS_MAX_STA_ENTRIES 128
@@ -291,6 +292,10 @@ static void ieee80211_rx_bss_info(struct ieee80211_sub_if_data *sdata,
 				sdata->u.ibss.ssid_len))
 		goto put_bss;
 
+	/* same BSSID */
+	if (memcmp(bss->cbss.bssid, sdata->u.ibss.bssid, ETH_ALEN) == 0)
+		goto put_bss;
+
 	if (rx_status->flag & RX_FLAG_TSFT) {
 		/*
 		 * For correct IBSS merging we need mactime; since mactime is
@@ -331,6 +336,10 @@ static void ieee80211_rx_bss_info(struct ieee80211_sub_if_data *sdata,
 	       (unsigned long long)(rx_timestamp - beacon_timestamp),
 	       jiffies);
 #endif
+
+	/* give slow hardware some time to do the TSF sync */
+	if (rx_timestamp < IEEE80211_IBSS_MERGE_DELAY)
+		goto put_bss;
 
 	if (beacon_timestamp > rx_timestamp) {
 #ifdef CONFIG_MAC80211_IBSS_DEBUG
@@ -788,6 +797,23 @@ void ieee80211_ibss_setup_sdata(struct ieee80211_sub_if_data *sdata)
 			IEEE80211_IBSS_AUTO_CHANNEL_SEL;
 }
 
+int ieee80211_ibss_commit(struct ieee80211_sub_if_data *sdata)
+{
+	struct ieee80211_if_ibss *ifibss = &sdata->u.ibss;
+
+	ifibss->flags &= ~IEEE80211_IBSS_PREV_BSSID_SET;
+
+	if (ifibss->ssid_len)
+		ifibss->flags |= IEEE80211_IBSS_SSID_SET;
+	else
+		ifibss->flags &= ~IEEE80211_IBSS_SSID_SET;
+
+	ifibss->ibss_join_req = jiffies;
+	ifibss->state = IEEE80211_IBSS_MLME_SEARCH;
+
+	return ieee80211_sta_find_ibss(sdata);
+}
+
 int ieee80211_ibss_set_ssid(struct ieee80211_sub_if_data *sdata, char *ssid, size_t len)
 {
 	struct ieee80211_if_ibss *ifibss = &sdata->u.ibss;
@@ -801,16 +827,7 @@ int ieee80211_ibss_set_ssid(struct ieee80211_sub_if_data *sdata, char *ssid, siz
 		ifibss->ssid_len = len;
 	}
 
-	ifibss->flags &= ~IEEE80211_IBSS_PREV_BSSID_SET;
-
-	if (len)
-		ifibss->flags |= IEEE80211_IBSS_SSID_SET;
-	else
-		ifibss->flags &= ~IEEE80211_IBSS_SSID_SET;
-
-	ifibss->ibss_join_req = jiffies;
-	ifibss->state = IEEE80211_IBSS_MLME_SEARCH;
-	return ieee80211_sta_find_ibss(sdata);
+	return ieee80211_ibss_commit(sdata);
 }
 
 int ieee80211_ibss_get_ssid(struct ieee80211_sub_if_data *sdata, char *ssid, size_t *len)
@@ -842,7 +859,7 @@ int ieee80211_ibss_set_bssid(struct ieee80211_sub_if_data *sdata, u8 *bssid)
 		}
 	}
 
-	return ieee80211_ibss_set_ssid(sdata, ifibss->ssid, ifibss->ssid_len);
+	return ieee80211_ibss_commit(sdata);
 }
 
 /* scan finished notification */

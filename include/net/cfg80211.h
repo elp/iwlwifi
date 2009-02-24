@@ -383,9 +383,9 @@ enum environment_cap {
 };
 
 /**
- * struct regulatory_request - receipt of last regulatory request
+ * struct regulatory_request - used to keep track of regulatory requests
  *
- * @wiphy: this is set if this request's initiator is
+ * @wiphy_idx: this is set if this request's initiator is
  * 	%REGDOM_SET_BY_COUNTRY_IE or %REGDOM_SET_BY_DRIVER. This
  * 	can be used by the wireless core to deal with conflicts
  * 	and potentially inform users of which devices specifically
@@ -404,14 +404,16 @@ enum environment_cap {
  * 	country IE
  * @country_ie_env: lets us know if the AP is telling us we are outdoor,
  * 	indoor, or if it doesn't matter
+ * @list: used to insert into the reg_requests_list linked list
  */
 struct regulatory_request {
-	struct wiphy *wiphy;
+	int wiphy_idx;
 	enum reg_set_by initiator;
 	char alpha2[2];
 	bool intersect;
 	u32 country_ie_checksum;
 	enum environment_cap country_ie_env;
+	struct list_head list;
 };
 
 struct ieee80211_freq_range {
