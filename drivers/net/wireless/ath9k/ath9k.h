@@ -426,11 +426,6 @@ struct ath_beacon_config {
 	u16 dtim_period;
 	u16 bmiss_timeout;
 	u8 dtim_count;
-	u8 tim_offset;
-	union {
-		u64 last_tsf;
-		u8 last_tstamp[8];
-	} u; /* last received beacon/probe response timestamp of this BSS. */
 };
 
 struct ath_beacon {
@@ -453,12 +448,11 @@ struct ath_beacon {
 	struct list_head bbuf;
 };
 
-void ath9k_beacon_tasklet(unsigned long data);
+void ath_beacon_tasklet(unsigned long data);
 void ath_beacon_config(struct ath_softc *sc, int if_id);
 int ath_beaconq_setup(struct ath_hw *ah);
 int ath_beacon_alloc(struct ath_softc *sc, int if_id);
 void ath_beacon_return(struct ath_softc *sc, struct ath_vif *avp);
-void ath_beacon_sync(struct ath_softc *sc, int if_id);
 
 /*******/
 /* ANI */
@@ -543,22 +537,23 @@ struct ath_rfkill {
 #define ATH_RSSI_DUMMY_MARKER   0x127
 #define ATH_RATE_DUMMY_MARKER   0
 
-#define SC_OP_INVALID		BIT(0)
-#define SC_OP_BEACONS		BIT(1)
-#define SC_OP_RXAGGR		BIT(2)
-#define SC_OP_TXAGGR		BIT(3)
-#define SC_OP_CHAINMASK_UPDATE	BIT(4)
-#define SC_OP_FULL_RESET	BIT(5)
-#define SC_OP_NO_RESET		BIT(6)
-#define SC_OP_PREAMBLE_SHORT	BIT(7)
-#define SC_OP_PROTECT_ENABLE	BIT(8)
-#define SC_OP_RXFLUSH		BIT(9)
-#define SC_OP_LED_ASSOCIATED	BIT(10)
-#define SC_OP_RFKILL_REGISTERED	BIT(11)
-#define SC_OP_RFKILL_SW_BLOCKED	BIT(12)
-#define SC_OP_RFKILL_HW_BLOCKED	BIT(13)
-#define SC_OP_WAIT_FOR_BEACON	BIT(14)
-#define SC_OP_LED_ON		BIT(15)
+#define SC_OP_INVALID           BIT(0)
+#define SC_OP_BEACONS           BIT(1)
+#define SC_OP_RXAGGR            BIT(2)
+#define SC_OP_TXAGGR            BIT(3)
+#define SC_OP_CHAINMASK_UPDATE  BIT(4)
+#define SC_OP_FULL_RESET        BIT(5)
+#define SC_OP_PREAMBLE_SHORT    BIT(6)
+#define SC_OP_PROTECT_ENABLE    BIT(7)
+#define SC_OP_RXFLUSH           BIT(8)
+#define SC_OP_LED_ASSOCIATED    BIT(9)
+#define SC_OP_RFKILL_REGISTERED BIT(10)
+#define SC_OP_RFKILL_SW_BLOCKED BIT(11)
+#define SC_OP_RFKILL_HW_BLOCKED BIT(12)
+#define SC_OP_WAIT_FOR_BEACON   BIT(13)
+#define SC_OP_LED_ON            BIT(14)
+#define SC_OP_SCANNING          BIT(15)
+#define SC_OP_TSF_RESET         BIT(16)
 
 struct ath_bus_ops {
 	void		(*read_cachesize)(struct ath_softc *sc, int *csz);
@@ -677,8 +672,10 @@ static inline void ath9k_ps_wakeup(struct ath_softc *sc)
 static inline void ath9k_ps_restore(struct ath_softc *sc)
 {
 	if (atomic_dec_and_test(&sc->ps_usecount))
-		if (sc->hw->conf.flags & IEEE80211_CONF_PS)
+		if ((sc->hw->conf.flags & IEEE80211_CONF_PS) &&
+		    !(sc->sc_flags & SC_OP_WAIT_FOR_BEACON))
 			ath9k_hw_setpower(sc->sc_ah,
 					  sc->sc_ah->restore_mode);
 }
+
 #endif /* ATH9K_H */

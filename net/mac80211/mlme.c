@@ -1307,7 +1307,8 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	else
 		sdata->flags &= ~IEEE80211_SDATA_OPERATING_GMODE;
 
-	if (elems.ht_cap_elem)
+	/* If TKIP/WEP is used, no need to parse AP's HT capabilities */
+	if (elems.ht_cap_elem && !(ifmgd->flags & IEEE80211_STA_TKIP_WEP_USED))
 		ieee80211_ht_cap_ie_to_sta_ht_cap(sband,
 				elems.ht_cap_elem, &sta->sta.ht_cap);
 
@@ -1457,8 +1458,7 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 	ieee80211_sta_wmm_params(local, ifmgd, elems.wmm_param,
 				 elems.wmm_param_len);
 
-	if (local->hw.flags & IEEE80211_HW_PS_NULLFUNC_STACK &&
-	    local->hw.conf.flags & IEEE80211_CONF_PS) {
+	if (local->hw.flags & IEEE80211_HW_PS_NULLFUNC_STACK) {
 		directed_tim = ieee80211_check_tim(&elems, ifmgd->aid);
 
 		if (directed_tim) {

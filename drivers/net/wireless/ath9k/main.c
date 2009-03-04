@@ -327,7 +327,7 @@ static void ath_ani_calibrate(unsigned long data)
 	* don't calibrate when we're scanning.
 	* we are most likely not on our home channel.
 	*/
-	if (sc->rx.rxfilter & FIF_BCN_PRBRESP_PROMISC)
+	if (sc->sc_flags & SC_OP_SCANNING)
 		goto set_timer;
 
 	/* Long calibration runs independently of short calibration. */
@@ -516,6 +516,7 @@ irqreturn_t ath_isr(int irq, void *dev)
 			return IRQ_NONE;
 
 		sc->intrstatus = status;
+		ath9k_ps_wakeup(sc);
 
 		if (status & ATH9K_INT_FATAL) {
 			/* need a chip reset */
@@ -581,6 +582,7 @@ irqreturn_t ath_isr(int irq, void *dev)
 				sched = true;
 			}
 		}
+		ath9k_ps_restore(sc);
 	} while (0);
 
 	ath_debug_stat_interrupt(sc, status);
@@ -636,17 +638,6 @@ static u32 ath_get_extchanmode(struct ath_softc *sc,
 	return chanmode;
 }
 
-static int ath_keyset(struct ath_softc *sc, u16 keyix,
-	       struct ath9k_keyval *hk, const u8 mac[ETH_ALEN])
-{
-	bool status;
-
-	status = ath9k_hw_set_keycache_entry(sc->sc_ah,
-		keyix, hk, mac, false);
-
-	return status != false;
-}
-
 static int ath_setkey_tkip(struct ath_softc *sc, u16 keyix, const u8 *key,
 			   struct ath9k_keyval *hk, const u8 *addr,
 			   bool authenticator)
@@ -658,7 +649,11 @@ static int ath_setkey_tkip(struct ath_softc *sc, u16 keyix, const u8 *key,
 	key_rxmic = key + NL80211_TKIP_DATA_OFFSET_RX_MIC_KEY;
 
 	if (addr == NULL) {
-		/* Group key installation */
+		/*
+		 * Group key installation - only two key cache entries are used
+		 * regardless of splitmic capability since group key is only
+		 * used either for TX or RX.
+		 */
 		if (authenticator) {
 			memcpy(hk->kv_mic, key_txmic, sizeof(hk->kv_mic));
 			memcpy(hk->kv_txmic, key_txmic, sizeof(hk->kv_mic));
@@ -666,24 +661,21 @@ static int ath_setkey_tkip(struct ath_softc *sc, u16 keyix, const u8 *key,
 			memcpy(hk->kv_mic, key_rxmic, sizeof(hk->kv_mic));
 			memcpy(hk->kv_txmic, key_rxmic, sizeof(hk->kv_mic));
 		}
-		return ath_keyset(sc, keyix, hk, addr);
+		return ath9k_hw_set_keycache_entry(sc->sc_ah, keyix, hk, addr);
 	}
 	if (!sc->splitmic) {
-		/*
-		 * data key goes at first index,
-		 * the hal handles the MIC keys at index+64.
-		 */
+		/* TX and RX keys share the same key cache entry. */
 		memcpy(hk->kv_mic, key_rxmic, sizeof(hk->kv_mic));
 		memcpy(hk->kv_txmic, key_txmic, sizeof(hk->kv_txmic));
-		return ath_keyset(sc, keyix, hk, addr);
+		return ath9k_hw_set_keycache_entry(sc->sc_ah, keyix, hk, addr);
 	}
-	/*
-	 * TX key goes at first index, RX key at +32.
-	 * The hal handles the MIC keys at index+64.
-	 */
+
+	/* Separate key cache entries for TX and RX */
+
+	/* TX key goes at first index, RX key at +32. */
 	memcpy(hk->kv_mic, key_txmic, sizeof(hk->kv_mic));
-	if (!ath_keyset(sc, keyix, hk, NULL)) {
-		/* Txmic entry failed. No need to proceed further */
+	if (!ath9k_hw_set_keycache_entry(sc->sc_ah, keyix, hk, NULL)) {
+		/* TX MIC entry failed. No need to proceed further */
 		DPRINTF(sc, ATH_DBG_KEYCACHE,
 			"Setting TX MIC Key Failed\n");
 		return 0;
@@ -691,7 +683,7 @@ static int ath_setkey_tkip(struct ath_softc *sc, u16 keyix, const u8 *key,
 
 	memcpy(hk->kv_mic, key_rxmic, sizeof(hk->kv_mic));
 	/* XXX delete tx key on failure? */
-	return ath_keyset(sc, keyix + 32, hk, addr);
+	return ath9k_hw_set_keycache_entry(sc->sc_ah, keyix + 32, hk, addr);
 }
 
 static int ath_reserve_key_cache_slot_tkip(struct ath_softc *sc)
@@ -838,7 +830,7 @@ static int ath_key_config(struct ath_softc *sc,
 		ret = ath_setkey_tkip(sc, idx, key->key, &hk, mac,
 				      vif->type == NL80211_IFTYPE_AP);
 	else
-		ret = ath_keyset(sc, idx, &hk, mac);
+		ret = ath9k_hw_set_keycache_entry(sc->sc_ah, idx, &hk, mac);
 
 	if (!ret)
 		return -EIO;
@@ -924,7 +916,6 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 
 		/* Configure the beacon */
 		ath_beacon_config(sc, 0);
-		sc->sc_flags |= SC_OP_BEACONS;
 
 		/* Reset rssi stats */
 		sc->nodestats.ns_avgbrssi = ATH_RSSI_DUMMY_MARKER;
@@ -1372,7 +1363,7 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	spin_lock_init(&sc->sc_resetlock);
 	mutex_init(&sc->mutex);
 	tasklet_init(&sc->intr_tq, ath9k_tasklet, (unsigned long)sc);
-	tasklet_init(&sc->bcon_tasklet, ath9k_beacon_tasklet,
+	tasklet_init(&sc->bcon_tasklet, ath_beacon_tasklet,
 		     (unsigned long)sc);
 
 	/*
@@ -2167,8 +2158,10 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 	avp->av_opmode = ic_opmode;
 	avp->av_bslot = -1;
 
-	if (ic_opmode == NL80211_IFTYPE_AP)
+	if (ic_opmode == NL80211_IFTYPE_AP) {
 		ath9k_hw_set_tsfadjust(sc->sc_ah, 1);
+		sc->sc_flags |= SC_OP_TSF_RESET;
+	}
 
 	sc->vifs[0] = conf->vif;
 	sc->nvifs++;
@@ -2290,6 +2283,16 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	if (changed & IEEE80211_CONF_CHANGE_POWER)
 		sc->config.txpowlimit = 2 * conf->power_level;
 
+	/*
+	 * The HW TSF has to be reset when the beacon interval changes.
+	 * We set the flag here, and ath_beacon_config_ap() would take this
+	 * into account when it gets called through the subsequent
+	 * config_interface() call - with IFCC_BEACON in the changed field.
+	 */
+
+	if (changed & IEEE80211_CONF_CHANGE_BEACON_INTERVAL)
+		sc->sc_flags |= SC_OP_TSF_RESET;
+
 	mutex_unlock(&sc->mutex);
 
 	return 0;
@@ -2304,6 +2307,8 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 	struct ath_vif *avp = (void *)vif->drv_priv;
 	u32 rfilt = 0;
 	int error, i;
+
+	mutex_lock(&sc->mutex);
 
 	/* TODO: Need to decide which hw opmode to use for multi-interface
 	 * cases */
@@ -2360,10 +2365,12 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 			ath9k_hw_stoptxdma(sc->sc_ah, sc->beacon.beaconq);
 
 			error = ath_beacon_alloc(sc, 0);
-			if (error != 0)
+			if (error != 0) {
+				mutex_unlock(&sc->mutex);
 				return error;
+			}
 
-			ath_beacon_sync(sc, 0);
+			ath_beacon_config(sc, 0);
 		}
 	}
 
@@ -2379,6 +2386,8 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 	/* Only legacy IBSS for now */
 	if (vif->type == NL80211_IFTYPE_ADHOC)
 		ath_update_chainmask(sc, 0);
+
+	mutex_unlock(&sc->mutex);
 
 	return 0;
 }
@@ -2407,14 +2416,6 @@ static void ath9k_configure_filter(struct ieee80211_hw *hw,
 	sc->rx.rxfilter = *total_flags;
 	rfilt = ath_calcrxfilter(sc);
 	ath9k_hw_setrxfilter(sc->sc_ah, rfilt);
-
-	if (changed_flags & FIF_BCN_PRBRESP_PROMISC) {
-		if (*total_flags & FIF_BCN_PRBRESP_PROMISC) {
-			memcpy(sc->curbssid, ath_bcast_mac, ETH_ALEN);
-			sc->curaid = 0;
-			ath9k_hw_write_associd(sc);
-		}
-	}
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Set HW RX filter: 0x%x\n", sc->rx.rxfilter);
 }
@@ -2622,6 +2623,24 @@ static int ath9k_ampdu_action(struct ieee80211_hw *hw,
 	return ret;
 }
 
+static void ath9k_sw_scan_start(struct ieee80211_hw *hw)
+{
+	struct ath_softc *sc = hw->priv;
+
+	mutex_lock(&sc->mutex);
+	sc->sc_flags |= SC_OP_SCANNING;
+	mutex_unlock(&sc->mutex);
+}
+
+static void ath9k_sw_scan_complete(struct ieee80211_hw *hw)
+{
+	struct ath_softc *sc = hw->priv;
+
+	mutex_lock(&sc->mutex);
+	sc->sc_flags &= ~SC_OP_SCANNING;
+	mutex_unlock(&sc->mutex);
+}
+
 struct ieee80211_ops ath9k_ops = {
 	.tx 		    = ath9k_tx,
 	.start 		    = ath9k_start,
@@ -2639,6 +2658,8 @@ struct ieee80211_ops ath9k_ops = {
 	.set_tsf 	    = ath9k_set_tsf,
 	.reset_tsf 	    = ath9k_reset_tsf,
 	.ampdu_action       = ath9k_ampdu_action,
+	.sw_scan_start      = ath9k_sw_scan_start,
+	.sw_scan_complete   = ath9k_sw_scan_complete,
 };
 
 static struct {
