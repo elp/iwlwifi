@@ -113,17 +113,21 @@ static void ath_beacon_setup(struct ath_softc *sc, struct ath_vif *avp,
 				     series, 4, 0);
 }
 
-static struct ath_buf *ath_beacon_generate(struct ath_softc *sc, int if_id)
+static struct ath_buf *ath_beacon_generate(struct ieee80211_hw *hw,
+					   struct ieee80211_vif *vif)
 {
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 	struct ath_buf *bf;
 	struct ath_vif *avp;
 	struct sk_buff *skb;
 	struct ath_txq *cabq;
-	struct ieee80211_vif *vif;
 	struct ieee80211_tx_info *info;
 	int cabq_depth;
 
-	vif = sc->vifs[if_id];
+	if (aphy->state != ATH_WIPHY_ACTIVE)
+		return NULL;
+
 	avp = (void *)vif->drv_priv;
 	cabq = sc->beacon.cabq;
 
@@ -145,7 +149,7 @@ static struct ath_buf *ath_beacon_generate(struct ath_softc *sc, int if_id)
 
 	/* Get a new beacon from mac80211 */
 
-	skb = ieee80211_beacon_get(sc->hw, vif);
+	skb = ieee80211_beacon_get(hw, vif);
 	bf->bf_mpdu = skb;
 	if (skb == NULL)
 		return NULL;
@@ -172,7 +176,7 @@ static struct ath_buf *ath_beacon_generate(struct ath_softc *sc, int if_id)
 		return NULL;
 	}
 
-	skb = ieee80211_get_buffered_bc(sc->hw, vif);
+	skb = ieee80211_get_buffered_bc(hw, vif);
 
 	/*
 	 * if the CABQ traffic from previous DTIM is pending and the current
@@ -197,8 +201,8 @@ static struct ath_buf *ath_beacon_generate(struct ath_softc *sc, int if_id)
 	ath_beacon_setup(sc, avp, bf);
 
 	while (skb) {
-		ath_tx_cabq(sc, skb);
-		skb = ieee80211_get_buffered_bc(sc->hw, vif);
+		ath_tx_cabq(hw, skb);
+		skb = ieee80211_get_buffered_bc(hw, vif);
 	}
 
 	return bf;
@@ -208,15 +212,14 @@ static struct ath_buf *ath_beacon_generate(struct ath_softc *sc, int if_id)
  * Startup beacon transmission for adhoc mode when they are sent entirely
  * by the hardware using the self-linked descriptor + veol trick.
 */
-static void ath_beacon_start_adhoc(struct ath_softc *sc, int if_id)
+static void ath_beacon_start_adhoc(struct ath_softc *sc,
+				   struct ieee80211_vif *vif)
 {
-	struct ieee80211_vif *vif;
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_buf *bf;
 	struct ath_vif *avp;
 	struct sk_buff *skb;
 
-	vif = sc->vifs[if_id];
 	avp = (void *)vif->drv_priv;
 
 	if (avp->av_bcbuf == NULL)
@@ -246,16 +249,15 @@ int ath_beaconq_setup(struct ath_hw *ah)
 	return ath9k_hw_setuptxqueue(ah, ATH9K_TX_QUEUE_BEACON, &qi);
 }
 
-int ath_beacon_alloc(struct ath_softc *sc, int if_id)
+int ath_beacon_alloc(struct ath_wiphy *aphy, struct ieee80211_vif *vif)
 {
-	struct ieee80211_vif *vif;
+	struct ath_softc *sc = aphy->sc;
 	struct ath_vif *avp;
 	struct ieee80211_hdr *hdr;
 	struct ath_buf *bf;
 	struct sk_buff *skb;
 	__le64 tstamp;
 
-	vif = sc->vifs[if_id];
 	avp = (void *)vif->drv_priv;
 
 	/* Allocate a beacon descriptor if we haven't done so. */
@@ -275,22 +277,22 @@ int ath_beacon_alloc(struct ath_softc *sc, int if_id)
 			 */
 			avp->av_bslot = 0;
 			for (slot = 0; slot < ATH_BCBUF; slot++)
-				if (sc->beacon.bslot[slot] == ATH_IF_ID_ANY) {
+				if (sc->beacon.bslot[slot] == NULL) {
 					/*
 					 * XXX hack, space out slots to better
 					 * deal with misses
 					 */
 					if (slot+1 < ATH_BCBUF &&
-					    sc->beacon.bslot[slot+1] ==
-						ATH_IF_ID_ANY) {
+					    sc->beacon.bslot[slot+1] == NULL) {
 						avp->av_bslot = slot+1;
 						break;
 					}
 					avp->av_bslot = slot;
 					/* NB: keep looking for a double slot */
 				}
-			BUG_ON(sc->beacon.bslot[avp->av_bslot] != ATH_IF_ID_ANY);
-			sc->beacon.bslot[avp->av_bslot] = if_id;
+			BUG_ON(sc->beacon.bslot[avp->av_bslot] != NULL);
+			sc->beacon.bslot[avp->av_bslot] = vif;
+			sc->beacon.bslot_aphy[avp->av_bslot] = aphy;
 			sc->nbcnvifs++;
 		}
 	}
@@ -372,7 +374,8 @@ void ath_beacon_return(struct ath_softc *sc, struct ath_vif *avp)
 		struct ath_buf *bf;
 
 		if (avp->av_bslot != -1) {
-			sc->beacon.bslot[avp->av_bslot] = ATH_IF_ID_ANY;
+			sc->beacon.bslot[avp->av_bslot] = NULL;
+			sc->beacon.bslot_aphy[avp->av_bslot] = NULL;
 			sc->nbcnvifs--;
 		}
 
@@ -395,7 +398,9 @@ void ath_beacon_tasklet(unsigned long data)
 	struct ath_softc *sc = (struct ath_softc *)data;
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_buf *bf = NULL;
-	int slot, if_id;
+	struct ieee80211_vif *vif;
+	struct ath_wiphy *aphy;
+	int slot;
 	u32 bfaddr, bc = 0, tsftu;
 	u64 tsf;
 	u16 intval;
@@ -442,15 +447,16 @@ void ath_beacon_tasklet(unsigned long data)
 	tsf = ath9k_hw_gettsf64(ah);
 	tsftu = TSF_TO_TU(tsf>>32, tsf);
 	slot = ((tsftu % intval) * ATH_BCBUF) / intval;
-	if_id = sc->beacon.bslot[(slot + 1) % ATH_BCBUF];
+	vif = sc->beacon.bslot[(slot + 1) % ATH_BCBUF];
+	aphy = sc->beacon.bslot_aphy[(slot + 1) % ATH_BCBUF];
 
 	DPRINTF(sc, ATH_DBG_BEACON,
-		"slot %d [tsf %llu tsftu %u intval %u] if_id %d\n",
-		slot, tsf, tsftu, intval, if_id);
+		"slot %d [tsf %llu tsftu %u intval %u] vif %p\n",
+		slot, tsf, tsftu, intval, vif);
 
 	bfaddr = 0;
-	if (if_id != ATH_IF_ID_ANY) {
-		bf = ath_beacon_generate(sc, if_id);
+	if (vif) {
+		bf = ath_beacon_generate(aphy->hw, vif);
 		if (bf != NULL) {
 			bfaddr = bf->bf_daddr;
 			bc = 1;
@@ -652,7 +658,8 @@ static void ath_beacon_config_sta(struct ath_softc *sc,
 
 static void ath_beacon_config_adhoc(struct ath_softc *sc,
 				    struct ath_beacon_config *conf,
-				    struct ath_vif *avp)
+				    struct ath_vif *avp,
+				    struct ieee80211_vif *vif)
 {
 	u64 tsf;
 	u32 tsftu, intval, nexttbtt;
@@ -696,14 +703,12 @@ static void ath_beacon_config_adhoc(struct ath_softc *sc,
 	ath9k_hw_set_interrupts(sc->sc_ah, sc->imask);
 
 	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_VEOL)
-		ath_beacon_start_adhoc(sc, 0);
+		ath_beacon_start_adhoc(sc, vif);
 }
 
-void ath_beacon_config(struct ath_softc *sc, int if_id)
+void ath_beacon_config(struct ath_softc *sc, struct ieee80211_vif *vif)
 {
 	struct ath_beacon_config conf;
-	struct ath_vif *avp;
-	struct ieee80211_vif *vif;
 
 	/* Setup the beacon configuration parameters */
 
@@ -715,16 +720,15 @@ void ath_beacon_config(struct ath_softc *sc, int if_id)
 	conf.dtim_count = 1;
 	conf.bmiss_timeout = ATH_DEFAULT_BMISS_LIMIT * conf.beacon_interval;
 
-	if (if_id != ATH_IF_ID_ANY) {
-		vif = sc->vifs[if_id];
-		avp = (struct ath_vif *)vif->drv_priv;
+	if (vif) {
+		struct ath_vif *avp = (struct ath_vif *)vif->drv_priv;
 
 		switch(avp->av_opmode) {
 		case NL80211_IFTYPE_AP:
 			ath_beacon_config_ap(sc, &conf, avp);
 			break;
 		case NL80211_IFTYPE_ADHOC:
-			ath_beacon_config_adhoc(sc, &conf, avp);
+			ath_beacon_config_adhoc(sc, &conf, avp, vif);
 			break;
 		case NL80211_IFTYPE_STATION:
 			ath_beacon_config_sta(sc, &conf, avp);

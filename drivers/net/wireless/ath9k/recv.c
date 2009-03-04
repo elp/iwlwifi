@@ -16,6 +16,27 @@
 
 #include "ath9k.h"
 
+static struct ieee80211_hw * ath_get_virt_hw(struct ath_softc *sc,
+					     struct ieee80211_hdr *hdr)
+{
+	struct ieee80211_hw *hw = sc->pri_wiphy->hw;
+	int i;
+
+	spin_lock_bh(&sc->wiphy_lock);
+	for (i = 0; i < sc->num_sec_wiphy; i++) {
+		struct ath_wiphy *aphy = sc->sec_wiphy[i];
+		if (aphy == NULL)
+			continue;
+		if (compare_ether_addr(hdr->addr1, aphy->hw->wiphy->perm_addr)
+		    == 0) {
+			hw = aphy->hw;
+			break;
+		}
+	}
+	spin_unlock_bh(&sc->wiphy_lock);
+	return hw;
+}
+
 /*
  * Setup and link descriptors.
  *
@@ -123,10 +144,12 @@ static int ath_rx_prepare(struct sk_buff *skb, struct ath_desc *ds,
 	struct ieee80211_hdr *hdr;
 	u8 ratecode;
 	__le16 fc;
+	struct ieee80211_hw *hw;
 
 	hdr = (struct ieee80211_hdr *)skb->data;
 	fc = hdr->frame_control;
 	memset(rx_status, 0, sizeof(struct ieee80211_rx_status));
+	hw = ath_get_virt_hw(sc, hdr);
 
 	if (ds->ds_rxstat.rs_more) {
 		/*
@@ -186,7 +209,6 @@ static int ath_rx_prepare(struct sk_buff *skb, struct ath_desc *ds,
 		rx_status->rate_idx = ratecode & 0x7f;
 	} else {
 		int i = 0, cur_band, n_rates;
-		struct ieee80211_hw *hw = sc->hw;
 
 		cur_band = hw->conf.channel->band;
 		n_rates = sc->sbands[cur_band].n_bitrates;
@@ -208,8 +230,8 @@ static int ath_rx_prepare(struct sk_buff *skb, struct ath_desc *ds,
 	}
 
 	rx_status->mactime = ath_extend_tsf(sc, ds->ds_rxstat.rs_tstamp);
-	rx_status->band = sc->hw->conf.channel->band;
-	rx_status->freq =  sc->hw->conf.channel->center_freq;
+	rx_status->band = hw->conf.channel->band;
+	rx_status->freq = hw->conf.channel->center_freq;
 	rx_status->noise = sc->ani.noise_floor;
 	rx_status->signal = rx_status->noise + ds->ds_rxstat.rs_rssi;
 	rx_status->antenna = ds->ds_rxstat.rs_antenna;
@@ -384,6 +406,14 @@ u32 ath_calcrxfilter(struct ath_softc *sc)
 	/* If in HOSTAP mode, want to enable reception of PSPOLL frames */
 	if (sc->sc_ah->opmode == NL80211_IFTYPE_AP)
 		rfilt |= ATH9K_RX_FILTER_PSPOLL;
+
+	if (sc->sec_wiphy) {
+		/* TODO: only needed if more than one BSSID is in use in
+		 * station/adhoc mode */
+		/* TODO: for older chips, may need to add ATH9K_RX_FILTER_PROM
+		 */
+		rfilt |= ATH9K_RX_FILTER_MCAST_BCAST_ALL;
+	}
 
 	return rfilt;
 
@@ -604,7 +634,29 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 		}
 
 		/* Send the frame to mac80211 */
-		__ieee80211_rx(sc->hw, skb, &rx_status);
+		if (hdr->addr1[5] & 0x01) {
+			int i;
+			/*
+			 * Deliver broadcast/multicast frames to all suitable
+			 * virtual wiphys.
+			 */
+			/* TODO: filter based on channel configuration */
+			for (i = 0; i < sc->num_sec_wiphy; i++) {
+				struct ath_wiphy *aphy = sc->sec_wiphy[i];
+				struct sk_buff *nskb;
+				if (aphy == NULL)
+					continue;
+				nskb = skb_copy(skb, GFP_ATOMIC);
+				if (nskb)
+					__ieee80211_rx(aphy->hw, nskb,
+						       &rx_status);
+			}
+			__ieee80211_rx(sc->hw, skb, &rx_status);
+		} else {
+			/* Deliver unicast frames based on receiver address */
+			__ieee80211_rx(ath_get_virt_hw(sc, hdr), skb,
+				       &rx_status);
+		}
 
 		/* We will now give hardware our shiny new allocated skb */
 		bf->bf_mpdu = requeue_skb;

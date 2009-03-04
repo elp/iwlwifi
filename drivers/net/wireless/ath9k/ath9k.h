@@ -292,6 +292,7 @@ struct ath_atx_ac {
 struct ath_tx_control {
 	struct ath_txq *txq;
 	int if_id;
+	enum ath9k_internal_frame_type frame_type;
 };
 
 struct ath_xmit_status {
@@ -373,10 +374,10 @@ int ath_tx_cleanup(struct ath_softc *sc);
 struct ath_txq *ath_test_get_txq(struct ath_softc *sc, struct sk_buff *skb);
 int ath_txq_update(struct ath_softc *sc, int qnum,
 		   struct ath9k_tx_queue_info *q);
-int ath_tx_start(struct ath_softc *sc, struct sk_buff *skb,
+int ath_tx_start(struct ieee80211_hw *hw, struct sk_buff *skb,
 		 struct ath_tx_control *txctl);
 void ath_tx_tasklet(struct ath_softc *sc);
-void ath_tx_cabq(struct ath_softc *sc, struct sk_buff *skb);
+void ath_tx_cabq(struct ieee80211_hw *hw, struct sk_buff *skb);
 bool ath_tx_aggr_check(struct ath_softc *sc, struct ath_node *an, u8 tidno);
 int ath_tx_aggr_start(struct ath_softc *sc, struct ieee80211_sta *sta,
 		      u16 tid, u16 *ssn);
@@ -387,22 +388,12 @@ void ath_tx_aggr_resume(struct ath_softc *sc, struct ieee80211_sta *sta, u16 tid
 /* VIFs */
 /********/
 
-/*
- * Define the scheme that we select MAC address for multiple
- * BSS on the same radio. The very first VIF will just use the MAC
- * address from the EEPROM. For the next 3 VIFs, we set the
- * U/L bit (bit 1) in MAC address, and use the next two bits as the
- * index of the VIF.
- */
-
-#define ATH_SET_VIF_BSSID_MASK(bssid_mask) \
-	((bssid_mask)[0] &= ~(((ATH_BCBUF-1)<<2)|0x02))
-
 struct ath_vif {
 	int av_bslot;
 	enum nl80211_iftype av_opmode;
 	struct ath_buf *av_bcbuf;
 	struct ath_tx_control av_btxctl;
+	u8 bssid[ETH_ALEN]; /* current BSSID from config_interface */
 };
 
 /*******************/
@@ -439,7 +430,8 @@ struct ath_beacon {
 	u32 bmisscnt;
 	u32 ast_be_xmit;
 	u64 bc_tstamp;
-	int bslot[ATH_BCBUF];
+	struct ieee80211_vif *bslot[ATH_BCBUF];
+	struct ath_wiphy *bslot_aphy[ATH_BCBUF];
 	int slottime;
 	int slotupdate;
 	struct ath9k_tx_queue_info beacon_qi;
@@ -449,9 +441,9 @@ struct ath_beacon {
 };
 
 void ath_beacon_tasklet(unsigned long data);
-void ath_beacon_config(struct ath_softc *sc, int if_id);
+void ath_beacon_config(struct ath_softc *sc, struct ieee80211_vif *vif);
 int ath_beaconq_setup(struct ath_hw *ah);
-int ath_beacon_alloc(struct ath_softc *sc, int if_id);
+int ath_beacon_alloc(struct ath_wiphy *aphy, struct ieee80211_vif *vif);
 void ath_beacon_return(struct ath_softc *sc, struct ath_vif *avp);
 
 /*******/
@@ -532,7 +524,6 @@ struct ath_rfkill {
  */
 #define	ATH_KEYMAX	        128     /* max key cache size we handle */
 
-#define ATH_IF_ID_ANY   	0xff
 #define ATH_TXPOWER_MAX         100     /* .5 dBm units */
 #define ATH_RSSI_DUMMY_MARKER   0x127
 #define ATH_RATE_DUMMY_MARKER   0
@@ -561,9 +552,27 @@ struct ath_bus_ops {
 	bool		(*eeprom_read)(struct ath_hw *ah, u32 off, u16 *data);
 };
 
+struct ath_wiphy;
+
 struct ath_softc {
 	struct ieee80211_hw *hw;
 	struct device *dev;
+
+	spinlock_t wiphy_lock; /* spinlock to protect ath_wiphy data */
+	struct ath_wiphy *pri_wiphy;
+	struct ath_wiphy **sec_wiphy; /* secondary wiphys (virtual radios); may
+				       * have NULL entries */
+	int num_sec_wiphy; /* number of sec_wiphy pointers in the array */
+	int chan_idx;
+	int chan_is_ht;
+	struct ath_wiphy *next_wiphy;
+	struct work_struct chan_work;
+	int wiphy_select_failures;
+	unsigned long wiphy_select_first_fail;
+	struct delayed_work wiphy_work;
+	unsigned long wiphy_scheduler_int;
+	int wiphy_scheduler_index;
+
 	struct tasklet_struct intr_tq;
 	struct tasklet_struct bcon_tasklet;
 	struct ath_hw *sc_ah;
@@ -595,7 +604,6 @@ struct ath_softc {
 	struct ath_rx rx;
 	struct ath_tx tx;
 	struct ath_beacon beacon;
-	struct ieee80211_vif *vifs[ATH_BCBUF];
 	struct ieee80211_rate rates[IEEE80211_NUM_BANDS][ATH_RATE_MAX];
 	struct ath_rate_table *hw_rate_table[ATH9K_MODE_MAX];
 	struct ath_rate_table *cur_rate_table;
@@ -618,6 +626,20 @@ struct ath_softc {
 	struct ath9k_debug debug;
 #endif
 	struct ath_bus_ops *bus_ops;
+};
+
+struct ath_wiphy {
+	struct ath_softc *sc; /* shared for all virtual wiphys */
+	struct ieee80211_hw *hw;
+	enum ath_wiphy_state {
+		ATH_WIPHY_INACTIVE,
+		ATH_WIPHY_ACTIVE,
+		ATH_WIPHY_PAUSING,
+		ATH_WIPHY_PAUSED,
+		ATH_WIPHY_SCAN,
+	} state;
+	int chan_idx;
+	int chan_is_ht;
 };
 
 int ath_reset(struct ath_softc *sc, bool retry_tx);
@@ -643,6 +665,14 @@ int ath_attach(u16 devid, struct ath_softc *sc);
 void ath_detach(struct ath_softc *sc);
 const char *ath_mac_bb_name(u32 mac_bb_version);
 const char *ath_rf_name(u16 rf_version);
+void ath_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw);
+void ath9k_update_ichannel(struct ath_softc *sc, struct ieee80211_hw *hw,
+			   struct ath9k_channel *ichan);
+void ath_update_chainmask(struct ath_softc *sc, int is_ht);
+int ath_set_channel(struct ath_softc *sc, struct ieee80211_hw *hw,
+		    struct ath9k_channel *hchan);
+void ath_radio_enable(struct ath_softc *sc);
+void ath_radio_disable(struct ath_softc *sc);
 
 #ifdef CONFIG_PCI
 int ath_pci_init(void);
@@ -677,5 +707,21 @@ static inline void ath9k_ps_restore(struct ath_softc *sc)
 			ath9k_hw_setpower(sc->sc_ah,
 					  sc->sc_ah->restore_mode);
 }
+
+
+void ath9k_set_bssid_mask(struct ieee80211_hw *hw);
+int ath9k_wiphy_add(struct ath_softc *sc);
+int ath9k_wiphy_del(struct ath_wiphy *aphy);
+void ath9k_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb);
+int ath9k_wiphy_pause(struct ath_wiphy *aphy);
+int ath9k_wiphy_unpause(struct ath_wiphy *aphy);
+int ath9k_wiphy_select(struct ath_wiphy *aphy);
+void ath9k_wiphy_set_scheduler(struct ath_softc *sc, unsigned int msec_int);
+void ath9k_wiphy_chan_work(struct work_struct *work);
+bool ath9k_wiphy_started(struct ath_softc *sc);
+void ath9k_wiphy_pause_all_forced(struct ath_softc *sc,
+				  struct ath_wiphy *selected);
+bool ath9k_wiphy_scanning(struct ath_softc *sc);
+void ath9k_wiphy_work(struct work_struct *work);
 
 #endif /* ATH9K_H */

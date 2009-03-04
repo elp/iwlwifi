@@ -236,11 +236,11 @@ static void ath_setup_rates(struct ath_softc *sc, enum ieee80211_band band)
  * by reseting the chip.  To accomplish this we must first cleanup any pending
  * DMA, then restart stuff.
 */
-static int ath_set_channel(struct ath_softc *sc, struct ath9k_channel *hchan)
+int ath_set_channel(struct ath_softc *sc, struct ieee80211_hw *hw,
+		    struct ath9k_channel *hchan)
 {
 	struct ath_hw *ah = sc->sc_ah;
 	bool fastcc = true, stopped;
-	struct ieee80211_hw *hw = sc->hw;
 	struct ieee80211_channel *channel = hw->conf.channel;
 	int r;
 
@@ -414,7 +414,7 @@ set_timer:
  * the chainmask configuration, for bt coexistence, use
  * the chainmask configuration even in legacy mode.
  */
-static void ath_update_chainmask(struct ath_softc *sc, int is_ht)
+void ath_update_chainmask(struct ath_softc *sc, int is_ht)
 {
 	sc->sc_flags |= SC_OP_CHAINMASK_UPDATE;
 	if (is_ht ||
@@ -800,13 +800,10 @@ static int ath_key_config(struct ath_softc *sc,
 		 * need to change with virtual interfaces. */
 		idx = key->keyidx;
 	} else if (key->keyidx) {
-		struct ieee80211_vif *vif;
-
 		if (WARN_ON(!sta))
 			return -EOPNOTSUPP;
 		mac = sta->addr;
 
-		vif = sc->vifs[0];
 		if (vif->type != NL80211_IFTYPE_AP) {
 			/* Only keyidx 0 should be used with unicast key, but
 			 * allow this for client mode for now. */
@@ -915,7 +912,7 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 		}
 
 		/* Configure the beacon */
-		ath_beacon_config(sc, 0);
+		ath_beacon_config(sc, vif);
 
 		/* Reset rssi stats */
 		sc->nodestats.ns_avgbrssi = ATH_RSSI_DUMMY_MARKER;
@@ -1093,7 +1090,7 @@ fail:
 /*	Rfkill	   */
 /*******************/
 
-static void ath_radio_enable(struct ath_softc *sc)
+void ath_radio_enable(struct ath_softc *sc)
 {
 	struct ath_hw *ah = sc->sc_ah;
 	struct ieee80211_channel *channel = sc->hw->conf.channel;
@@ -1120,7 +1117,7 @@ static void ath_radio_enable(struct ath_softc *sc)
 	}
 
 	if (sc->sc_flags & SC_OP_BEACONS)
-		ath_beacon_config(sc, ATH_IF_ID_ANY);	/* restart beacons */
+		ath_beacon_config(sc, NULL);	/* restart beacons */
 
 	/* Re-Enable  interrupts */
 	ath9k_hw_set_interrupts(ah, sc->imask);
@@ -1134,7 +1131,7 @@ static void ath_radio_enable(struct ath_softc *sc)
 	ath9k_ps_restore(sc);
 }
 
-static void ath_radio_disable(struct ath_softc *sc)
+void ath_radio_disable(struct ath_softc *sc)
 {
 	struct ath_hw *ah = sc->sc_ah;
 	struct ieee80211_channel *channel = sc->hw->conf.channel;
@@ -1310,6 +1307,7 @@ void ath_cleanup(struct ath_softc *sc)
 	ath_detach(sc);
 	free_irq(sc->irq, sc);
 	ath_bus_cleanup(sc);
+	kfree(sc->sec_wiphy);
 	ieee80211_free_hw(sc->hw);
 }
 
@@ -1326,7 +1324,17 @@ void ath_detach(struct ath_softc *sc)
 	ath_deinit_rfkill(sc);
 #endif
 	ath_deinit_leds(sc);
+	cancel_work_sync(&sc->chan_work);
+	cancel_delayed_work_sync(&sc->wiphy_work);
 
+	for (i = 0; i < sc->num_sec_wiphy; i++) {
+		struct ath_wiphy *aphy = sc->sec_wiphy[i];
+		if (aphy == NULL)
+			continue;
+		sc->sec_wiphy[i] = NULL;
+		ieee80211_unregister_hw(aphy->hw);
+		ieee80211_free_hw(aphy->hw);
+	}
 	ieee80211_unregister_hw(hw);
 	ath_rx_cleanup(sc);
 	ath_tx_cleanup(sc);
@@ -1360,6 +1368,7 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	if (ath9k_init_debug(sc) < 0)
 		printk(KERN_ERR "Unable to create debugfs files\n");
 
+	spin_lock_init(&sc->wiphy_lock);
 	spin_lock_init(&sc->sc_resetlock);
 	mutex_init(&sc->mutex);
 	tasklet_init(&sc->intr_tq, ath9k_tasklet, (unsigned long)sc);
@@ -1517,17 +1526,16 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	ath9k_hw_setcapability(ah, ATH9K_CAP_DIVERSITY, 1, true, NULL);
 	sc->rx.defant = ath9k_hw_getdefantenna(ah);
 
-	if (ah->caps.hw_caps & ATH9K_HW_CAP_BSSIDMASK) {
+	if (ah->caps.hw_caps & ATH9K_HW_CAP_BSSIDMASK)
 		memcpy(sc->bssidmask, ath_bcast_mac, ETH_ALEN);
-		ATH_SET_VIF_BSSID_MASK(sc->bssidmask);
-		ath9k_hw_setbssidmask(sc);
-	}
 
 	sc->beacon.slottime = ATH9K_SLOT_TIME_9;	/* default to short slot time */
 
 	/* initialize beacon slots */
-	for (i = 0; i < ARRAY_SIZE(sc->beacon.bslot); i++)
-		sc->beacon.bslot[i] = ATH_IF_ID_ANY;
+	for (i = 0; i < ARRAY_SIZE(sc->beacon.bslot); i++) {
+		sc->beacon.bslot[i] = NULL;
+		sc->beacon.bslot_aphy[i] = NULL;
+	}
 
 	/* save MISC configurations */
 	sc->config.swBeaconProcess = 1;
@@ -1567,22 +1575,8 @@ bad:
 	return error;
 }
 
-int ath_attach(u16 devid, struct ath_softc *sc)
+void ath_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw)
 {
-	struct ieee80211_hw *hw = sc->hw;
-	const struct ieee80211_regdomain *regd;
-	int error = 0, i;
-
-	DPRINTF(sc, ATH_DBG_CONFIG, "Attach ATH hw\n");
-
-	error = ath_init(devid, sc);
-	if (error != 0)
-		return error;
-
-	/* get mac address from hardware and set in mac80211 */
-
-	SET_IEEE80211_PERM_ADDR(hw, sc->sc_ah->macaddr);
-
 	hw->flags = IEEE80211_HW_RX_INCLUDES_FCS |
 		IEEE80211_HW_HOST_BROADCAST_PS_BUFFERING |
 		IEEE80211_HW_SIGNAL_DBM |
@@ -1604,22 +1598,43 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 	hw->queues = 4;
 	hw->max_rates = 4;
 	hw->channel_change_time = 5000;
+	hw->max_listen_interval = 10;
 	hw->max_rate_tries = ATH_11N_TXMAXTRY;
 	hw->sta_data_size = sizeof(struct ath_node);
 	hw->vif_data_size = sizeof(struct ath_vif);
 
 	hw->rate_control_algorithm = "ath9k_rate_control";
 
+	hw->wiphy->bands[IEEE80211_BAND_2GHZ] =
+		&sc->sbands[IEEE80211_BAND_2GHZ];
+	if (test_bit(ATH9K_MODE_11A, sc->sc_ah->caps.wireless_modes))
+		hw->wiphy->bands[IEEE80211_BAND_5GHZ] =
+			&sc->sbands[IEEE80211_BAND_5GHZ];
+}
+
+int ath_attach(u16 devid, struct ath_softc *sc)
+{
+	struct ieee80211_hw *hw = sc->hw;
+	const struct ieee80211_regdomain *regd;
+	int error = 0, i;
+
+	DPRINTF(sc, ATH_DBG_CONFIG, "Attach ATH hw\n");
+
+	error = ath_init(devid, sc);
+	if (error != 0)
+		return error;
+
+	/* get mac address from hardware and set in mac80211 */
+
+	SET_IEEE80211_PERM_ADDR(hw, sc->sc_ah->macaddr);
+
+	ath_set_hw_capab(sc, hw);
+
 	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_HT) {
 		setup_ht_cap(sc, &sc->sbands[IEEE80211_BAND_2GHZ].ht_cap);
 		if (test_bit(ATH9K_MODE_11A, sc->sc_ah->caps.wireless_modes))
 			setup_ht_cap(sc, &sc->sbands[IEEE80211_BAND_5GHZ].ht_cap);
 	}
-
-	hw->wiphy->bands[IEEE80211_BAND_2GHZ] =	&sc->sbands[IEEE80211_BAND_2GHZ];
-	if (test_bit(ATH9K_MODE_11A, sc->sc_ah->caps.wireless_modes))
-		hw->wiphy->bands[IEEE80211_BAND_5GHZ] =
-			&sc->sbands[IEEE80211_BAND_5GHZ];
 
 	/* initialize tx/rx engine */
 	error = ath_tx_init(sc, ATH_TXBUF);
@@ -1656,6 +1671,10 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 	wiphy_apply_custom_regulatory(hw->wiphy, regd);
 	ath9k_reg_apply_radar_flags(hw->wiphy);
 	ath9k_reg_apply_world_flags(hw->wiphy, REGDOM_SET_BY_INIT);
+
+	INIT_WORK(&sc->chan_work, ath9k_wiphy_chan_work);
+	INIT_DELAYED_WORK(&sc->wiphy_work, ath9k_wiphy_work);
+	sc->wiphy_scheduler_int = msecs_to_jiffies(500);
 
 	error = ieee80211_register_hw(hw);
 
@@ -1715,7 +1734,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 	ath_update_txpow(sc);
 
 	if (sc->sc_flags & SC_OP_BEACONS)
-		ath_beacon_config(sc, ATH_IF_ID_ANY);	/* restart beacons */
+		ath_beacon_config(sc, NULL);	/* restart beacons */
 
 	ath9k_hw_set_interrupts(ah, sc->imask);
 
@@ -1905,10 +1924,9 @@ int ath_get_mac80211_qnum(u32 queue, struct ath_softc *sc)
 
 /* XXX: Remove me once we don't depend on ath9k_channel for all
  * this redundant data */
-static void ath9k_update_ichannel(struct ath_softc *sc,
-			  struct ath9k_channel *ichan)
+void ath9k_update_ichannel(struct ath_softc *sc, struct ieee80211_hw *hw,
+			   struct ath9k_channel *ichan)
 {
-	struct ieee80211_hw *hw = sc->hw;
 	struct ieee80211_channel *chan = hw->conf.channel;
 	struct ieee80211_conf *conf = &hw->conf;
 
@@ -1940,7 +1958,8 @@ static void ath9k_update_ichannel(struct ath_softc *sc,
 
 static int ath9k_start(struct ieee80211_hw *hw)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 	struct ieee80211_channel *curchan = hw->conf.channel;
 	struct ath9k_channel *init_channel;
 	int r, pos;
@@ -1950,12 +1969,34 @@ static int ath9k_start(struct ieee80211_hw *hw)
 
 	mutex_lock(&sc->mutex);
 
+	if (ath9k_wiphy_started(sc)) {
+		if (sc->chan_idx == curchan->hw_value) {
+			/*
+			 * Already on the operational channel, the new wiphy
+			 * can be marked active.
+			 */
+			aphy->state = ATH_WIPHY_ACTIVE;
+			ieee80211_wake_queues(hw);
+		} else {
+			/*
+			 * Another wiphy is on another channel, start the new
+			 * wiphy in paused state.
+			 */
+			aphy->state = ATH_WIPHY_PAUSED;
+			ieee80211_stop_queues(hw);
+		}
+		mutex_unlock(&sc->mutex);
+		return 0;
+	}
+	aphy->state = ATH_WIPHY_ACTIVE;
+
 	/* setup initial channel */
 
 	pos = curchan->hw_value;
 
+	sc->chan_idx = pos;
 	init_channel = &sc->sc_ah->channels[pos];
-	ath9k_update_ichannel(sc, init_channel);
+	ath9k_update_ichannel(sc, hw, init_channel);
 
 	/* Reset SERDES registers */
 	ath9k_hw_configpcipowersave(sc->sc_ah, 0);
@@ -2018,7 +2059,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	sc->imask &= ~(ATH9K_INT_SWBA | ATH9K_INT_BMISS);
 	ath9k_hw_set_interrupts(sc->sc_ah, sc->imask);
 
-	ieee80211_wake_queues(sc->hw);
+	ieee80211_wake_queues(hw);
 
 #if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
 	r = ath_start_rfkill_poll(sc);
@@ -2034,9 +2075,16 @@ static int ath9k_tx(struct ieee80211_hw *hw,
 		    struct sk_buff *skb)
 {
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 	struct ath_tx_control txctl;
 	int hdrlen, padsize;
+
+	if (aphy->state != ATH_WIPHY_ACTIVE && aphy->state != ATH_WIPHY_SCAN) {
+		printk(KERN_DEBUG "ath9k: %s: TX in unexpected wiphy state "
+		       "%d\n", wiphy_name(hw->wiphy), aphy->state);
+		goto exit;
+	}
 
 	memset(&txctl, 0, sizeof(struct ath_tx_control));
 
@@ -2071,7 +2119,7 @@ static int ath9k_tx(struct ieee80211_hw *hw,
 
 	DPRINTF(sc, ATH_DBG_XMIT, "transmitting packet, skb: %p\n", skb);
 
-	if (ath_tx_start(sc, skb, &txctl) != 0) {
+	if (ath_tx_start(hw, skb, &txctl) != 0) {
 		DPRINTF(sc, ATH_DBG_XMIT, "TX failed\n");
 		goto exit;
 	}
@@ -2084,7 +2132,10 @@ exit:
 
 static void ath9k_stop(struct ieee80211_hw *hw)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
+
+	aphy->state = ATH_WIPHY_INACTIVE;
 
 	if (sc->sc_flags & SC_OP_INVALID) {
 		DPRINTF(sc, ATH_DBG_ANY, "Device not present\n");
@@ -2093,7 +2144,12 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 
 	mutex_lock(&sc->mutex);
 
-	ieee80211_stop_queues(sc->hw);
+	ieee80211_stop_queues(hw);
+
+	if (ath9k_wiphy_started(sc)) {
+		mutex_unlock(&sc->mutex);
+		return; /* another wiphy still in use */
+	}
 
 	/* make sure h/w will not generate any interrupt
 	 * before setting the invalid flag. */
@@ -2124,32 +2180,43 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 static int ath9k_add_interface(struct ieee80211_hw *hw,
 			       struct ieee80211_if_init_conf *conf)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 	struct ath_vif *avp = (void *)conf->vif->drv_priv;
 	enum nl80211_iftype ic_opmode = NL80211_IFTYPE_UNSPECIFIED;
-
-	/* Support only vif for now */
-
-	if (sc->nvifs)
-		return -ENOBUFS;
+	int ret = 0;
 
 	mutex_lock(&sc->mutex);
+
+	if (!(sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_BSSIDMASK) &&
+	    sc->nvifs > 0) {
+		ret = -ENOBUFS;
+		goto out;
+	}
 
 	switch (conf->type) {
 	case NL80211_IFTYPE_STATION:
 		ic_opmode = NL80211_IFTYPE_STATION;
 		break;
 	case NL80211_IFTYPE_ADHOC:
+		if (sc->nbcnvifs >= ATH_BCBUF) {
+			ret = -ENOBUFS;
+			goto out;
+		}
 		ic_opmode = NL80211_IFTYPE_ADHOC;
 		break;
 	case NL80211_IFTYPE_AP:
+		if (sc->nbcnvifs >= ATH_BCBUF) {
+			ret = -ENOBUFS;
+			goto out;
+		}
 		ic_opmode = NL80211_IFTYPE_AP;
 		break;
 	default:
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Interface type %d not yet supported\n", conf->type);
-		mutex_unlock(&sc->mutex);
-		return -EOPNOTSUPP;
+		ret = -EOPNOTSUPP;
+		goto out;
 	}
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Attach a VIF of type: %d\n", ic_opmode);
@@ -2158,13 +2225,18 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 	avp->av_opmode = ic_opmode;
 	avp->av_bslot = -1;
 
+	sc->nvifs++;
+
+	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_BSSIDMASK)
+		ath9k_set_bssid_mask(hw);
+
+	if (sc->nvifs > 1)
+		goto out; /* skip global settings for secondary vif */
+
 	if (ic_opmode == NL80211_IFTYPE_AP) {
 		ath9k_hw_set_tsfadjust(sc->sc_ah, 1);
 		sc->sc_flags |= SC_OP_TSF_RESET;
 	}
-
-	sc->vifs[0] = conf->vif;
-	sc->nvifs++;
 
 	/* Set the device opmode */
 	sc->sc_ah->opmode = ic_opmode;
@@ -2200,16 +2272,18 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 			  jiffies + msecs_to_jiffies(ATH_ANI_POLLINTERVAL));
 	}
 
+out:
 	mutex_unlock(&sc->mutex);
-
-	return 0;
+	return ret;
 }
 
 static void ath9k_remove_interface(struct ieee80211_hw *hw,
 				   struct ieee80211_if_init_conf *conf)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 	struct ath_vif *avp = (void *)conf->vif->drv_priv;
+	int i;
 
 	DPRINTF(sc, ATH_DBG_CONFIG, "Detach Interface\n");
 
@@ -2227,7 +2301,15 @@ static void ath9k_remove_interface(struct ieee80211_hw *hw,
 
 	sc->sc_flags &= ~SC_OP_BEACONS;
 
-	sc->vifs[0] = NULL;
+	for (i = 0; i < ARRAY_SIZE(sc->beacon.bslot); i++) {
+		if (sc->beacon.bslot[i] == conf->vif) {
+			printk(KERN_DEBUG "%s: vif had allocated beacon "
+			       "slot\n", __func__);
+			sc->beacon.bslot[i] = NULL;
+			sc->beacon.bslot_aphy[i] = NULL;
+		}
+	}
+
 	sc->nvifs--;
 
 	mutex_unlock(&sc->mutex);
@@ -2235,7 +2317,8 @@ static void ath9k_remove_interface(struct ieee80211_hw *hw,
 
 static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 	struct ieee80211_conf *conf = &hw->conf;
 
 	mutex_lock(&sc->mutex);
@@ -2265,21 +2348,36 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 		struct ieee80211_channel *curchan = hw->conf.channel;
 		int pos = curchan->hw_value;
 
+		aphy->chan_idx = pos;
+		aphy->chan_is_ht = conf_is_ht(conf);
+
+		if (aphy->state == ATH_WIPHY_SCAN ||
+		    aphy->state == ATH_WIPHY_ACTIVE)
+			ath9k_wiphy_pause_all_forced(sc, aphy);
+		else {
+			/*
+			 * Do not change operational channel based on a paused
+			 * wiphy changes.
+			 */
+			goto skip_chan_change;
+		}
+
 		DPRINTF(sc, ATH_DBG_CONFIG, "Set channel: %d MHz\n",
 			curchan->center_freq);
 
 		/* XXX: remove me eventualy */
-		ath9k_update_ichannel(sc, &sc->sc_ah->channels[pos]);
+		ath9k_update_ichannel(sc, hw, &sc->sc_ah->channels[pos]);
 
 		ath_update_chainmask(sc, conf_is_ht(conf));
 
-		if (ath_set_channel(sc, &sc->sc_ah->channels[pos]) < 0) {
+		if (ath_set_channel(sc, hw, &sc->sc_ah->channels[pos]) < 0) {
 			DPRINTF(sc, ATH_DBG_FATAL, "Unable to set channel\n");
 			mutex_unlock(&sc->mutex);
 			return -EINVAL;
 		}
 	}
 
+skip_chan_change:
 	if (changed & IEEE80211_CONF_CHANGE_POWER)
 		sc->config.txpowlimit = 2 * conf->power_level;
 
@@ -2302,7 +2400,8 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 				  struct ieee80211_vif *vif,
 				  struct ieee80211_if_conf *conf)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_vif *avp = (void *)vif->drv_priv;
 	u32 rfilt = 0;
@@ -2330,6 +2429,7 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 		case NL80211_IFTYPE_ADHOC:
 			/* Set BSSID */
 			memcpy(sc->curbssid, conf->bssid, ETH_ALEN);
+			memcpy(avp->bssid, conf->bssid, ETH_ALEN);
 			sc->curaid = 0;
 			ath9k_hw_write_associd(sc);
 
@@ -2364,13 +2464,13 @@ static int ath9k_config_interface(struct ieee80211_hw *hw,
 			 */
 			ath9k_hw_stoptxdma(sc->sc_ah, sc->beacon.beaconq);
 
-			error = ath_beacon_alloc(sc, 0);
+			error = ath_beacon_alloc(aphy, vif);
 			if (error != 0) {
 				mutex_unlock(&sc->mutex);
 				return error;
 			}
 
-			ath_beacon_config(sc, 0);
+			ath_beacon_config(sc, vif);
 		}
 	}
 
@@ -2407,7 +2507,8 @@ static void ath9k_configure_filter(struct ieee80211_hw *hw,
 				   int mc_count,
 				   struct dev_mc_list *mclist)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 	u32 rfilt;
 
 	changed_flags &= SUPPORTED_FILTERS;
@@ -2425,7 +2526,8 @@ static void ath9k_sta_notify(struct ieee80211_hw *hw,
 			     enum sta_notify_cmd cmd,
 			     struct ieee80211_sta *sta)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 
 	switch (cmd) {
 	case STA_NOTIFY_ADD:
@@ -2442,7 +2544,8 @@ static void ath9k_sta_notify(struct ieee80211_hw *hw,
 static int ath9k_conf_tx(struct ieee80211_hw *hw, u16 queue,
 			 const struct ieee80211_tx_queue_params *params)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 	struct ath9k_tx_queue_info qi;
 	int ret = 0, qnum;
 
@@ -2478,7 +2581,8 @@ static int ath9k_set_key(struct ieee80211_hw *hw,
 			 struct ieee80211_sta *sta,
 			 struct ieee80211_key_conf *key)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 	int ret = 0;
 
 	if (modparam_nohwcrypt)
@@ -2520,7 +2624,8 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 				   struct ieee80211_bss_conf *bss_conf,
 				   u32 changed)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 
 	mutex_lock(&sc->mutex);
 
@@ -2555,7 +2660,8 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 static u64 ath9k_get_tsf(struct ieee80211_hw *hw)
 {
 	u64 tsf;
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 
 	mutex_lock(&sc->mutex);
 	tsf = ath9k_hw_gettsf64(sc->sc_ah);
@@ -2566,7 +2672,8 @@ static u64 ath9k_get_tsf(struct ieee80211_hw *hw)
 
 static void ath9k_set_tsf(struct ieee80211_hw *hw, u64 tsf)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 
 	mutex_lock(&sc->mutex);
 	ath9k_hw_settsf64(sc->sc_ah, tsf);
@@ -2575,7 +2682,8 @@ static void ath9k_set_tsf(struct ieee80211_hw *hw, u64 tsf)
 
 static void ath9k_reset_tsf(struct ieee80211_hw *hw)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 
 	mutex_lock(&sc->mutex);
 	ath9k_hw_reset_tsf(sc->sc_ah);
@@ -2587,7 +2695,8 @@ static int ath9k_ampdu_action(struct ieee80211_hw *hw,
 			      struct ieee80211_sta *sta,
 			      u16 tid, u16 *ssn)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 	int ret = 0;
 
 	switch (action) {
@@ -2625,7 +2734,21 @@ static int ath9k_ampdu_action(struct ieee80211_hw *hw,
 
 static void ath9k_sw_scan_start(struct ieee80211_hw *hw)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
+
+	if (ath9k_wiphy_scanning(sc)) {
+		printk(KERN_DEBUG "ath9k: Two wiphys trying to scan at the "
+		       "same time\n");
+		/*
+		 * Do not allow the concurrent scanning state for now. This
+		 * could be improved with scanning control moved into ath9k.
+		 */
+		return;
+	}
+
+	aphy->state = ATH_WIPHY_SCAN;
+	ath9k_wiphy_pause_all_forced(sc, aphy);
 
 	mutex_lock(&sc->mutex);
 	sc->sc_flags |= SC_OP_SCANNING;
@@ -2634,9 +2757,11 @@ static void ath9k_sw_scan_start(struct ieee80211_hw *hw)
 
 static void ath9k_sw_scan_complete(struct ieee80211_hw *hw)
 {
-	struct ath_softc *sc = hw->priv;
+	struct ath_wiphy *aphy = hw->priv;
+	struct ath_softc *sc = aphy->sc;
 
 	mutex_lock(&sc->mutex);
+	aphy->state = ATH_WIPHY_ACTIVE;
 	sc->sc_flags &= ~SC_OP_SCANNING;
 	mutex_unlock(&sc->mutex);
 }
