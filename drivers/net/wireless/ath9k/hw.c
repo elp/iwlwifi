@@ -678,6 +678,7 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 		ah->hw_version.macVersion, ah->hw_version.macRev);
 
 	if (AR_SREV_9285_12_OR_LATER(ah)) {
+
 		INIT_INI_ARRAY(&ah->iniModes, ar9285Modes_9285_1_2,
 			       ARRAY_SIZE(ar9285Modes_9285_1_2), 6);
 		INIT_INI_ARRAY(&ah->iniCommon, ar9285Common_9285_1_2,
@@ -816,6 +817,22 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 	ecode = ath9k_hw_post_attach(ah);
 	if (ecode != 0)
 		goto bad;
+
+	if (AR_SREV_9285_12_OR_LATER(ah)) {
+		u32 txgain_type = ah->eep_ops->get_eeprom(ah, EEP_TXGAIN_TYPE);
+
+		/* txgain table */
+		if (txgain_type == AR5416_EEP_TXGAIN_HIGH_POWER) {
+			INIT_INI_ARRAY(&ah->iniModesTxGain,
+			ar9285Modes_high_power_tx_gain_9285_1_2,
+			ARRAY_SIZE(ar9285Modes_high_power_tx_gain_9285_1_2), 6);
+		} else {
+			INIT_INI_ARRAY(&ah->iniModesTxGain,
+			ar9285Modes_original_tx_gain_9285_1_2,
+			ARRAY_SIZE(ar9285Modes_original_tx_gain_9285_1_2), 6);
+		}
+
+	}
 
 	/* rxgain table */
 	if (AR_SREV_9280_20(ah))
@@ -1153,7 +1170,7 @@ static void ath9k_hw_override_ini(struct ath_hw *ah,
 	REG_SET_BIT(ah, AR_DIAG_SW, (AR_DIAG_RX_DIS | AR_DIAG_RX_ABORT));
 
 
-	if (!AR_SREV_5416_V20_OR_LATER(ah) ||
+	if (!AR_SREV_5416_20_OR_LATER(ah) ||
 	    AR_SREV_9280_10_OR_LATER(ah))
 		return;
 
@@ -1255,7 +1272,7 @@ static int ath9k_hw_process_ini(struct ath_hw *ah,
 	REG_WRITE(ah, AR_PHY_ADC_SERIAL_CTL, AR_PHY_SEL_EXTERNAL_RADIO);
 	ah->eep_ops->set_addac(ah, chan);
 
-	if (AR_SREV_5416_V22_OR_LATER(ah)) {
+	if (AR_SREV_5416_22_OR_LATER(ah)) {
 		REG_WRITE_ARRAY(&ah->iniAddac, 1, regWrites);
 	} else {
 		struct ar5416IniArray temp;
@@ -1293,7 +1310,8 @@ static int ath9k_hw_process_ini(struct ath_hw *ah,
 	if (AR_SREV_9280(ah))
 		REG_WRITE_ARRAY(&ah->iniModesRxGain, modesIndex, regWrites);
 
-	if (AR_SREV_9280(ah))
+	if (AR_SREV_9280(ah) || (AR_SREV_9285(ah) &&
+	    AR_SREV_9285_12_OR_LATER(ah)))
 		REG_WRITE_ARRAY(&ah->iniModesTxGain, modesIndex, regWrites);
 
 	for (i = 0; i < ah->iniCommon.ia_rows; i++) {

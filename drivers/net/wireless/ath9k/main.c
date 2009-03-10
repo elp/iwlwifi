@@ -1084,12 +1084,6 @@ fail:
 	ath_deinit_leds(sc);
 }
 
-#if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
-
-/*******************/
-/*	Rfkill	   */
-/*******************/
-
 void ath_radio_enable(struct ath_softc *sc)
 {
 	struct ath_hw *ah = sc->sc_ah;
@@ -1165,6 +1159,12 @@ void ath_radio_disable(struct ath_softc *sc)
 	ath9k_hw_setpower(ah, ATH9K_PM_FULL_SLEEP);
 	ath9k_ps_restore(sc);
 }
+
+#if defined(CONFIG_RFKILL) || defined(CONFIG_RFKILL_MODULE)
+
+/*******************/
+/*	Rfkill	   */
+/*******************/
 
 static bool ath_is_rfkill_set(struct ath_softc *sc)
 {
@@ -1773,6 +1773,7 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 	DPRINTF(sc, ATH_DBG_CONFIG, "%s DMA: %u buffers %u desc/buf\n",
 		name, nbuf, ndesc);
 
+	INIT_LIST_HEAD(head);
 	/* ath_desc must be a multiple of DWORDs */
 	if ((sizeof(struct ath_desc) % 4) != 0) {
 		DPRINTF(sc, ATH_DBG_FATAL, "ath_desc not DWORD aligned\n");
@@ -1804,7 +1805,7 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 
 	/* allocate descriptors */
 	dd->dd_desc = dma_alloc_coherent(sc->dev, dd->dd_desc_len,
-					 &dd->dd_desc_paddr, GFP_ATOMIC);
+					 &dd->dd_desc_paddr, GFP_KERNEL);
 	if (dd->dd_desc == NULL) {
 		error = -ENOMEM;
 		goto fail;
@@ -1816,15 +1817,13 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 
 	/* allocate buffers */
 	bsize = sizeof(struct ath_buf) * nbuf;
-	bf = kmalloc(bsize, GFP_KERNEL);
+	bf = kzalloc(bsize, GFP_KERNEL);
 	if (bf == NULL) {
 		error = -ENOMEM;
 		goto fail2;
 	}
-	memset(bf, 0, bsize);
 	dd->dd_bufptr = bf;
 
-	INIT_LIST_HEAD(head);
 	for (i = 0; i < nbuf; i++, bf++, ds += ndesc) {
 		bf->bf_desc = ds;
 		bf->bf_daddr = DS2PHYS(dd, ds);
@@ -2858,12 +2857,20 @@ static int __init ath9k_init(void)
 		goto err_out;
 	}
 
+	error = ath9k_debug_create_root();
+	if (error) {
+		printk(KERN_ERR
+			"ath9k: Unable to create debugfs root: %d\n",
+			error);
+		goto err_rate_unregister;
+	}
+
 	error = ath_pci_init();
 	if (error < 0) {
 		printk(KERN_ERR
 			"ath9k: No PCI devices found, driver not installed.\n");
 		error = -ENODEV;
-		goto err_rate_unregister;
+		goto err_remove_root;
 	}
 
 	error = ath_ahb_init();
@@ -2877,6 +2884,8 @@ static int __init ath9k_init(void)
  err_pci_exit:
 	ath_pci_exit();
 
+ err_remove_root:
+	ath9k_debug_remove_root();
  err_rate_unregister:
 	ath_rate_control_unregister();
  err_out:
@@ -2888,6 +2897,7 @@ static void __exit ath9k_exit(void)
 {
 	ath_ahb_exit();
 	ath_pci_exit();
+	ath9k_debug_remove_root();
 	ath_rate_control_unregister();
 	printk(KERN_INFO "%s: Driver unloaded\n", dev_info);
 }
