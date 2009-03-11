@@ -1370,6 +1370,7 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 
 	spin_lock_init(&sc->wiphy_lock);
 	spin_lock_init(&sc->sc_resetlock);
+	spin_lock_init(&sc->sc_serial_rw);
 	mutex_init(&sc->mutex);
 	tasklet_init(&sc->intr_tq, ath9k_tasklet, (unsigned long)sc);
 	tasklet_init(&sc->bcon_tasklet, ath_beacon_tasklet,
@@ -1582,7 +1583,8 @@ void ath_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw)
 		IEEE80211_HW_SIGNAL_DBM |
 		IEEE80211_HW_AMPDU_AGGREGATION |
 		IEEE80211_HW_SUPPORTS_PS |
-		IEEE80211_HW_PS_NULLFUNC_STACK;
+		IEEE80211_HW_PS_NULLFUNC_STACK |
+		IEEE80211_HW_SPECTRUM_MGMT;
 
 	if (AR_SREV_9160_10_OR_LATER(sc->sc_ah) || modparam_nohwcrypt)
 		hw->flags |= IEEE80211_HW_MFP_CAPABLE;
@@ -1670,7 +1672,7 @@ int ath_attach(u16 devid, struct ath_softc *sc)
 	}
 	wiphy_apply_custom_regulatory(hw->wiphy, regd);
 	ath9k_reg_apply_radar_flags(hw->wiphy);
-	ath9k_reg_apply_world_flags(hw->wiphy, REGDOM_SET_BY_INIT);
+	ath9k_reg_apply_world_flags(hw->wiphy, NL80211_REGDOM_SET_BY_DRIVER);
 
 	INIT_WORK(&sc->chan_work, ath9k_wiphy_chan_work);
 	INIT_DELAYED_WORK(&sc->wiphy_work, ath9k_wiphy_work);
@@ -2785,6 +2787,35 @@ struct ieee80211_ops ath9k_ops = {
 	.sw_scan_start      = ath9k_sw_scan_start,
 	.sw_scan_complete   = ath9k_sw_scan_complete,
 };
+
+int ath9k_cpu_callback(struct notifier_block *nfb,
+		       unsigned long action, void *hcpu)
+{
+	struct ath_softc *sc = container_of(nfb, struct ath_softc, cpu_notifer);
+	int old_serial_mode;
+
+	old_serial_mode = sc->sc_ah->config.serialize_regmode;
+
+	switch (action) {
+	case CPU_ONLINE:
+	case CPU_ONLINE_FROZEN:
+		ath9k_hw_config_for_cpus(sc->sc_ah);
+		break;
+	case CPU_DEAD:
+	case CPU_DEAD_FROZEN:
+		ath9k_hw_config_for_cpus(sc->sc_ah);
+		break;
+	}
+
+	if (unlikely(old_serial_mode != sc->sc_ah->config.serialize_regmode)) {
+		DPRINTF(sc, ATH_DBG_RESET,
+			"serialize_regmode has changed due to CPU "
+			"count to %d\n",
+			sc->sc_ah->config.serialize_regmode);
+	}
+
+	return NOTIFY_OK;
+}
 
 static struct {
 	u32 version;

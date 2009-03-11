@@ -16,6 +16,7 @@
 
 #include <linux/io.h>
 #include <asm/unaligned.h>
+#include <linux/cpu.h>
 
 #include "ath9k.h"
 #include "initvals.h"
@@ -36,6 +37,38 @@ static u32 ath9k_hw_ini_fixup(struct ath_hw *ah,
 			      u32 reg, u32 value);
 static void ath9k_hw_9280_spur_mitigate(struct ath_hw *ah, struct ath9k_channel *chan);
 static void ath9k_hw_spur_mitigate(struct ath_hw *ah, struct ath9k_channel *chan);
+
+/*
+ * Read and write, they both share the same lock. We do this to serialize
+ * reads and writes on Atheros 802.11n PCI devices only. This is required
+ * as the FIFO on these devices can only accept sanely 2 requests. After
+ * that the device goes bananas. Serializing the reads/writes prevents this
+ * from happening.
+ */
+
+void ath9k_iowrite32(struct ath_hw *ah, u32 reg_offset, u32 val)
+{
+	if (ah->config.serialize_regmode == SER_REG_MODE_ON) {
+		unsigned long flags;
+		spin_lock_irqsave(&ah->ah_sc->sc_serial_rw, flags);
+		iowrite32(val, ah->ah_sc->mem + reg_offset);
+		spin_unlock_irqrestore(&ah->ah_sc->sc_serial_rw, flags);
+	} else
+		iowrite32(val, ah->ah_sc->mem + reg_offset);
+}
+
+unsigned int ath9k_ioread32(struct ath_hw *ah, u32 reg_offset)
+{
+	u32 val;
+	if (ah->config.serialize_regmode == SER_REG_MODE_ON) {
+		unsigned long flags;
+		spin_lock_irqsave(&ah->ah_sc->sc_serial_rw, flags);
+		val = ioread32(ah->ah_sc->mem + reg_offset);
+		spin_unlock_irqrestore(&ah->ah_sc->sc_serial_rw, flags);
+	} else
+		val = ioread32(ah->ah_sc->mem + reg_offset);
+	return val;
+}
 
 /********************/
 /* Helper Functions */
@@ -353,6 +386,35 @@ static const char *ath9k_hw_devname(u16 devid)
 	return NULL;
 }
 
+/*
+ * We can slap on to here things we need to tune depending
+ * on the number of CPUs. This will happen on CPU hotplug
+ * which is also used for suspend/resume.
+ */
+void ath9k_hw_config_for_cpus(struct ath_hw *ah)
+{
+	/*
+	 * We need this for PCI devices only (Cardbus, PCI, miniPCI)
+	 * _and_ if on non-uniprocessor systems (Multiprocessor/HT).
+	 * This means we use it for all AR5416 devices, and the few
+	 * minor PCI AR9280 devices out there.
+	 *
+	 * Serialization is required because these devices do not handle
+	 * well the case of two concurrent reads/writes due to the latency
+	 * involved. During one read/write another read/write can be issued
+	 * on another CPU while the previous read/write may still be working
+	 * on our hardware, if we hit this case the hardware poops in a loop.
+	 * We prevent this by serializing reads and writes.
+	 *
+	 * This issue is not present on PCI-Express devices or pre-AR5416
+	 * devices (legacy, 802.11abg).
+	 */
+	if (num_present_cpus() > 1)
+		ah->config.serialize_regmode = SER_REG_MODE_AUTO;
+	else
+		ah->config.serialize_regmode = SER_REG_MODE_OFF;
+}
+
 static void ath9k_hw_set_defaults(struct ath_hw *ah)
 {
 	int i;
@@ -391,6 +453,8 @@ static void ath9k_hw_set_defaults(struct ath_hw *ah)
 	}
 
 	ah->config.intr_mitigation = 1;
+
+	ath9k_hw_config_for_cpus(ah);
 }
 
 static struct ath_hw *ath9k_hw_newstate(u16 devid, struct ath_softc *sc,
@@ -609,8 +673,15 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 		goto bad;
 	}
 
+	/*
+	 * All PCI devices should be put here.
+	 * XXX: remove ah->is_pciexpress and use pdev->is_pcie, then
+	 * we can just check for !pdev->is_pcie here, but
+	 * consideration must be taken for handling AHB as well.
+	 */
 	if (ah->config.serialize_regmode == SER_REG_MODE_AUTO) {
-		if (ah->hw_version.macVersion == AR_SREV_VERSION_5416_PCI) {
+		if (ah->hw_version.macVersion == AR_SREV_VERSION_5416_PCI ||
+		    (AR_SREV_9280(ah) && !ah->is_pciexpress)) {
 			ah->config.serialize_regmode =
 				SER_REG_MODE_ON;
 		} else {
@@ -662,16 +733,9 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 		ah->supp_cals = ADC_GAIN_CAL | ADC_DC_CAL | IQ_MISMATCH_CAL;
 	}
 
-	if (AR_SREV_9160(ah)) {
-		ah->config.enable_ani = 1;
-		ah->ani_function = (ATH9K_ANI_SPUR_IMMUNITY_LEVEL |
-					ATH9K_ANI_FIRSTEP_LEVEL);
-	} else {
-		ah->ani_function = ATH9K_ANI_ALL;
-		if (AR_SREV_9280_10_OR_LATER(ah)) {
-			ah->ani_function &=	~ATH9K_ANI_NOISE_IMMUNITY_LEVEL;
-		}
-	}
+	ah->ani_function = ATH9K_ANI_ALL;
+	if (AR_SREV_9280_10_OR_LATER(ah))
+		ah->ani_function &= ~ATH9K_ANI_NOISE_IMMUNITY_LEVEL;
 
 	DPRINTF(sc, ATH_DBG_RESET,
 		"This Mac Chip Rev 0x%02x.%x is \n",
