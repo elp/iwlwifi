@@ -22,7 +22,6 @@
 #include <net/mac80211.h>
 #include <linux/leds.h>
 #include <linux/rfkill.h>
-#include <linux/cpu.h>
 
 #include "hw.h"
 #include "rc.h"
@@ -555,9 +554,6 @@ struct ath_bus_ops {
 
 struct ath_wiphy;
 
-int ath9k_cpu_callback(struct notifier_block *nfb,
-		       unsigned long action, void *hcpu);
-
 struct ath_softc {
 	struct ieee80211_hw *hw;
 	struct device *dev;
@@ -577,16 +573,12 @@ struct ath_softc {
 	unsigned long wiphy_scheduler_int;
 	int wiphy_scheduler_index;
 
-	/* This should or _needs_ to be __cpuinit (?) */
-	struct notifier_block cpu_notifer;
-
 	struct tasklet_struct intr_tq;
 	struct tasklet_struct bcon_tasklet;
 	struct ath_hw *sc_ah;
 	void __iomem *mem;
 	int irq;
 	spinlock_t sc_resetlock;
-	spinlock_t sc_serial_rw;
 	struct mutex mutex;
 
 	u8 curbssid[ETH_ALEN];
