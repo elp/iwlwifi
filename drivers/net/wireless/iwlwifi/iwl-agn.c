@@ -2566,6 +2566,7 @@ static void iwl_mac_update_tkip_key(struct ieee80211_hw *hw,
 
 	IWL_DEBUG_MAC80211(priv, "leave\n");
 }
+
 static int iwl_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			   struct ieee80211_vif *vif,
 			   struct ieee80211_sta *sta,
