@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008 Atheros Communications Inc.
+ * Copyright (c) 2008-2009 Atheros Communications Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -940,18 +940,25 @@ static void ath_led_blink_work(struct work_struct *work)
 
 	if (!(sc->sc_flags & SC_OP_LED_ASSOCIATED))
 		return;
-	ath9k_hw_set_gpio(sc->sc_ah, ATH_LED_PIN,
-			  (sc->sc_flags & SC_OP_LED_ON) ? 1 : 0);
+
+	if ((sc->led_on_duration == ATH_LED_ON_DURATION_IDLE) ||
+	    (sc->led_off_duration == ATH_LED_OFF_DURATION_IDLE))
+		ath9k_hw_set_gpio(sc->sc_ah, ATH_LED_PIN, 0);
+	else
+		ath9k_hw_set_gpio(sc->sc_ah, ATH_LED_PIN,
+				  (sc->sc_flags & SC_OP_LED_ON) ? 1 : 0);
 
 	queue_delayed_work(sc->hw->workqueue, &sc->ath_led_blink_work,
 			   (sc->sc_flags & SC_OP_LED_ON) ?
 			   msecs_to_jiffies(sc->led_off_duration) :
 			   msecs_to_jiffies(sc->led_on_duration));
 
-	sc->led_on_duration =
-			max((ATH_LED_ON_DURATION_IDLE - sc->led_on_cnt), 25);
-	sc->led_off_duration =
-			max((ATH_LED_OFF_DURATION_IDLE - sc->led_off_cnt), 10);
+	sc->led_on_duration = sc->led_on_cnt ?
+			max((ATH_LED_ON_DURATION_IDLE - sc->led_on_cnt), 25) :
+			ATH_LED_ON_DURATION_IDLE;
+	sc->led_off_duration = sc->led_off_cnt ?
+			max((ATH_LED_OFF_DURATION_IDLE - sc->led_off_cnt), 10) :
+			ATH_LED_OFF_DURATION_IDLE;
 	sc->led_on_cnt = sc->led_off_cnt = 0;
 	if (sc->sc_flags & SC_OP_LED_ON)
 		sc->sc_flags &= ~SC_OP_LED_ON;
@@ -1370,6 +1377,7 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 
 	spin_lock_init(&sc->wiphy_lock);
 	spin_lock_init(&sc->sc_resetlock);
+	spin_lock_init(&sc->sc_serial_rw);
 	mutex_init(&sc->mutex);
 	tasklet_init(&sc->intr_tq, ath9k_tasklet, (unsigned long)sc);
 	tasklet_init(&sc->bcon_tasklet, ath_beacon_tasklet,

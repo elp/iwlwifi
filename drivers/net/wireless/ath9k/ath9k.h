@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008 Atheros Communications Inc.
+ * Copyright (c) 2008-2009 Atheros Communications Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -390,6 +390,7 @@ void ath_tx_aggr_resume(struct ath_softc *sc, struct ieee80211_sta *sta, u16 tid
 
 struct ath_vif {
 	int av_bslot;
+	__le64 tsf_adjust; /* TSF adjustment for staggered beacons */
 	enum nl80211_iftype av_opmode;
 	struct ath_buf *av_bcbuf;
 	struct ath_tx_control av_btxctl;
@@ -406,7 +407,7 @@ struct ath_vif {
  * number of beacon intervals, the game's up.
  */
 #define BSTUCK_THRESH           	(9 * ATH_BCBUF)
-#define	ATH_BCBUF               	1
+#define	ATH_BCBUF               	4
 #define ATH_DEFAULT_BINTVAL     	100 /* TU */
 #define ATH_DEFAULT_BMISS_LIMIT 	10
 #define IEEE80211_MS_TO_TU(x)           (((x) * 1000) / 1024)
@@ -579,6 +580,7 @@ struct ath_softc {
 	void __iomem *mem;
 	int irq;
 	spinlock_t sc_resetlock;
+	spinlock_t sc_serial_rw;
 	struct mutex mutex;
 
 	u8 curbssid[ETH_ALEN];
@@ -708,7 +710,6 @@ static inline void ath9k_ps_restore(struct ath_softc *sc)
 					  sc->sc_ah->restore_mode);
 }
 
-
 void ath9k_set_bssid_mask(struct ieee80211_hw *hw);
 int ath9k_wiphy_add(struct ath_softc *sc);
 int ath9k_wiphy_del(struct ath_wiphy *aphy);
@@ -723,5 +724,37 @@ void ath9k_wiphy_pause_all_forced(struct ath_softc *sc,
 				  struct ath_wiphy *selected);
 bool ath9k_wiphy_scanning(struct ath_softc *sc);
 void ath9k_wiphy_work(struct work_struct *work);
+
+/*
+ * Read and write, they both share the same lock. We do this to serialize
+ * reads and writes on Atheros 802.11n PCI devices only. This is required
+ * as the FIFO on these devices can only accept sanely 2 requests. After
+ * that the device goes bananas. Serializing the reads/writes prevents this
+ * from happening.
+ */
+
+static inline void ath9k_iowrite32(struct ath_hw *ah, u32 reg_offset, u32 val)
+{
+	if (ah->config.serialize_regmode == SER_REG_MODE_ON) {
+		unsigned long flags;
+		spin_lock_irqsave(&ah->ah_sc->sc_serial_rw, flags);
+		iowrite32(val, ah->ah_sc->mem + reg_offset);
+		spin_unlock_irqrestore(&ah->ah_sc->sc_serial_rw, flags);
+	} else
+		iowrite32(val, ah->ah_sc->mem + reg_offset);
+}
+
+static inline unsigned int ath9k_ioread32(struct ath_hw *ah, u32 reg_offset)
+{
+	u32 val;
+	if (ah->config.serialize_regmode == SER_REG_MODE_ON) {
+		unsigned long flags;
+		spin_lock_irqsave(&ah->ah_sc->sc_serial_rw, flags);
+		val = ioread32(ah->ah_sc->mem + reg_offset);
+		spin_unlock_irqrestore(&ah->ah_sc->sc_serial_rw, flags);
+	} else
+		val = ioread32(ah->ah_sc->mem + reg_offset);
+	return val;
+}
 
 #endif /* ATH9K_H */
