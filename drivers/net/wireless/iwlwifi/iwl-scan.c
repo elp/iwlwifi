@@ -462,9 +462,8 @@ int iwl_mac_hw_scan(struct ieee80211_hw *hw,
 	spin_lock_irqsave(&priv->lock, flags);
 
 	if (!iwl_is_ready_rf(priv)) {
-		ret = 0;
+		ret = -EIO;
 		IWL_DEBUG_MAC80211(priv, "leave - not ready or exit pending\n");
-		queue_work(priv->workqueue, &priv->scan_completed);
 		goto out_unlock;
 	}
 
