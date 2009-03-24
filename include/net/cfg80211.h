@@ -471,26 +471,6 @@ struct ieee80211_txq_params {
 	u8 aifs;
 };
 
-/**
- * struct mgmt_extra_ie_params - Extra management frame IE parameters
- *
- * Used to add extra IE(s) into management frames. If the driver cannot add the
- * requested data into all management frames of the specified subtype that are
- * generated in kernel or firmware/hardware, it must reject the configuration
- * call. The IE data buffer is added to the end of the specified management
- * frame body after all other IEs. This addition is not applied to frames that
- * are injected through a monitor interface.
- *
- * @subtype: Management frame subtype
- * @ies: IE data buffer or %NULL to remove previous data
- * @ies_len: Length of @ies in octets
- */
-struct mgmt_extra_ie_params {
-	u8 subtype;
-	u8 *ies;
-	int ies_len;
-};
-
 /* from net/wireless.h */
 struct wiphy;
 
@@ -559,6 +539,7 @@ enum cfg80211_signal_type {
  *	is no guarantee that these are well-formed!)
  * @len_information_elements: total length of the information elements
  * @signal: signal strength value (type depends on the wiphy's signal_type)
+ * @hold: BSS should not expire
  * @free_priv: function pointer to free private data
  * @priv: private area for driver use, has at least wiphy->bss_priv_size bytes
  */
@@ -743,8 +724,6 @@ struct cfg80211_disassoc_request {
  *
  * @set_channel: Set channel
  *
- * @set_mgmt_extra_ie: Set extra IE data for management frames
- *
  * @scan: Request to do a scan. If returning zero, the scan request is given
  *	the driver, and will be valid until passed to cfg80211_scan_done().
  *	For scan results, call cfg80211_inform_bss(); you can call this outside
@@ -827,10 +806,6 @@ struct cfg80211_ops {
 	int	(*set_channel)(struct wiphy *wiphy,
 			       struct ieee80211_channel *chan,
 			       enum nl80211_channel_type channel_type);
-
-	int	(*set_mgmt_extra_ie)(struct wiphy *wiphy,
-				     struct net_device *dev,
-				     struct mgmt_extra_ie_params *params);
 
 	int	(*scan)(struct wiphy *wiphy, struct net_device *dev,
 			struct cfg80211_scan_request *request);
@@ -965,5 +940,22 @@ void cfg80211_send_rx_deauth(struct net_device *dev, const u8 *buf,
  */
 void cfg80211_send_rx_disassoc(struct net_device *dev, const u8 *buf,
 			       size_t len);
+
+/**
+ * cfg80211_hold_bss - exclude bss from expiration
+ * @bss: bss which should not expire
+ *
+ * In a case when the BSS is not updated but it shouldn't expire this
+ * function can be used to mark the BSS to be excluded from expiration.
+ */
+void cfg80211_hold_bss(struct cfg80211_bss *bss);
+
+/**
+ * cfg80211_unhold_bss - remove expiration exception from the BSS
+ * @bss: bss which can expire again
+ *
+ * This function marks the BSS to be expirable again.
+ */
+void cfg80211_unhold_bss(struct cfg80211_bss *bss);
 
 #endif /* __NET_CFG80211_H */

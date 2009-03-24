@@ -215,16 +215,9 @@ static int nl80211_send_wiphy(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 				NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_NO_IBSS);
 			if (chan->flags & IEEE80211_CHAN_RADAR)
 				NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_RADAR);
-			if (chan->flags & IEEE80211_CHAN_NO_HT40)
-				NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_NO_HT40);
-			if (chan->flags & IEEE80211_CHAN_NO_HT40MINUS)
-				NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_NO_HT40MINUS);
-			if (chan->flags & IEEE80211_CHAN_NO_HT40PLUS)
-				NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_NO_HT40PLUS);
+
 			NLA_PUT_U32(msg, NL80211_FREQUENCY_ATTR_MAX_TX_POWER,
 				    DBM_TO_MBM(chan->max_power));
-			NLA_PUT_U32(msg, NL80211_FREQUENCY_ATTR_MAX_BANDWIDTH,
-				    chan->max_bandwidth);
 
 			nla_nest_end(msg, nl_freq);
 		}
@@ -278,7 +271,6 @@ static int nl80211_send_wiphy(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 	CMD(add_mpath, NEW_MPATH);
 	CMD(set_mesh_params, SET_MESH_PARAMS);
 	CMD(change_bss, SET_BSS);
-	CMD(set_mgmt_extra_ie, SET_MGMT_EXTRA_IE);
 	CMD(auth, AUTHENTICATE);
 	CMD(assoc, ASSOCIATE);
 	CMD(deauth, DEAUTHENTICATE);
@@ -443,24 +435,6 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		/* Primary channel not allowed */
 		if (!chan || chan->flags & IEEE80211_CHAN_DISABLED)
 			goto bad_res;
-
-		if (channel_type == NL80211_CHAN_HT40MINUS ||
-		    channel_type == NL80211_CHAN_HT40PLUS)
-			if (chan->flags & IEEE80211_CHAN_NO_HT40)
-				goto bad_res;
-
-		if (channel_type == NL80211_CHAN_HT40MINUS &&
-		    (chan->flags & IEEE80211_CHAN_NO_HT40MINUS))
-			goto bad_res;
-		else if (channel_type == NL80211_CHAN_HT40PLUS &&
-			 (chan->flags & IEEE80211_CHAN_NO_HT40PLUS))
-			goto bad_res;
-
-		/*
-		 * At this point we know if that if HT40 was requested
-		 * we are allowed to use it and the extension channel
-		 * exists.
-		 */
 
 		if (channel_type == NL80211_CHAN_HT40MINUS)
 			sec_freq = freq - 20;
@@ -635,6 +609,7 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 	enum nl80211_iftype type;
 	struct net_device *dev;
 	u32 _flags, *flags = NULL;
+	bool change = false;
 
 	memset(&params, 0, sizeof(params));
 
@@ -648,11 +623,17 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 	type = dev->ieee80211_ptr->iftype;
 	dev_put(dev);
 
-	err = -EINVAL;
 	if (info->attrs[NL80211_ATTR_IFTYPE]) {
-		type = nla_get_u32(info->attrs[NL80211_ATTR_IFTYPE]);
-		if (type > NL80211_IFTYPE_MAX)
+		enum nl80211_iftype ntype;
+
+		ntype = nla_get_u32(info->attrs[NL80211_ATTR_IFTYPE]);
+		if (type != ntype)
+			change = true;
+		type = ntype;
+		if (type > NL80211_IFTYPE_MAX) {
+			err = -EINVAL;
 			goto unlock;
+		}
 	}
 
 	if (!drv->ops->change_virtual_intf ||
@@ -668,6 +649,7 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 		}
 		params.mesh_id = nla_data(info->attrs[NL80211_ATTR_MESH_ID]);
 		params.mesh_id_len = nla_len(info->attrs[NL80211_ATTR_MESH_ID]);
+		change = true;
 	}
 
 	if (info->attrs[NL80211_ATTR_MNTR_FLAGS]) {
@@ -677,12 +659,18 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 		}
 		err = parse_monitor_flags(info->attrs[NL80211_ATTR_MNTR_FLAGS],
 					  &_flags);
-		if (!err)
-			flags = &_flags;
+		if (err)
+			goto unlock;
+
+		flags = &_flags;
+		change = true;
 	}
 
-	err = drv->ops->change_virtual_intf(&drv->wiphy, ifindex,
-					    type, flags, &params);
+	if (change)
+		err = drv->ops->change_virtual_intf(&drv->wiphy, ifindex,
+						    type, flags, &params);
+	else
+		err = 0;
 
 	dev = __dev_get_by_index(&init_net, ifindex);
 	WARN_ON(!dev || (!err && dev->ieee80211_ptr->iftype != type));
@@ -1077,6 +1065,11 @@ static int nl80211_addset_beacon(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		goto unlock_rtnl;
 
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
 	switch (info->genlhdr->cmd) {
 	case NL80211_CMD_NEW_BEACON:
 		/* these are required for NEW_BEACON */
@@ -1164,6 +1157,10 @@ static int nl80211_del_beacon(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
 	err = drv->ops->del_beacon(&drv->wiphy, dev);
 
  out:
@@ -1352,7 +1349,7 @@ static int nl80211_dump_station(struct sk_buff *skb,
 	}
 
 	if (!dev->ops->dump_station) {
-		err = -ENOSYS;
+		err = -EOPNOTSUPP;
 		goto out_err;
 	}
 
@@ -1584,6 +1581,11 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
+	if (!netif_running(dev)) {
+		err = -ENETDOWN;
+		goto out;
+	}
+
 	err = drv->ops->add_station(&drv->wiphy, dev, mac_addr, &params);
 
  out:
@@ -1721,8 +1723,13 @@ static int nl80211_dump_mpath(struct sk_buff *skb,
 	}
 
 	if (!dev->ops->dump_mpath) {
-		err = -ENOSYS;
+		err = -EOPNOTSUPP;
 		goto out_err;
+	}
+
+	if (netdev->ieee80211_ptr->iftype != NL80211_IFTYPE_MESH_POINT) {
+		err = -EOPNOTSUPP;
+		goto out;
 	}
 
 	while (1) {
@@ -1782,6 +1789,11 @@ static int nl80211_get_mpath(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_MESH_POINT) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
 	err = drv->ops->get_mpath(&drv->wiphy, dev, dst, next_hop, &pinfo);
 	if (err)
 		goto out;
@@ -1836,6 +1848,16 @@ static int nl80211_set_mpath(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_MESH_POINT) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (!netif_running(dev)) {
+		err = -ENETDOWN;
+		goto out;
+	}
+
 	err = drv->ops->change_mpath(&drv->wiphy, dev, dst, next_hop);
 
  out:
@@ -1871,6 +1893,16 @@ static int nl80211_new_mpath(struct sk_buff *skb, struct genl_info *info)
 
 	if (!drv->ops->add_mpath) {
 		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_MESH_POINT) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (!netif_running(dev)) {
+		err = -ENETDOWN;
 		goto out;
 	}
 
@@ -1953,6 +1985,11 @@ static int nl80211_set_bss(struct sk_buff *skb, struct genl_info *info)
 		goto out_rtnl;
 
 	if (!drv->ops->change_bss) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP) {
 		err = -EOPNOTSUPP;
 		goto out;
 	}
@@ -2066,6 +2103,11 @@ static int nl80211_get_mesh_params(struct sk_buff *skb,
 	if (err)
 		goto out_rtnl;
 
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_MESH_POINT) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
 	/* Get the mesh params */
 	err = drv->ops->get_mesh_params(&drv->wiphy, dev, &cur_params);
 	if (err)
@@ -2178,6 +2220,11 @@ static int nl80211_set_mesh_params(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		goto out_rtnl;
 
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_MESH_POINT) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
 	/* This makes sure that there aren't more than 32 mesh config
 	 * parameters (otherwise our bitfield scheme would not work.) */
 	BUILD_BUG_ON(NL80211_MESHCONF_ATTR_MAX > 32);
@@ -2220,6 +2267,7 @@ static int nl80211_set_mesh_params(struct sk_buff *skb, struct genl_info *info)
 	/* Apply changes */
 	err = drv->ops->set_mesh_params(&drv->wiphy, dev, &cfg, mask);
 
+ out:
 	/* cleanup */
 	cfg80211_put_dev(drv);
 	dev_put(dev);
@@ -2371,46 +2419,6 @@ static int nl80211_set_reg(struct sk_buff *skb, struct genl_info *info)
 	return -EINVAL;
 }
 
-static int nl80211_set_mgmt_extra_ie(struct sk_buff *skb,
-				     struct genl_info *info)
-{
-	struct cfg80211_registered_device *drv;
-	int err;
-	struct net_device *dev;
-	struct mgmt_extra_ie_params params;
-
-	memset(&params, 0, sizeof(params));
-
-	if (!info->attrs[NL80211_ATTR_MGMT_SUBTYPE])
-		return -EINVAL;
-	params.subtype = nla_get_u8(info->attrs[NL80211_ATTR_MGMT_SUBTYPE]);
-	if (params.subtype > 15)
-		return -EINVAL; /* FC Subtype field is 4 bits (0..15) */
-
-	if (info->attrs[NL80211_ATTR_IE]) {
-		params.ies = nla_data(info->attrs[NL80211_ATTR_IE]);
-		params.ies_len = nla_len(info->attrs[NL80211_ATTR_IE]);
-	}
-
-	rtnl_lock();
-
-	err = get_drv_dev_by_info_ifindex(info->attrs, &drv, &dev);
-	if (err)
-		goto out_rtnl;
-
-	if (drv->ops->set_mgmt_extra_ie)
-		err = drv->ops->set_mgmt_extra_ie(&drv->wiphy, dev, &params);
-	else
-		err = -EOPNOTSUPP;
-
-	cfg80211_put_dev(drv);
-	dev_put(dev);
- out_rtnl:
-	rtnl_unlock();
-
-	return err;
-}
-
 static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *drv;
@@ -2434,6 +2442,11 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 
 	if (!drv->ops->scan) {
 		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (!netif_running(dev)) {
+		err = -ENETDOWN;
 		goto out;
 	}
 
@@ -2671,6 +2684,14 @@ static int nl80211_dump_scan(struct sk_buff *skb,
 	return err;
 }
 
+static bool nl80211_valid_auth_type(enum nl80211_auth_type auth_type)
+{
+	return auth_type == NL80211_AUTHTYPE_OPEN_SYSTEM ||
+		auth_type == NL80211_AUTHTYPE_SHARED_KEY ||
+		auth_type == NL80211_AUTHTYPE_FT ||
+		auth_type == NL80211_AUTHTYPE_NETWORK_EAP;
+}
+
 static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *drv;
@@ -2687,6 +2708,16 @@ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 
 	if (!drv->ops->auth) {
 		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_STATION) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (!netif_running(dev)) {
+		err = -ENETDOWN;
 		goto out;
 	}
 
@@ -2723,6 +2754,10 @@ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 	if (info->attrs[NL80211_ATTR_AUTH_TYPE]) {
 		req.auth_type =
 			nla_get_u32(info->attrs[NL80211_ATTR_AUTH_TYPE]);
+		if (!nl80211_valid_auth_type(req.auth_type)) {
+			err = -EINVAL;
+			goto out;
+		}
 	}
 
 	err = drv->ops->auth(&drv->wiphy, dev, &req);
@@ -2754,6 +2789,16 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_STATION) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (!netif_running(dev)) {
+		err = -ENETDOWN;
+		goto out;
+	}
+
 	if (!info->attrs[NL80211_ATTR_MAC] ||
 	    !info->attrs[NL80211_ATTR_SSID]) {
 		err = -EINVAL;
@@ -2775,10 +2820,6 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	if (nla_len(info->attrs[NL80211_ATTR_SSID]) > IEEE80211_MAX_SSID_LEN) {
-		err = -EINVAL;
-		goto out;
-	}
 	req.ssid = nla_data(info->attrs[NL80211_ATTR_SSID]);
 	req.ssid_len = nla_len(info->attrs[NL80211_ATTR_SSID]);
 
@@ -2816,6 +2857,16 @@ static int nl80211_deauthenticate(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_STATION) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (!netif_running(dev)) {
+		err = -ENETDOWN;
+		goto out;
+	}
+
 	if (!info->attrs[NL80211_ATTR_MAC]) {
 		err = -EINVAL;
 		goto out;
@@ -2826,9 +2877,15 @@ static int nl80211_deauthenticate(struct sk_buff *skb, struct genl_info *info)
 
 	req.peer_addr = nla_data(info->attrs[NL80211_ATTR_MAC]);
 
-	if (info->attrs[NL80211_ATTR_REASON_CODE])
+	if (info->attrs[NL80211_ATTR_REASON_CODE]) {
 		req.reason_code =
 			nla_get_u16(info->attrs[NL80211_ATTR_REASON_CODE]);
+		if (req.reason_code == 0) {
+			/* Reason Code 0 is reserved */
+			err = -EINVAL;
+			goto out;
+		}
+	}
 
 	if (info->attrs[NL80211_ATTR_IE]) {
 		req.ie = nla_data(info->attrs[NL80211_ATTR_IE]);
@@ -2864,6 +2921,16 @@ static int nl80211_disassociate(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
+	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_STATION) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (!netif_running(dev)) {
+		err = -ENETDOWN;
+		goto out;
+	}
+
 	if (!info->attrs[NL80211_ATTR_MAC]) {
 		err = -EINVAL;
 		goto out;
@@ -2874,9 +2941,15 @@ static int nl80211_disassociate(struct sk_buff *skb, struct genl_info *info)
 
 	req.peer_addr = nla_data(info->attrs[NL80211_ATTR_MAC]);
 
-	if (info->attrs[NL80211_ATTR_REASON_CODE])
+	if (info->attrs[NL80211_ATTR_REASON_CODE]) {
 		req.reason_code =
 			nla_get_u16(info->attrs[NL80211_ATTR_REASON_CODE]);
+		if (req.reason_code == 0) {
+			/* Reason Code 0 is reserved */
+			err = -EINVAL;
+			goto out;
+		}
+	}
 
 	if (info->attrs[NL80211_ATTR_IE]) {
 		req.ie = nla_data(info->attrs[NL80211_ATTR_IE]);
@@ -3056,12 +3129,6 @@ static struct genl_ops nl80211_ops[] = {
 	{
 		.cmd = NL80211_CMD_SET_MESH_PARAMS,
 		.doit = nl80211_set_mesh_params,
-		.policy = nl80211_policy,
-		.flags = GENL_ADMIN_PERM,
-	},
-	{
-		.cmd = NL80211_CMD_SET_MGMT_EXTRA_IE,
-		.doit = nl80211_set_mgmt_extra_ie,
 		.policy = nl80211_policy,
 		.flags = GENL_ADMIN_PERM,
 	},

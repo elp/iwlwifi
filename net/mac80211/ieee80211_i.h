@@ -247,8 +247,9 @@ struct mesh_preq_queue {
 #define IEEE80211_STA_ASSOCIATED	BIT(4)
 #define IEEE80211_STA_PROBEREQ_POLL	BIT(5)
 #define IEEE80211_STA_CREATE_IBSS	BIT(6)
-#define IEEE80211_STA_MIXED_CELL	BIT(7)
+/* hole at 7, please re-use */
 #define IEEE80211_STA_WMM_ENABLED	BIT(8)
+/* hole at 9, please re-use */
 #define IEEE80211_STA_AUTO_SSID_SEL	BIT(10)
 #define IEEE80211_STA_AUTO_BSSID_SEL	BIT(11)
 #define IEEE80211_STA_AUTO_CHANNEL_SEL	BIT(12)
@@ -274,6 +275,7 @@ struct ieee80211_if_managed {
 	struct timer_list chswitch_timer;
 	struct work_struct work;
 	struct work_struct chswitch_work;
+	struct work_struct beacon_loss_work;
 
 	u8 bssid[ETH_ALEN], prev_bssid[ETH_ALEN];
 
@@ -307,6 +309,7 @@ struct ieee80211_if_managed {
 	unsigned long request;
 
 	unsigned long last_probe;
+	unsigned long last_beacon;
 
 	unsigned int flags;
 
@@ -323,21 +326,6 @@ struct ieee80211_if_managed {
 	int wmm_last_param_set;
 
 	/* Extra IE data for management frames */
-	u8 *ie_probereq;
-	size_t ie_probereq_len;
-	u8 *ie_proberesp;
-	size_t ie_proberesp_len;
-	u8 *ie_auth;
-	size_t ie_auth_len;
-	u8 *ie_assocreq;
-	size_t ie_assocreq_len;
-	u8 *ie_reassocreq;
-	size_t ie_reassocreq_len;
-	u8 *ie_deauth;
-	size_t ie_deauth_len;
-	u8 *ie_disassoc;
-	size_t ie_disassoc_len;
-
 	u8 *sme_auth_ie;
 	size_t sme_auth_ie_len;
 };
@@ -426,7 +414,6 @@ struct ieee80211_if_mesh {
  *
  * @IEEE80211_SDATA_ALLMULTI: interface wants all multicast packets
  * @IEEE80211_SDATA_PROMISC: interface is promisc
- * @IEEE80211_SDATA_USERSPACE_MLME: userspace MLME is active
  * @IEEE80211_SDATA_OPERATING_GMODE: operating in G-only mode
  * @IEEE80211_SDATA_DONT_BRIDGE_PACKETS: bridge packets between
  *	associated stations and deliver multicast frames both
@@ -435,9 +422,8 @@ struct ieee80211_if_mesh {
 enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_ALLMULTI		= BIT(0),
 	IEEE80211_SDATA_PROMISC			= BIT(1),
-	IEEE80211_SDATA_USERSPACE_MLME		= BIT(2),
-	IEEE80211_SDATA_OPERATING_GMODE		= BIT(3),
-	IEEE80211_SDATA_DONT_BRIDGE_PACKETS	= BIT(4),
+	IEEE80211_SDATA_OPERATING_GMODE		= BIT(2),
+	IEEE80211_SDATA_DONT_BRIDGE_PACKETS	= BIT(3),
 };
 
 struct ieee80211_sub_if_data {
@@ -780,6 +766,7 @@ struct ieee80211_local {
 		struct dentry *total_ps_buffered;
 		struct dentry *wep_iv;
 		struct dentry *tsf;
+		struct dentry *reset;
 		struct dentry *statistics;
 		struct local_debugfsdentries_statsdentries {
 			struct dentry *transmitted_fragment_count;
@@ -1059,8 +1046,19 @@ void ieee80211_handle_pwr_constr(struct ieee80211_sub_if_data *sdata,
 				 u8 pwr_constr_elem_len);
 
 /* Suspend/resume */
+#ifdef CONFIG_PM
 int __ieee80211_suspend(struct ieee80211_hw *hw);
 int __ieee80211_resume(struct ieee80211_hw *hw);
+#else
+static inline int __ieee80211_suspend(struct ieee80211_hw *hw)
+{
+	return 0;
+}
+static inline int __ieee80211_resume(struct ieee80211_hw *hw)
+{
+	return 0;
+}
+#endif
 
 /* utility functions/constants */
 extern void *mac80211_wiphy_privid; /* for wiphy privid */
@@ -1087,6 +1085,9 @@ void ieee80211_dynamic_ps_timer(unsigned long data);
 void ieee80211_send_nullfunc(struct ieee80211_local *local,
 			     struct ieee80211_sub_if_data *sdata,
 			     int powersave);
+void ieee80211_sta_rx_notify(struct ieee80211_sub_if_data *sdata,
+			     struct ieee80211_hdr *hdr);
+void ieee80211_beacon_loss_work(struct work_struct *work);
 
 void ieee80211_wake_queues_by_reason(struct ieee80211_hw *hw,
 				     enum queue_stop_reason reason);
