@@ -93,12 +93,9 @@ struct ieee80211_ht_bss_info {
  * enum ieee80211_max_queues - maximum number of queues
  *
  * @IEEE80211_MAX_QUEUES: Maximum number of regular device queues.
- * @IEEE80211_MAX_AMPDU_QUEUES: Maximum number of queues usable
- *	for A-MPDU operation.
  */
 enum ieee80211_max_queues {
 	IEEE80211_MAX_QUEUES =		4,
-	IEEE80211_MAX_AMPDU_QUEUES =	16,
 };
 
 /**
@@ -248,6 +245,9 @@ struct ieee80211_bss_conf {
  * @IEEE80211_TX_INTFL_RCALGO: mac80211 internal flag, do not test or
  *	set this flag in the driver; indicates that the rate control
  *	algorithm was used and should be notified of TX status
+ * @IEEE80211_TX_INTFL_NEED_TXPROCESSING: completely internal to mac80211,
+ *	used to indicate that a pending frame requires TX processing before
+ *	it can be sent out.
  */
 enum mac80211_tx_control_flags {
 	IEEE80211_TX_CTL_REQ_TX_STATUS		= BIT(0),
@@ -264,6 +264,7 @@ enum mac80211_tx_control_flags {
 	IEEE80211_TX_STAT_AMPDU_NO_BACK		= BIT(11),
 	IEEE80211_TX_CTL_RATE_CTRL_PROBE	= BIT(12),
 	IEEE80211_TX_INTFL_RCALGO		= BIT(13),
+	IEEE80211_TX_INTFL_NEED_TXPROCESSING	= BIT(14),
 };
 
 /**
@@ -948,12 +949,6 @@ enum ieee80211_hw_flags {
  *	data packets. WMM/QoS requires at least four, these
  *	queues need to have configurable access parameters.
  *
- * @ampdu_queues: number of available hardware transmit queues
- *	for A-MPDU packets, these have no access parameters
- *	because they're used only for A-MPDU frames. Note that
- *	mac80211 will not currently use any of the regular queues
- *	for aggregation.
- *
  * @rate_control_algorithm: rate control algorithm for this hardware.
  *	If unset (NULL), the default algorithm will be used. Must be
  *	set before calling ieee80211_register_hw().
@@ -978,7 +973,6 @@ struct ieee80211_hw {
 	int vif_data_size;
 	int sta_data_size;
 	u16 queues;
-	u16 ampdu_queues;
 	u16 max_listen_interval;
 	s8 max_signal;
 	u8 max_rates;
@@ -1236,14 +1230,14 @@ enum ieee80211_filter_flags {
  * @IEEE80211_AMPDU_RX_STOP: stop Rx aggregation
  * @IEEE80211_AMPDU_TX_START: start Tx aggregation
  * @IEEE80211_AMPDU_TX_STOP: stop Tx aggregation
- * @IEEE80211_AMPDU_TX_RESUME: resume TX aggregation
+ * @IEEE80211_AMPDU_TX_OPERATIONAL: TX aggregation has become operational
  */
 enum ieee80211_ampdu_mlme_action {
 	IEEE80211_AMPDU_RX_START,
 	IEEE80211_AMPDU_RX_STOP,
 	IEEE80211_AMPDU_TX_START,
 	IEEE80211_AMPDU_TX_STOP,
-	IEEE80211_AMPDU_TX_RESUME,
+	IEEE80211_AMPDU_TX_OPERATIONAL,
 };
 
 /**
@@ -1368,8 +1362,8 @@ enum ieee80211_ampdu_mlme_action {
  * @get_tx_stats: Get statistics of the current TX queue status. This is used
  *	to get number of currently queued packets (queue length), maximum queue
  *	size (limit), and total number of packets sent using each TX queue
- *	(count). The 'stats' pointer points to an array that has hw->queues +
- *	hw->ampdu_queues items.
+ *	(count). The 'stats' pointer points to an array that has hw->queues
+ *	items.
  *
  * @get_tsf: Get the current TSF timer value from firmware/hardware. Currently,
  *	this is only used for IBSS mode BSSID merging and debugging. Is not a

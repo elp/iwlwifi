@@ -73,11 +73,13 @@ enum ieee80211_sta_info_flags {
  * struct tid_ampdu_tx - TID aggregation information (Tx).
  *
  * @addba_resp_timer: timer for peer's response to addba request
+ * @pending: pending frames queue -- use sta's spinlock to protect
  * @ssn: Starting Sequence Number expected to be aggregated.
  * @dialog_token: dialog token for aggregation session
  */
 struct tid_ampdu_tx {
 	struct timer_list addba_resp_timer;
+	struct sk_buff_head pending;
 	u16 ssn;
 	u8 dialog_token;
 };
@@ -204,7 +206,6 @@ struct sta_ampdu_mlme {
  * @tid_seq: per-TID sequence numbers for sending to this STA
  * @ampdu_mlme: A-MPDU state machine state
  * @timer_to_tid: identity mapping to ID timers
- * @tid_to_tx_q: map tid to tx queue (invalid == negative values)
  * @llid: Local link ID
  * @plid: Peer link ID
  * @reason: Cancel reason on PLINK_HOLDING state
@@ -279,7 +280,6 @@ struct sta_info {
 	 */
 	struct sta_ampdu_mlme ampdu_mlme;
 	u8 timer_to_tid[STA_TID_NUM];
-	s8 tid_to_tx_q[STA_TID_NUM];
 
 #ifdef CONFIG_MAC80211_MESH
 	/*

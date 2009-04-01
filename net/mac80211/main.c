@@ -774,13 +774,10 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 	setup_timer(&local->dynamic_ps_timer,
 		    ieee80211_dynamic_ps_timer, (unsigned long) local);
 
-	for (i = 0; i < IEEE80211_MAX_AMPDU_QUEUES; i++)
-		local->ampdu_ac_queue[i] = -1;
-	/* using an s8 won't work with more than that */
-	BUILD_BUG_ON(IEEE80211_MAX_AMPDU_QUEUES > 127);
-
 	sta_info_init(local);
 
+	for (i = 0; i < IEEE80211_MAX_QUEUES; i++)
+		skb_queue_head_init(&local->pending[i]);
 	tasklet_init(&local->tx_pending_tasklet, ieee80211_tx_pending,
 		     (unsigned long)local);
 	tasklet_disable(&local->tx_pending_tasklet);
@@ -792,6 +789,8 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 
 	skb_queue_head_init(&local->skb_queue);
 	skb_queue_head_init(&local->skb_queue_unreliable);
+
+	spin_lock_init(&local->ampdu_lock);
 
 	return local_to_hw(local);
 }
@@ -870,10 +869,6 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	 */
 	if (hw->queues > IEEE80211_MAX_QUEUES)
 		hw->queues = IEEE80211_MAX_QUEUES;
-	if (hw->ampdu_queues > IEEE80211_MAX_AMPDU_QUEUES)
-		hw->ampdu_queues = IEEE80211_MAX_AMPDU_QUEUES;
-	if (hw->queues < 4)
-		hw->ampdu_queues = 0;
 
 	mdev = alloc_netdev_mq(sizeof(struct ieee80211_master_priv),
 			       "wmaster%d", ieee80211_master_setup,

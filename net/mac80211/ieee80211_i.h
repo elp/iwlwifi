@@ -149,11 +149,6 @@ struct ieee80211_tx_data {
 
 	struct ieee80211_channel *channel;
 
-	/* Extra fragments (in addition to the first fragment
-	 * in skb) */
-	struct sk_buff **extra_frag;
-	int num_extra_frag;
-
 	u16 ethertype;
 	unsigned int flags;
 };
@@ -187,12 +182,6 @@ struct ieee80211_rx_data {
 	int queue;
 	u32 tkip_iv32;
 	u16 tkip_iv16;
-};
-
-struct ieee80211_tx_stored_packet {
-	struct sk_buff *skb;
-	struct sk_buff **extra_frag;
-	int num_extra_frag;
 };
 
 struct beacon_data {
@@ -590,6 +579,7 @@ enum queue_stop_reason {
 	IEEE80211_QUEUE_STOP_REASON_CSA,
 	IEEE80211_QUEUE_STOP_REASON_AGGREGATION,
 	IEEE80211_QUEUE_STOP_REASON_SUSPEND,
+	IEEE80211_QUEUE_STOP_REASON_PENDING,
 };
 
 struct ieee80211_master_priv {
@@ -604,12 +594,7 @@ struct ieee80211_local {
 
 	const struct ieee80211_ops *ops;
 
-	/* AC queue corresponding to each AMPDU queue */
-	s8 ampdu_ac_queue[IEEE80211_MAX_AMPDU_QUEUES];
-	unsigned int amdpu_ac_stop_refcnt[IEEE80211_MAX_AMPDU_QUEUES];
-
-	unsigned long queue_stop_reasons[IEEE80211_MAX_QUEUES +
-					 IEEE80211_MAX_AMPDU_QUEUES];
+	unsigned long queue_stop_reasons[IEEE80211_MAX_QUEUES];
 	/* also used to protect ampdu_ac_queue and amdpu_ac_stop_refcnt */
 	spinlock_t queue_stop_reason_lock;
 
@@ -646,10 +631,16 @@ struct ieee80211_local {
 	struct sta_info *sta_hash[STA_HASH_SIZE];
 	struct timer_list sta_cleanup;
 
-	unsigned long queues_pending[BITS_TO_LONGS(IEEE80211_MAX_QUEUES)];
-	unsigned long queues_pending_run[BITS_TO_LONGS(IEEE80211_MAX_QUEUES)];
-	struct ieee80211_tx_stored_packet pending_packet[IEEE80211_MAX_QUEUES];
+	struct sk_buff_head pending[IEEE80211_MAX_QUEUES];
 	struct tasklet_struct tx_pending_tasklet;
+
+	/*
+	 * This lock is used to prevent concurrent A-MPDU
+	 * session start/stop processing, this thus also
+	 * synchronises the ->ampdu_action() callback to
+	 * drivers and limits it to one at a time.
+	 */
+	spinlock_t ampdu_lock;
 
 	/* number of interfaces with corresponding IFF_ flags */
 	atomic_t iff_allmultis, iff_promiscs;
