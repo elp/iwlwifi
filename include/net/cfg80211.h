@@ -10,7 +10,6 @@
 #include <net/iw_handler.h>
 #include <net/genetlink.h>
 /* remove once we remove the wext stuff */
-#include <net/iw_handler.h>
 
 /*
  * 802.11 configuration in-kernel interface
@@ -504,7 +503,7 @@ struct cfg80211_scan_request {
 	int n_ssids;
 	struct ieee80211_channel **channels;
 	u32 n_channels;
-	u8 *ie;
+	const u8 *ie;
 	size_t ie_len;
 
 	/* internal */
@@ -918,28 +917,28 @@ void cfg80211_send_rx_auth(struct net_device *dev, const u8 *buf, size_t len);
 void cfg80211_send_rx_assoc(struct net_device *dev, const u8 *buf, size_t len);
 
 /**
- * cfg80211_send_rx_deauth - notification of processed deauthentication
+ * cfg80211_send_deauth - notification of processed deauthentication
  * @dev: network device
  * @buf: deauthentication frame (header + body)
  * @len: length of the frame data
  *
  * This function is called whenever deauthentication has been processed in
- * station mode.
+ * station mode. This includes both received deauthentication frames and
+ * locally generated ones.
  */
-void cfg80211_send_rx_deauth(struct net_device *dev, const u8 *buf,
-			     size_t len);
+void cfg80211_send_deauth(struct net_device *dev, const u8 *buf, size_t len);
 
 /**
- * cfg80211_send_rx_disassoc - notification of processed disassociation
+ * cfg80211_send_disassoc - notification of processed disassociation
  * @dev: network device
  * @buf: disassociation response frame (header + body)
  * @len: length of the frame data
  *
  * This function is called whenever disassociation has been processed in
- * station mode.
+ * station mode. This includes both received disassociation frames and locally
+ * generated ones.
  */
-void cfg80211_send_rx_disassoc(struct net_device *dev, const u8 *buf,
-			       size_t len);
+void cfg80211_send_disassoc(struct net_device *dev, const u8 *buf, size_t len);
 
 /**
  * cfg80211_hold_bss - exclude bss from expiration
@@ -957,5 +956,21 @@ void cfg80211_hold_bss(struct cfg80211_bss *bss);
  * This function marks the BSS to be expirable again.
  */
 void cfg80211_unhold_bss(struct cfg80211_bss *bss);
+
+/**
+ * cfg80211_michael_mic_failure - notification of Michael MIC failure (TKIP)
+ * @dev: network device
+ * @addr: The source MAC address of the frame
+ * @key_type: The key type that the received frame used
+ * @key_id: Key identifier (0..3)
+ * @tsc: The TSC value of the frame that generated the MIC failure (6 octets)
+ *
+ * This function is called whenever the local MAC detects a MIC failure in a
+ * received frame. This matches with MLME-MICHAELMICFAILURE.indication()
+ * primitive.
+ */
+void cfg80211_michael_mic_failure(struct net_device *dev, const u8 *addr,
+				  enum nl80211_key_type key_type, int key_id,
+				  const u8 *tsc);
 
 #endif /* __NET_CFG80211_H */

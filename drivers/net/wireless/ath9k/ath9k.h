@@ -70,7 +70,6 @@ struct ath_config {
 	u32 ath_aggr_prot;
 	u16 txpowlimit;
 	u8 cabqReadytime;
-	u8 swBeaconProcess;
 };
 
 /*************************/
@@ -78,11 +77,15 @@ struct ath_config {
 /*************************/
 
 #define ATH_TXBUF_RESET(_bf) do {				\
-		(_bf)->bf_status = 0;				\
+		(_bf)->bf_stale = false;			\
 		(_bf)->bf_lastbf = NULL;			\
 		(_bf)->bf_next = NULL;				\
 		memset(&((_bf)->bf_state), 0,			\
 		       sizeof(struct ath_buf_state));		\
+	} while (0)
+
+#define ATH_RXBUF_RESET(_bf) do {		\
+		(_bf)->bf_stale = false;	\
 	} while (0)
 
 /**
@@ -110,7 +113,7 @@ struct ath_buf_state {
 	int bfs_seqno;
 	int bfs_tidno;
 	int bfs_retries;
-	u32 bf_type;
+	u8 bf_type;
 	u32 bfs_keyix;
 	enum ath9k_key_type bfs_keytype;
 };
@@ -134,26 +137,21 @@ struct ath_buf {
 	struct ath_buf *bf_lastbf;	/* last buf of this unit (a frame or
 					   an aggregate) */
 	struct ath_buf *bf_next;	/* next subframe in the aggregate */
-	void *bf_mpdu;			/* enclosing frame structure */
+	struct sk_buff *bf_mpdu;	/* enclosing frame structure */
 	struct ath_desc *bf_desc;	/* virtual addr of desc */
 	dma_addr_t bf_daddr;		/* physical addr of desc */
 	dma_addr_t bf_buf_addr;		/* physical addr of data buffer */
-	u32 bf_status;
+	bool bf_stale;
 	u16 bf_flags;
 	struct ath_buf_state bf_state;
 	dma_addr_t bf_dmacontext;
 };
 
-#define ATH_RXBUF_RESET(_bf)    ((_bf)->bf_status = 0)
-#define ATH_BUFSTATUS_STALE     0x00000002
-
 struct ath_descdma {
-	const char *dd_name;
 	struct ath_desc *dd_desc;
 	dma_addr_t dd_desc_paddr;
 	u32 dd_desc_len;
 	struct ath_buf *dd_bufptr;
-	dma_addr_t dd_dmacontext;
 };
 
 int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
@@ -299,26 +297,6 @@ struct ath_tx_control {
 #define ATH_TX_XRETRY       0x02
 #define ATH_TX_BAR          0x04
 
-/* All RSSI values are noise floor adjusted */
-struct ath_tx_stat {
-	int rssi;
-	int rssictl[ATH_MAX_ANTENNA];
-	int rssiextn[ATH_MAX_ANTENNA];
-	int rateieee;
-	int rateKbps;
-	int ratecode;
-	int flags;
-	u32 airtime;	/* time on air per final tx rate */
-};
-
-struct aggr_rifs_param {
-	int param_max_frames;
-	int param_max_len;
-	int param_rl;
-	int param_al;
-	struct ath_rc_series *param_rcs;
-};
-
 struct ath_node {
 	struct ath_softc *an_sc;
 	struct ath_atx_tid tid[WME_NUM_TID];
@@ -366,7 +344,7 @@ void ath_tx_node_init(struct ath_softc *sc, struct ath_node *an);
 void ath_tx_node_cleanup(struct ath_softc *sc, struct ath_node *an);
 void ath_txq_schedule(struct ath_softc *sc, struct ath_txq *txq);
 int ath_tx_init(struct ath_softc *sc, int nbufs);
-int ath_tx_cleanup(struct ath_softc *sc);
+void ath_tx_cleanup(struct ath_softc *sc);
 struct ath_txq *ath_test_get_txq(struct ath_softc *sc, struct sk_buff *skb);
 int ath_txq_update(struct ath_softc *sc, int qnum,
 		   struct ath9k_tx_queue_info *q);
@@ -529,19 +507,18 @@ struct ath_rfkill {
 #define SC_OP_BEACONS           BIT(1)
 #define SC_OP_RXAGGR            BIT(2)
 #define SC_OP_TXAGGR            BIT(3)
-#define SC_OP_CHAINMASK_UPDATE  BIT(4)
-#define SC_OP_FULL_RESET        BIT(5)
-#define SC_OP_PREAMBLE_SHORT    BIT(6)
-#define SC_OP_PROTECT_ENABLE    BIT(7)
-#define SC_OP_RXFLUSH           BIT(8)
-#define SC_OP_LED_ASSOCIATED    BIT(9)
-#define SC_OP_RFKILL_REGISTERED BIT(10)
-#define SC_OP_RFKILL_SW_BLOCKED BIT(11)
-#define SC_OP_RFKILL_HW_BLOCKED BIT(12)
-#define SC_OP_WAIT_FOR_BEACON   BIT(13)
-#define SC_OP_LED_ON            BIT(14)
-#define SC_OP_SCANNING          BIT(15)
-#define SC_OP_TSF_RESET         BIT(16)
+#define SC_OP_FULL_RESET        BIT(4)
+#define SC_OP_PREAMBLE_SHORT    BIT(5)
+#define SC_OP_PROTECT_ENABLE    BIT(6)
+#define SC_OP_RXFLUSH           BIT(7)
+#define SC_OP_LED_ASSOCIATED    BIT(8)
+#define SC_OP_RFKILL_REGISTERED BIT(9)
+#define SC_OP_RFKILL_SW_BLOCKED BIT(10)
+#define SC_OP_RFKILL_HW_BLOCKED BIT(11)
+#define SC_OP_WAIT_FOR_BEACON   BIT(12)
+#define SC_OP_LED_ON            BIT(13)
+#define SC_OP_SCANNING          BIT(14)
+#define SC_OP_TSF_RESET         BIT(15)
 
 struct ath_bus_ops {
 	void		(*read_cachesize)(struct ath_softc *sc, int *csz);
@@ -705,6 +682,7 @@ static inline void ath9k_ps_restore(struct ath_softc *sc)
 			ath9k_hw_setpower(sc->sc_ah,
 					  sc->sc_ah->restore_mode);
 }
+
 
 void ath9k_set_bssid_mask(struct ieee80211_hw *hw);
 int ath9k_wiphy_add(struct ath_softc *sc);

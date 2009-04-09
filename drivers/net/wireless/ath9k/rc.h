@@ -24,7 +24,6 @@ struct ath_softc;
 #define ATH_RATE_MAX     30
 #define RATE_TABLE_SIZE  64
 #define MAX_TX_RATE_PHY  48
-#define WLAN_CTRL_FRAME_SIZE (2+2+6+4)
 
 /* VALID_ALL - valid for 20/40/Legacy,
  * VALID - Legacy only,
@@ -158,7 +157,6 @@ struct ath_rateset {
  * @probe_interval: interval for ratectrl to probe for other rates
  * @prev_data_rix: rate idx of last data frame
  * @ht_cap: HT capabilities
- * @single_stream: When TRUE, only single TX stream possible
  * @neg_rates: Negotatied rates
  * @neg_ht_rates: Negotiated HT rates
  */
@@ -176,10 +174,8 @@ struct ath_rate_priv {
 	u8 max_valid_rate;
 	u8 valid_rate_index[RATE_TABLE_SIZE];
 	u8 ht_cap;
-	u8 single_stream;
 	u8 valid_phy_ratecnt[WLAN_RC_PHY_MAX];
 	u8 valid_phy_rateidx[WLAN_RC_PHY_MAX][RATE_TABLE_SIZE];
-	u8 rc_phy_mode;
 	u8 rate_max_phy;
 	u32 rssi_time;
 	u32 rssi_down_time;

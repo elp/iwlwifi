@@ -51,6 +51,11 @@ struct ieee80211_local;
  * increased memory use (about 2 kB of RAM per entry). */
 #define IEEE80211_FRAGMENT_MAX 4
 
+/* cfg80211 only supports 32 rates */
+#define MAC80211_PREQ_IE_LEN	( 2 + 32 /* SSID */\
+				+ 4 + 32 /* (ext) supp rates */\
+				+ sizeof(struct ieee80211_ht_cap))
+
 /*
  * Time after which we ignore scan results and no longer report/use
  * them in any way.
@@ -671,6 +676,8 @@ struct ieee80211_local {
 	struct cfg80211_scan_request int_scan_req;
 	struct cfg80211_scan_request *scan_req;
 	struct ieee80211_channel *scan_channel;
+	const u8 *orig_ies;
+	int orig_ies_len;
 	int scan_channel_idx;
 
 	enum { SCAN_SET_CHANNEL, SCAN_SEND_PROBE } scan_state;
@@ -995,9 +1002,6 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb, struct net_device *dev);
 void ieee80211_ht_cap_ie_to_sta_ht_cap(struct ieee80211_supported_band *sband,
 				       struct ieee80211_ht_cap *ht_cap_ie,
 				       struct ieee80211_sta_ht_cap *ht_cap);
-u32 ieee80211_enable_ht(struct ieee80211_sub_if_data *sdata,
-			struct ieee80211_ht_info *hti,
-			u16 ap_ht_cap_flags);
 void ieee80211_send_bar(struct ieee80211_sub_if_data *sdata, u8 *ra, u16 tid, u16 ssn);
 void ieee80211_send_delba(struct ieee80211_sub_if_data *sdata,
 			  const u8 *da, u16 tid,
@@ -1060,7 +1064,7 @@ u8 *ieee80211_get_bssid(struct ieee80211_hdr *hdr, size_t len,
 int ieee80211_frame_duration(struct ieee80211_local *local, size_t len,
 			     int rate, int erp, int short_preamble);
 void mac80211_ev_michael_mic_failure(struct ieee80211_sub_if_data *sdata, int keyidx,
-				     struct ieee80211_hdr *hdr);
+				     struct ieee80211_hdr *hdr, const u8 *tsc);
 void ieee80211_set_wmm_default(struct ieee80211_sub_if_data *sdata);
 void ieee80211_tx_skb(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 		      int encrypt);
@@ -1093,9 +1097,11 @@ void ieee80211_send_auth(struct ieee80211_sub_if_data *sdata,
 			 u16 transaction, u16 auth_alg,
 			 u8 *extra, size_t extra_len,
 			 const u8 *bssid, int encrypt);
+int ieee80211_build_preq_ies(struct ieee80211_local *local, u8 *buffer,
+			     const u8 *ie, size_t ie_len);
 void ieee80211_send_probe_req(struct ieee80211_sub_if_data *sdata, u8 *dst,
-			      u8 *ssid, size_t ssid_len,
-			      u8 *ie, size_t ie_len);
+			      const u8 *ssid, size_t ssid_len,
+			      const u8 *ie, size_t ie_len);
 
 void ieee80211_sta_def_wmm_params(struct ieee80211_sub_if_data *sdata,
 				  const size_t supp_rates_len,

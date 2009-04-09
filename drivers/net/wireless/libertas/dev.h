@@ -101,6 +101,7 @@ struct lbs_mesh_stats {
 /** Private structure for the MV device */
 struct lbs_private {
 	int mesh_open;
+	int mesh_fw_ver;
 	int infra_open;
 	int mesh_autostart_enabled;
 
@@ -109,7 +110,6 @@ struct lbs_private {
 	void *card;
 	struct net_device *dev;
 
-	struct net_device_stats stats;
 	struct net_device *mesh_dev; /* Virtual device */
 	struct net_device *rtap_net_dev;
 

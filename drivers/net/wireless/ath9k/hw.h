@@ -124,29 +124,24 @@ enum wireless_mode {
 };
 
 enum ath9k_hw_caps {
-	ATH9K_HW_CAP_CHAN_SPREAD		= BIT(0),
-	ATH9K_HW_CAP_MIC_AESCCM                 = BIT(1),
-	ATH9K_HW_CAP_MIC_CKIP                   = BIT(2),
-	ATH9K_HW_CAP_MIC_TKIP                   = BIT(3),
-	ATH9K_HW_CAP_CIPHER_AESCCM              = BIT(4),
-	ATH9K_HW_CAP_CIPHER_CKIP                = BIT(5),
-	ATH9K_HW_CAP_CIPHER_TKIP                = BIT(6),
-	ATH9K_HW_CAP_VEOL                       = BIT(7),
-	ATH9K_HW_CAP_BSSIDMASK                  = BIT(8),
-	ATH9K_HW_CAP_MCAST_KEYSEARCH            = BIT(9),
-	ATH9K_HW_CAP_CHAN_HALFRATE              = BIT(10),
-	ATH9K_HW_CAP_CHAN_QUARTERRATE           = BIT(11),
-	ATH9K_HW_CAP_HT                         = BIT(12),
-	ATH9K_HW_CAP_GTT                        = BIT(13),
-	ATH9K_HW_CAP_FASTCC                     = BIT(14),
-	ATH9K_HW_CAP_RFSILENT                   = BIT(15),
-	ATH9K_HW_CAP_WOW                        = BIT(16),
-	ATH9K_HW_CAP_CST                        = BIT(17),
-	ATH9K_HW_CAP_ENHANCEDPM                 = BIT(18),
-	ATH9K_HW_CAP_AUTOSLEEP                  = BIT(19),
-	ATH9K_HW_CAP_4KB_SPLITTRANS             = BIT(20),
-	ATH9K_HW_CAP_WOW_MATCHPATTERN_EXACT     = BIT(21),
-	ATH9K_HW_CAP_BT_COEX			= BIT(22)
+	ATH9K_HW_CAP_MIC_AESCCM                 = BIT(0),
+	ATH9K_HW_CAP_MIC_CKIP                   = BIT(1),
+	ATH9K_HW_CAP_MIC_TKIP                   = BIT(2),
+	ATH9K_HW_CAP_CIPHER_AESCCM              = BIT(3),
+	ATH9K_HW_CAP_CIPHER_CKIP                = BIT(4),
+	ATH9K_HW_CAP_CIPHER_TKIP                = BIT(5),
+	ATH9K_HW_CAP_VEOL                       = BIT(6),
+	ATH9K_HW_CAP_BSSIDMASK                  = BIT(7),
+	ATH9K_HW_CAP_MCAST_KEYSEARCH            = BIT(8),
+	ATH9K_HW_CAP_HT                         = BIT(9),
+	ATH9K_HW_CAP_GTT                        = BIT(10),
+	ATH9K_HW_CAP_FASTCC                     = BIT(11),
+	ATH9K_HW_CAP_RFSILENT                   = BIT(12),
+	ATH9K_HW_CAP_CST                        = BIT(13),
+	ATH9K_HW_CAP_ENHANCEDPM                 = BIT(14),
+	ATH9K_HW_CAP_AUTOSLEEP                  = BIT(15),
+	ATH9K_HW_CAP_4KB_SPLITTRANS             = BIT(16),
+	ATH9K_HW_CAP_BT_COEX			= BIT(17)
 };
 
 enum ath9k_capability_type {
@@ -166,7 +161,6 @@ struct ath9k_hw_capabilities {
 	u16 keycache_size;
 	u16 low_5ghz_chan, high_5ghz_chan;
 	u16 low_2ghz_chan, high_2ghz_chan;
-	u16 num_mr_retries;
 	u16 rts_aggr_limit;
 	u8 tx_chainmask;
 	u8 rx_chainmask;
@@ -184,11 +178,8 @@ struct ath9k_ops_config {
 	int ack_6mb;
 	int cwm_ignore_extcca;
 	u8 pcie_powersave_enable;
-	u8 pcie_l1skp_enable;
 	u8 pcie_clock_req;
 	u32 pcie_waen;
-	int pcie_power_reset;
-	u8 pcie_restore;
 	u8 analog_shiftreg;
 	u8 ht_enable;
 	u32 ofdm_trig_low;
@@ -196,17 +187,10 @@ struct ath9k_ops_config {
 	u32 cck_trig_high;
 	u32 cck_trig_low;
 	u32 enable_ani;
-	u8 noise_immunity_level;
-	u32 ofdm_weaksignal_det;
-	u32 cck_weaksignal_thr;
-	u8 spur_immunity_level;
-	u8 firstep_level;
-	int8_t rssi_thr_high;
-	int8_t rssi_thr_low;
 	u16 diversity_control;
 	u16 antenna_switch_swap;
 	int serialize_regmode;
-	int intr_mitigation;
+	bool intr_mitigation;
 #define SPUR_DISABLE        	0
 #define SPUR_ENABLE_IOCTL   	1
 #define SPUR_ENABLE_EEPROM  	2
@@ -540,7 +524,6 @@ struct ath_hw {
 	enum ath9k_ani_cmd ani_function;
 
 	u32 intr_txqs;
-	bool intr_mitigation;
 	enum ath9k_ht_extprotspacing extprotspacing;
 	u8 txchainmask;
 	u8 rxchainmask;
@@ -573,7 +556,7 @@ struct ath_hw *ath9k_hw_attach(u16 devid, struct ath_softc *sc, int *error);
 void ath9k_hw_rfdetach(struct ath_hw *ah);
 int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 		   bool bChannelChange);
-bool ath9k_hw_fill_cap_info(struct ath_hw *ah);
+void ath9k_hw_fill_cap_info(struct ath_hw *ah);
 bool ath9k_hw_getcapability(struct ath_hw *ah, enum ath9k_capability_type type,
 			    u32 capability, u32 *result);
 bool ath9k_hw_setcapability(struct ath_hw *ah, enum ath9k_capability_type type,

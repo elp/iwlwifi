@@ -524,7 +524,7 @@ static u8 ath_rc_init_validrates(struct ath_rate_priv *ath_rc_priv,
 	u32 valid;
 
 	for (i = 0; i < rate_table->rate_cnt; i++) {
-		valid = (ath_rc_priv->single_stream ?
+		valid = (!(ath_rc_priv->ht_cap & WLAN_RC_DS_FLAG) ?
 			 rate_table->info[i].valid_single_stream :
 			 rate_table->info[i].valid);
 		if (valid == 1) {
@@ -557,9 +557,9 @@ static u8 ath_rc_setvalid_rates(struct ath_rate_priv *ath_rc_priv,
 	for (i = 0; i < rateset->rs_nrates; i++) {
 		for (j = 0; j < rate_table->rate_cnt; j++) {
 			u32 phy = rate_table->info[j].phy;
-			u32 valid = (ath_rc_priv->single_stream ?
-				rate_table->info[j].valid_single_stream :
-				rate_table->info[j].valid);
+			u32 valid = (!(ath_rc_priv->ht_cap & WLAN_RC_DS_FLAG) ?
+				     rate_table->info[j].valid_single_stream :
+				     rate_table->info[j].valid);
 			u8 rate = rateset->rs_rates[i];
 			u8 dot11rate = rate_table->info[j].dot11rate;
 
@@ -603,7 +603,7 @@ static u8 ath_rc_setvalid_htrates(struct ath_rate_priv *ath_rc_priv,
 	for (i = 0; i < rateset->rs_nrates; i++) {
 		for (j = 0; j < rate_table->rate_cnt; j++) {
 			u32 phy = rate_table->info[j].phy;
-			u32 valid = (ath_rc_priv->single_stream ?
+			u32 valid = (!(ath_rc_priv->ht_cap & WLAN_RC_DS_FLAG) ?
 				     rate_table->info[j].valid_single_stream :
 				     rate_table->info[j].valid);
 			u8 rate = rateset->rs_rates[i];
@@ -740,9 +740,10 @@ static u8 ath_rc_ratefind_ht(struct ath_softc *sc,
 	if (rate > (ath_rc_priv->rate_table_size - 1))
 		rate = ath_rc_priv->rate_table_size - 1;
 
-	ASSERT((rate_table->info[rate].valid && !ath_rc_priv->single_stream) ||
+	ASSERT((rate_table->info[rate].valid &&
+		(ath_rc_priv->ht_cap & WLAN_RC_DS_FLAG)) ||
 	       (rate_table->info[rate].valid_single_stream &&
-		ath_rc_priv->single_stream));
+		!(ath_rc_priv->ht_cap & WLAN_RC_DS_FLAG)));
 
 	return rate;
 }
@@ -1320,7 +1321,7 @@ static void ath_rc_tx_status(struct ath_softc *sc,
 				 * 40 to 20 => don't update */
 
 				if ((flags & IEEE80211_TX_RC_40_MHZ_WIDTH) &&
-				    (ath_rc_priv->rc_phy_mode != WLAN_RC_40_FLAG))
+				    !(ath_rc_priv->ht_cap & WLAN_RC_40_FLAG))
 					return;
 
 				rix = ath_rc_get_rateindex(rate_table, &rates[i]);
@@ -1345,9 +1346,8 @@ static void ath_rc_tx_status(struct ath_softc *sc,
 
 	/* If HT40 and we have switched mode from 40 to 20 => don't update */
 	if ((flags & IEEE80211_TX_RC_40_MHZ_WIDTH) &&
-	    (ath_rc_priv->rc_phy_mode != WLAN_RC_40_FLAG)) {
+	    !(ath_rc_priv->ht_cap & WLAN_RC_40_FLAG))
 		return;
-	}
 
 	rix = ath_rc_get_rateindex(rate_table, &rates[i]);
 	ath_rc_update_ht(sc, ath_rc_priv, tx_info_priv, rix,
@@ -1420,10 +1420,6 @@ static void ath_rc_init(struct ath_softc *sc,
 			ath_rc_priv->valid_phy_rateidx[i][j] = 0;
 		ath_rc_priv->valid_phy_ratecnt[i] = 0;
 	}
-	ath_rc_priv->rc_phy_mode = ath_rc_priv->ht_cap & WLAN_RC_40_FLAG;
-
-	/* Set stream capability */
-	ath_rc_priv->single_stream = (ath_rc_priv->ht_cap & WLAN_RC_DS_FLAG) ? 0 : 1;
 
 	if (!rateset->rs_nrates) {
 		/* No working rate, just initialize valid rates */

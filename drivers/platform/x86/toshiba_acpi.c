@@ -679,8 +679,6 @@ static acpi_status __init add_device(void)
 					      toshiba_proc_dir,
 					      (read_proc_t *) dispatch_read,
 					      item);
-		if (proc)
-			proc->owner = THIS_MODULE;
 		if (proc && item->write_func)
 			proc->write_proc = (write_proc_t *) dispatch_write;
 	}
@@ -772,7 +770,6 @@ static int __init toshiba_acpi_init(void)
 		toshiba_acpi_exit();
 		return -ENODEV;
 	} else {
-		toshiba_proc_dir->owner = THIS_MODULE;
 		status = add_device();
 		if (ACPI_FAILURE(status)) {
 			toshiba_acpi_exit();
@@ -806,7 +803,6 @@ static int __init toshiba_acpi_init(void)
 
 		toshiba_acpi.rfk_dev->name = toshiba_acpi.bt_name;
 		toshiba_acpi.rfk_dev->toggle_radio = bt_rfkill_toggle_radio;
-		toshiba_acpi.rfk_dev->user_claim_unsupported = 1;
 		toshiba_acpi.rfk_dev->data = &toshiba_acpi;
 
 		if (hci_get_bt_on(&bt_on) == HCI_SUCCESS && bt_on) {

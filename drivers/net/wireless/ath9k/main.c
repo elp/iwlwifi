@@ -287,7 +287,6 @@ int ath_set_channel(struct ath_softc *sc, struct ieee80211_hw *hw,
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
 
-	sc->sc_flags &= ~SC_OP_CHAINMASK_UPDATE;
 	sc->sc_flags &= ~SC_OP_FULL_RESET;
 
 	if (ath_startrecv(sc) != 0) {
@@ -416,7 +415,6 @@ set_timer:
  */
 void ath_update_chainmask(struct ath_softc *sc, int is_ht)
 {
-	sc->sc_flags |= SC_OP_CHAINMASK_UPDATE;
 	if (is_ht ||
 	    (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_BT_COEX)) {
 		sc->tx_chainmask = sc->sc_ah->caps.tx_chainmask;
@@ -436,12 +434,12 @@ static void ath_node_attach(struct ath_softc *sc, struct ieee80211_sta *sta)
 
 	an = (struct ath_node *)sta->drv_priv;
 
-	if (sc->sc_flags & SC_OP_TXAGGR)
+	if (sc->sc_flags & SC_OP_TXAGGR) {
 		ath_tx_node_init(sc, an);
-
-	an->maxampdu = 1 << (IEEE80211_HTCAP_MAXRXAMPDU_FACTOR +
-			     sta->ht_cap.ampdu_factor);
-	an->mpdudensity = parse_mpdudensity(sta->ht_cap.ampdu_density);
+		an->maxampdu = 1 << (IEEE80211_HTCAP_MAXRXAMPDU_FACTOR +
+				     sta->ht_cap.ampdu_factor);
+		an->mpdudensity = parse_mpdudensity(sta->ht_cap.ampdu_density);
+	}
 }
 
 static void ath_node_detach(struct ath_softc *sc, struct ieee80211_sta *sta)
@@ -458,21 +456,18 @@ static void ath9k_tasklet(unsigned long data)
 	u32 status = sc->intrstatus;
 
 	if (status & ATH9K_INT_FATAL) {
-		/* need a chip reset */
 		ath_reset(sc, false);
 		return;
-	} else {
-
-		if (status &
-		    (ATH9K_INT_RX | ATH9K_INT_RXEOL | ATH9K_INT_RXORN)) {
-			spin_lock_bh(&sc->rx.rxflushlock);
-			ath_rx_tasklet(sc, 0);
-			spin_unlock_bh(&sc->rx.rxflushlock);
-		}
-		/* XXX: optimize this */
-		if (status & ATH9K_INT_TX)
-			ath_tx_tasklet(sc);
 	}
+
+	if (status & (ATH9K_INT_RX | ATH9K_INT_RXEOL | ATH9K_INT_RXORN)) {
+		spin_lock_bh(&sc->rx.rxflushlock);
+		ath_rx_tasklet(sc, 0);
+		spin_unlock_bh(&sc->rx.rxflushlock);
+	}
+
+	if (status & ATH9K_INT_TX)
+		ath_tx_tasklet(sc);
 
 	/* re-enable hardware interrupt */
 	ath9k_hw_set_interrupts(sc->sc_ah, sc->imask);
@@ -480,111 +475,105 @@ static void ath9k_tasklet(unsigned long data)
 
 irqreturn_t ath_isr(int irq, void *dev)
 {
+#define SCHED_INTR (				\
+		ATH9K_INT_FATAL |		\
+		ATH9K_INT_RXORN |		\
+		ATH9K_INT_RXEOL |		\
+		ATH9K_INT_RX |			\
+		ATH9K_INT_TX |			\
+		ATH9K_INT_BMISS |		\
+		ATH9K_INT_CST |			\
+		ATH9K_INT_TSFOOR)
+
 	struct ath_softc *sc = dev;
 	struct ath_hw *ah = sc->sc_ah;
 	enum ath9k_int status;
 	bool sched = false;
 
-	do {
-		if (sc->sc_flags & SC_OP_INVALID) {
-			/*
-			 * The hardware is not ready/present, don't
-			 * touch anything. Note this can happen early
-			 * on if the IRQ is shared.
-			 */
-			return IRQ_NONE;
-		}
-		if (!ath9k_hw_intrpend(ah)) {	/* shared irq, not for us */
-			return IRQ_NONE;
-		}
+	/*
+	 * The hardware is not ready/present, don't
+	 * touch anything. Note this can happen early
+	 * on if the IRQ is shared.
+	 */
+	if (sc->sc_flags & SC_OP_INVALID)
+		return IRQ_NONE;
 
-		/*
-		 * Figure out the reason(s) for the interrupt.  Note
-		 * that the hal returns a pseudo-ISR that may include
-		 * bits we haven't explicitly enabled so we mask the
-		 * value to insure we only process bits we requested.
-		 */
-		ath9k_hw_getisr(ah, &status);	/* NB: clears ISR too */
+	ath9k_ps_wakeup(sc);
 
-		status &= sc->imask;	/* discard unasked-for bits */
+	/* shared irq, not for us */
 
-		/*
-		 * If there are no status bits set, then this interrupt was not
-		 * for me (should have been caught above).
-		 */
-		if (!status)
-			return IRQ_NONE;
-
-		sc->intrstatus = status;
-		ath9k_ps_wakeup(sc);
-
-		if (status & ATH9K_INT_FATAL) {
-			/* need a chip reset */
-			sched = true;
-		} else if (status & ATH9K_INT_RXORN) {
-			/* need a chip reset */
-			sched = true;
-		} else {
-			if (status & ATH9K_INT_SWBA) {
-				/* schedule a tasklet for beacon handling */
-				tasklet_schedule(&sc->bcon_tasklet);
-			}
-			if (status & ATH9K_INT_RXEOL) {
-				/*
-				 * NB: the hardware should re-read the link when
-				 *     RXE bit is written, but it doesn't work
-				 *     at least on older hardware revs.
-				 */
-				sched = true;
-			}
-
-			if (status & ATH9K_INT_TXURN)
-				/* bump tx trigger level */
-				ath9k_hw_updatetxtriglevel(ah, true);
-			/* XXX: optimize this */
-			if (status & ATH9K_INT_RX)
-				sched = true;
-			if (status & ATH9K_INT_TX)
-				sched = true;
-			if (status & ATH9K_INT_BMISS)
-				sched = true;
-			/* carrier sense timeout */
-			if (status & ATH9K_INT_CST)
-				sched = true;
-			if (status & ATH9K_INT_MIB) {
-				/*
-				 * Disable interrupts until we service the MIB
-				 * interrupt; otherwise it will continue to
-				 * fire.
-				 */
-				ath9k_hw_set_interrupts(ah, 0);
-				/*
-				 * Let the hal handle the event. We assume
-				 * it will clear whatever condition caused
-				 * the interrupt.
-				 */
-				ath9k_hw_procmibevent(ah, &sc->nodestats);
-				ath9k_hw_set_interrupts(ah, sc->imask);
-			}
-			if (status & ATH9K_INT_TIM_TIMER) {
-				if (!(ah->caps.hw_caps &
-				      ATH9K_HW_CAP_AUTOSLEEP)) {
-					/* Clear RxAbort bit so that we can
-					 * receive frames */
-					ath9k_hw_setpower(ah, ATH9K_PM_AWAKE);
-					ath9k_hw_setrxabort(ah, 0);
-					sched = true;
-					sc->sc_flags |= SC_OP_WAIT_FOR_BEACON;
-				}
-			}
-			if (status & ATH9K_INT_TSFOOR) {
-				/* FIXME: Handle this interrupt for power save */
-				sched = true;
-			}
-		}
+	if (!ath9k_hw_intrpend(ah)) {
 		ath9k_ps_restore(sc);
-	} while (0);
+		return IRQ_NONE;
+	}
 
+	/*
+	 * Figure out the reason(s) for the interrupt.  Note
+	 * that the hal returns a pseudo-ISR that may include
+	 * bits we haven't explicitly enabled so we mask the
+	 * value to insure we only process bits we requested.
+	 */
+	ath9k_hw_getisr(ah, &status);	/* NB: clears ISR too */
+	status &= sc->imask;	/* discard unasked-for bits */
+
+	/*
+	 * If there are no status bits set, then this interrupt was not
+	 * for me (should have been caught above).
+	 */
+	if (!status) {
+		ath9k_ps_restore(sc);
+		return IRQ_NONE;
+	}
+
+	/* Cache the status */
+	sc->intrstatus = status;
+
+	if (status & SCHED_INTR)
+		sched = true;
+
+	/*
+	 * If a FATAL or RXORN interrupt is received, we have to reset the
+	 * chip immediately.
+	 */
+	if (status & (ATH9K_INT_FATAL | ATH9K_INT_RXORN))
+		goto chip_reset;
+
+	if (status & ATH9K_INT_SWBA)
+		tasklet_schedule(&sc->bcon_tasklet);
+
+	if (status & ATH9K_INT_TXURN)
+		ath9k_hw_updatetxtriglevel(ah, true);
+
+	if (status & ATH9K_INT_MIB) {
+		/*
+		 * Disable interrupts until we service the MIB
+		 * interrupt; otherwise it will continue to
+		 * fire.
+		 */
+		ath9k_hw_set_interrupts(ah, 0);
+		/*
+		 * Let the hal handle the event. We assume
+		 * it will clear whatever condition caused
+		 * the interrupt.
+		 */
+		ath9k_hw_procmibevent(ah, &sc->nodestats);
+		ath9k_hw_set_interrupts(ah, sc->imask);
+	}
+
+	if (status & ATH9K_INT_TIM_TIMER) {
+		if (!(ah->caps.hw_caps & ATH9K_HW_CAP_AUTOSLEEP)) {
+			/* Clear RxAbort bit so that we can
+			 * receive frames */
+			ath9k_hw_setpower(ah, ATH9K_PM_AWAKE);
+			ath9k_hw_setrxabort(ah, 0);
+			sched = true;
+			sc->sc_flags |= SC_OP_WAIT_FOR_BEACON;
+		}
+	}
+
+chip_reset:
+
+	ath9k_ps_restore(sc);
 	ath_debug_stat_interrupt(sc, status);
 
 	if (sched) {
@@ -594,6 +583,8 @@ irqreturn_t ath_isr(int irq, void *dev)
 	}
 
 	return IRQ_HANDLED;
+
+#undef SCHED_INTR
 }
 
 static u32 ath_get_extchanmode(struct ath_softc *sc,
@@ -676,7 +667,7 @@ static int ath_setkey_tkip(struct ath_softc *sc, u16 keyix, const u8 *key,
 	memcpy(hk->kv_mic, key_txmic, sizeof(hk->kv_mic));
 	if (!ath9k_hw_set_keycache_entry(sc->sc_ah, keyix, hk, NULL)) {
 		/* TX MIC entry failed. No need to proceed further */
-		DPRINTF(sc, ATH_DBG_KEYCACHE,
+		DPRINTF(sc, ATH_DBG_FATAL,
 			"Setting TX MIC Key Failed\n");
 		return 0;
 	}
@@ -924,7 +915,7 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 		mod_timer(&sc->ani.timer,
 			  jiffies + msecs_to_jiffies(ATH_ANI_POLLINTERVAL));
 	} else {
-		DPRINTF(sc, ATH_DBG_CONFIG, "Bss Info DISSOC\n");
+		DPRINTF(sc, ATH_DBG_CONFIG, "Bss Info DISASSOC\n");
 		sc->curaid = 0;
 	}
 }
@@ -1267,7 +1258,6 @@ static int ath_init_sw_rfkill(struct ath_softc *sc)
 	sc->rf_kill.rfkill->data = sc;
 	sc->rf_kill.rfkill->toggle_radio = ath_sw_toggle_radio;
 	sc->rf_kill.rfkill->state = RFKILL_STATE_UNBLOCKED;
-	sc->rf_kill.rfkill->user_claim_unsupported = 1;
 
 	return 0;
 }
@@ -1403,7 +1393,7 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	/* Get the hardware key cache size. */
 	sc->keymax = ah->caps.keycache_size;
 	if (sc->keymax > ATH_KEYMAX) {
-		DPRINTF(sc, ATH_DBG_KEYCACHE,
+		DPRINTF(sc, ATH_DBG_ANY,
 			"Warning, using only %u entries in %u key cache\n",
 			ATH_KEYMAX, sc->keymax);
 		sc->keymax = ATH_KEYMAX;
@@ -1544,9 +1534,6 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 		sc->beacon.bslot[i] = NULL;
 		sc->beacon.bslot_aphy[i] = NULL;
 	}
-
-	/* save MISC configurations */
-	sc->config.swBeaconProcess = 1;
 
 	/* setup channels and rates */
 
@@ -1792,7 +1779,6 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 		goto fail;
 	}
 
-	dd->dd_name = name;
 	dd->dd_desc_len = sizeof(struct ath_desc) * nbuf * ndesc;
 
 	/*
@@ -1822,7 +1808,7 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 	}
 	ds = dd->dd_desc;
 	DPRINTF(sc, ATH_DBG_CONFIG, "%s DMA map: %p (%u) -> %llx (%u)\n",
-		dd->dd_name, ds, (u32) dd->dd_desc_len,
+		name, ds, (u32) dd->dd_desc_len,
 		ito64(dd->dd_desc_paddr), /*XXX*/(u32) dd->dd_desc_len);
 
 	/* allocate buffers */
@@ -2043,8 +2029,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	 * here except setup the interrupt mask.
 	 */
 	if (ath_startrecv(sc) != 0) {
-		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to start recv logic\n");
+		DPRINTF(sc, ATH_DBG_FATAL, "Unable to start recv logic\n");
 		r = -EIO;
 		goto mutex_unlock;
 	}
@@ -2257,17 +2242,6 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 		sc->imask |= ATH9K_INT_TSFOOR;
 	}
 
-	/*
-	 * Some hardware processes the TIM IE and fires an
-	 * interrupt when the TIM bit is set.  For hardware
-	 * that does, if not overridden by configuration,
-	 * enable the TIM interrupt when operating as station.
-	 */
-	if ((sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_ENHANCEDPM) &&
-	    (conf->type == NL80211_IFTYPE_STATION) &&
-	    !sc->config.swBeaconProcess)
-		sc->imask |= ATH9K_INT_TIM;
-
 	ath9k_hw_set_interrupts(sc->sc_ah, sc->imask);
 
 	if (conf->type == NL80211_IFTYPE_AP) {
@@ -2326,26 +2300,33 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	struct ath_wiphy *aphy = hw->priv;
 	struct ath_softc *sc = aphy->sc;
 	struct ieee80211_conf *conf = &hw->conf;
+	struct ath_hw *ah = sc->sc_ah;
 
 	mutex_lock(&sc->mutex);
 
 	if (changed & IEEE80211_CONF_CHANGE_PS) {
 		if (conf->flags & IEEE80211_CONF_PS) {
-			if ((sc->imask & ATH9K_INT_TIM_TIMER) == 0) {
-				sc->imask |= ATH9K_INT_TIM_TIMER;
-				ath9k_hw_set_interrupts(sc->sc_ah,
-						sc->imask);
+			if (!(ah->caps.hw_caps &
+			      ATH9K_HW_CAP_AUTOSLEEP)) {
+				if ((sc->imask & ATH9K_INT_TIM_TIMER) == 0) {
+					sc->imask |= ATH9K_INT_TIM_TIMER;
+					ath9k_hw_set_interrupts(sc->sc_ah,
+							sc->imask);
+				}
+				ath9k_hw_setrxabort(sc->sc_ah, 1);
 			}
-			ath9k_hw_setrxabort(sc->sc_ah, 1);
 			ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_NETWORK_SLEEP);
 		} else {
 			ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_AWAKE);
-			ath9k_hw_setrxabort(sc->sc_ah, 0);
-			sc->sc_flags &= ~SC_OP_WAIT_FOR_BEACON;
-			if (sc->imask & ATH9K_INT_TIM_TIMER) {
-				sc->imask &= ~ATH9K_INT_TIM_TIMER;
-				ath9k_hw_set_interrupts(sc->sc_ah,
-						sc->imask);
+			if (!(ah->caps.hw_caps &
+			      ATH9K_HW_CAP_AUTOSLEEP)) {
+				ath9k_hw_setrxabort(sc->sc_ah, 0);
+				sc->sc_flags &= ~SC_OP_WAIT_FOR_BEACON;
+				if (sc->imask & ATH9K_INT_TIM_TIMER) {
+					sc->imask &= ~ATH9K_INT_TIM_TIMER;
+					ath9k_hw_set_interrupts(sc->sc_ah,
+							sc->imask);
+				}
 			}
 		}
 	}
@@ -2562,6 +2543,8 @@ static int ath9k_conf_tx(struct ieee80211_hw *hw, u16 queue,
 
 	mutex_lock(&sc->mutex);
 
+	memset(&qi, 0, sizeof(struct ath9k_tx_queue_info));
+
 	qi.tqi_aifs = params->aifs;
 	qi.tqi_cwmin = params->cw_min;
 	qi.tqi_cwmax = params->cw_max;
@@ -2598,7 +2581,7 @@ static int ath9k_set_key(struct ieee80211_hw *hw,
 
 	mutex_lock(&sc->mutex);
 	ath9k_ps_wakeup(sc);
-	DPRINTF(sc, ATH_DBG_KEYCACHE, "Set HW Key\n");
+	DPRINTF(sc, ATH_DBG_CONFIG, "Set HW Key\n");
 
 	switch (cmd) {
 	case SET_KEY:

@@ -118,6 +118,36 @@ static struct nla_policy nl80211_policy[NL80211_ATTR_MAX+1] __read_mostly = {
 	[NL80211_ATTR_REASON_CODE] = { .type = NLA_U16 },
 };
 
+/* IE validation */
+static bool is_valid_ie_attr(const struct nlattr *attr)
+{
+	const u8 *pos;
+	int len;
+
+	if (!attr)
+		return true;
+
+	pos = nla_data(attr);
+	len = nla_len(attr);
+
+	while (len) {
+		u8 elemlen;
+
+		if (len < 2)
+			return false;
+		len -= 2;
+
+		elemlen = pos[1];
+		if (elemlen > len)
+			return false;
+
+		len -= elemlen;
+		pos += 2 + elemlen;
+	}
+
+	return true;
+}
+
 /* message building helper */
 static inline void *nl80211hdr_put(struct sk_buff *skb, u32 pid, u32 seq,
 				   int flags, u8 cmd)
@@ -153,6 +183,8 @@ static int nl80211_send_wiphy(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 	NLA_PUT_STRING(msg, NL80211_ATTR_WIPHY_NAME, wiphy_name(&dev->wiphy));
 	NLA_PUT_U8(msg, NL80211_ATTR_MAX_NUM_SCAN_SSIDS,
 		   dev->wiphy.max_scan_ssids);
+	NLA_PUT_U16(msg, NL80211_ATTR_MAX_SCAN_IE_LEN,
+		    dev->wiphy.max_scan_ie_len);
 
 	nl_modes = nla_nest_start(msg, NL80211_ATTR_SUPPORTED_IFTYPES);
 	if (!nl_modes)
@@ -1070,6 +1102,9 @@ static int nl80211_addset_beacon(struct sk_buff *skb, struct genl_info *info)
 	struct net_device *dev;
 	struct beacon_parameters params;
 	int haveinfo = 0;
+
+	if (!is_valid_ie_attr(info->attrs[NL80211_ATTR_BEACON_TAIL]))
+		return -EINVAL;
 
 	rtnl_lock();
 
@@ -2444,6 +2479,9 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	enum ieee80211_band band;
 	size_t ie_len;
 
+	if (!is_valid_ie_attr(info->attrs[NL80211_ATTR_IE]))
+		return -EINVAL;
+
 	rtnl_lock();
 
 	err = get_drv_dev_by_info_ifindex(info->attrs, &drv, &dev);
@@ -2493,6 +2531,11 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 		ie_len = nla_len(info->attrs[NL80211_ATTR_IE]);
 	else
 		ie_len = 0;
+
+	if (ie_len > wiphy->max_scan_ie_len) {
+		err = -EINVAL;
+		goto out;
+	}
 
 	request = kzalloc(sizeof(*request)
 			+ sizeof(*ssid) * n_ssids
@@ -2556,7 +2599,8 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 
 	if (info->attrs[NL80211_ATTR_IE]) {
 		request->ie_len = nla_len(info->attrs[NL80211_ATTR_IE]);
-		memcpy(request->ie, nla_data(info->attrs[NL80211_ATTR_IE]),
+		memcpy((void *)request->ie,
+		       nla_data(info->attrs[NL80211_ATTR_IE]),
 		       request->ie_len);
 	}
 
@@ -2712,6 +2756,15 @@ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 	struct wiphy *wiphy;
 	int err;
 
+	if (!is_valid_ie_attr(info->attrs[NL80211_ATTR_IE]))
+		return -EINVAL;
+
+	if (!info->attrs[NL80211_ATTR_MAC])
+		return -EINVAL;
+
+	if (!info->attrs[NL80211_ATTR_AUTH_TYPE])
+		return -EINVAL;
+
 	rtnl_lock();
 
 	err = get_drv_dev_by_info_ifindex(info->attrs, &drv, &dev);
@@ -2730,11 +2783,6 @@ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 
 	if (!netif_running(dev)) {
 		err = -ENETDOWN;
-		goto out;
-	}
-
-	if (!info->attrs[NL80211_ATTR_MAC]) {
-		err = -EINVAL;
 		goto out;
 	}
 
@@ -2763,13 +2811,10 @@ static int nl80211_authenticate(struct sk_buff *skb, struct genl_info *info)
 		req.ie_len = nla_len(info->attrs[NL80211_ATTR_IE]);
 	}
 
-	if (info->attrs[NL80211_ATTR_AUTH_TYPE]) {
-		req.auth_type =
-			nla_get_u32(info->attrs[NL80211_ATTR_AUTH_TYPE]);
-		if (!nl80211_valid_auth_type(req.auth_type)) {
-			err = -EINVAL;
-			goto out;
-		}
+	req.auth_type = nla_get_u32(info->attrs[NL80211_ATTR_AUTH_TYPE]);
+	if (!nl80211_valid_auth_type(req.auth_type)) {
+		err = -EINVAL;
+		goto out;
 	}
 
 	err = drv->ops->auth(&drv->wiphy, dev, &req);
@@ -2790,6 +2835,13 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 	struct wiphy *wiphy;
 	int err;
 
+	if (!is_valid_ie_attr(info->attrs[NL80211_ATTR_IE]))
+		return -EINVAL;
+
+	if (!info->attrs[NL80211_ATTR_MAC] ||
+	    !info->attrs[NL80211_ATTR_SSID])
+		return -EINVAL;
+
 	rtnl_lock();
 
 	err = get_drv_dev_by_info_ifindex(info->attrs, &drv, &dev);
@@ -2808,12 +2860,6 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 
 	if (!netif_running(dev)) {
 		err = -ENETDOWN;
-		goto out;
-	}
-
-	if (!info->attrs[NL80211_ATTR_MAC] ||
-	    !info->attrs[NL80211_ATTR_SSID]) {
-		err = -EINVAL;
 		goto out;
 	}
 
@@ -2858,6 +2904,15 @@ static int nl80211_deauthenticate(struct sk_buff *skb, struct genl_info *info)
 	struct wiphy *wiphy;
 	int err;
 
+	if (!is_valid_ie_attr(info->attrs[NL80211_ATTR_IE]))
+		return -EINVAL;
+
+	if (!info->attrs[NL80211_ATTR_MAC])
+		return -EINVAL;
+
+	if (!info->attrs[NL80211_ATTR_REASON_CODE])
+		return -EINVAL;
+
 	rtnl_lock();
 
 	err = get_drv_dev_by_info_ifindex(info->attrs, &drv, &dev);
@@ -2879,24 +2934,16 @@ static int nl80211_deauthenticate(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	if (!info->attrs[NL80211_ATTR_MAC]) {
-		err = -EINVAL;
-		goto out;
-	}
-
 	wiphy = &drv->wiphy;
 	memset(&req, 0, sizeof(req));
 
 	req.peer_addr = nla_data(info->attrs[NL80211_ATTR_MAC]);
 
-	if (info->attrs[NL80211_ATTR_REASON_CODE]) {
-		req.reason_code =
-			nla_get_u16(info->attrs[NL80211_ATTR_REASON_CODE]);
-		if (req.reason_code == 0) {
-			/* Reason Code 0 is reserved */
-			err = -EINVAL;
-			goto out;
-		}
+	req.reason_code = nla_get_u16(info->attrs[NL80211_ATTR_REASON_CODE]);
+	if (req.reason_code == 0) {
+		/* Reason Code 0 is reserved */
+		err = -EINVAL;
+		goto out;
 	}
 
 	if (info->attrs[NL80211_ATTR_IE]) {
@@ -2922,6 +2969,15 @@ static int nl80211_disassociate(struct sk_buff *skb, struct genl_info *info)
 	struct wiphy *wiphy;
 	int err;
 
+	if (!is_valid_ie_attr(info->attrs[NL80211_ATTR_IE]))
+		return -EINVAL;
+
+	if (!info->attrs[NL80211_ATTR_MAC])
+		return -EINVAL;
+
+	if (!info->attrs[NL80211_ATTR_REASON_CODE])
+		return -EINVAL;
+
 	rtnl_lock();
 
 	err = get_drv_dev_by_info_ifindex(info->attrs, &drv, &dev);
@@ -2943,24 +2999,16 @@ static int nl80211_disassociate(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	if (!info->attrs[NL80211_ATTR_MAC]) {
-		err = -EINVAL;
-		goto out;
-	}
-
 	wiphy = &drv->wiphy;
 	memset(&req, 0, sizeof(req));
 
 	req.peer_addr = nla_data(info->attrs[NL80211_ATTR_MAC]);
 
-	if (info->attrs[NL80211_ATTR_REASON_CODE]) {
-		req.reason_code =
-			nla_get_u16(info->attrs[NL80211_ATTR_REASON_CODE]);
-		if (req.reason_code == 0) {
-			/* Reason Code 0 is reserved */
-			err = -EINVAL;
-			goto out;
-		}
+	req.reason_code = nla_get_u16(info->attrs[NL80211_ATTR_REASON_CODE]);
+	if (req.reason_code == 0) {
+		/* Reason Code 0 is reserved */
+		err = -EINVAL;
+		goto out;
 	}
 
 	if (info->attrs[NL80211_ATTR_IE]) {
@@ -3377,20 +3425,59 @@ void nl80211_send_rx_assoc(struct cfg80211_registered_device *rdev,
 	nl80211_send_mlme_event(rdev, netdev, buf, len, NL80211_CMD_ASSOCIATE);
 }
 
-void nl80211_send_rx_deauth(struct cfg80211_registered_device *rdev,
-			    struct net_device *netdev, const u8 *buf,
-			    size_t len)
+void nl80211_send_deauth(struct cfg80211_registered_device *rdev,
+			 struct net_device *netdev, const u8 *buf, size_t len)
 {
 	nl80211_send_mlme_event(rdev, netdev, buf, len,
 				NL80211_CMD_DEAUTHENTICATE);
 }
 
-void nl80211_send_rx_disassoc(struct cfg80211_registered_device *rdev,
-			      struct net_device *netdev, const u8 *buf,
-			      size_t len)
+void nl80211_send_disassoc(struct cfg80211_registered_device *rdev,
+			   struct net_device *netdev, const u8 *buf,
+			   size_t len)
 {
 	nl80211_send_mlme_event(rdev, netdev, buf, len,
 				NL80211_CMD_DISASSOCIATE);
+}
+
+void nl80211_michael_mic_failure(struct cfg80211_registered_device *rdev,
+				 struct net_device *netdev, const u8 *addr,
+				 enum nl80211_key_type key_type, int key_id,
+				 const u8 *tsc)
+{
+	struct sk_buff *msg;
+	void *hdr;
+
+	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	if (!msg)
+		return;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_MICHAEL_MIC_FAILURE);
+	if (!hdr) {
+		nlmsg_free(msg);
+		return;
+	}
+
+	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx);
+	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, netdev->ifindex);
+	if (addr)
+		NLA_PUT(msg, NL80211_ATTR_MAC, ETH_ALEN, addr);
+	NLA_PUT_U32(msg, NL80211_ATTR_KEY_TYPE, key_type);
+	NLA_PUT_U8(msg, NL80211_ATTR_KEY_IDX, key_id);
+	if (tsc)
+		NLA_PUT(msg, NL80211_ATTR_KEY_SEQ, 6, tsc);
+
+	if (genlmsg_end(msg, hdr) < 0) {
+		nlmsg_free(msg);
+		return;
+	}
+
+	genlmsg_multicast(msg, 0, nl80211_mlme_mcgrp.id, GFP_KERNEL);
+	return;
+
+ nla_put_failure:
+	genlmsg_cancel(msg, hdr);
+	nlmsg_free(msg);
 }
 
 /* initialisation/exit functions */

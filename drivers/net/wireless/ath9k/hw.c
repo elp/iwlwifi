@@ -97,7 +97,7 @@ bool ath9k_hw_wait(struct ath_hw *ah, u32 reg, u32 mask, u32 val, u32 timeout)
 		udelay(AH_TIME_QUANTUM);
 	}
 
-	DPRINTF(ah->ah_sc, ATH_DBG_REG_IO,
+	DPRINTF(ah->ah_sc, ATH_DBG_ANY,
 		"timeout (%d us) on reg 0x%x: 0x%08x & 0x%08x != 0x%08x\n",
 		timeout, reg, REG_READ(ah, reg), mask, val);
 
@@ -181,7 +181,7 @@ u16 ath9k_hw_computetxtime(struct ath_hw *ah,
 		}
 		break;
 	default:
-		DPRINTF(ah->ah_sc, ATH_DBG_REG_IO,
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
 			"Unknown phy %u (rate ix %u)\n",
 			rates->info[rateix].phy, rateix);
 		txTime = 0;
@@ -306,7 +306,7 @@ static bool ath9k_hw_chip_test(struct ath_hw *ah)
 			REG_WRITE(ah, addr, wrData);
 			rdData = REG_READ(ah, addr);
 			if (rdData != wrData) {
-				DPRINTF(ah->ah_sc, ATH_DBG_REG_IO,
+				DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
 					"address test failed "
 					"addr: 0x%08x - wr:0x%08x != rd:0x%08x\n",
 					addr, wrData, rdData);
@@ -318,7 +318,7 @@ static bool ath9k_hw_chip_test(struct ath_hw *ah)
 			REG_WRITE(ah, addr, wrData);
 			rdData = REG_READ(ah, addr);
 			if (wrData != rdData) {
-				DPRINTF(ah->ah_sc, ATH_DBG_REG_IO,
+				DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
 					"address test failed "
 					"addr: 0x%08x - wr:0x%08x != rd:0x%08x\n",
 					addr, wrData, rdData);
@@ -363,10 +363,7 @@ static void ath9k_hw_set_defaults(struct ath_hw *ah)
 	ah->config.ack_6mb = 0x0;
 	ah->config.cwm_ignore_extcca = 0;
 	ah->config.pcie_powersave_enable = 0;
-	ah->config.pcie_l1skp_enable = 0;
 	ah->config.pcie_clock_req = 0;
-	ah->config.pcie_power_reset = 0x100;
-	ah->config.pcie_restore = 0;
 	ah->config.pcie_waen = 0;
 	ah->config.analog_shiftreg = 1;
 	ah->config.ht_enable = 1;
@@ -375,13 +372,6 @@ static void ath9k_hw_set_defaults(struct ath_hw *ah)
 	ah->config.cck_trig_high = 200;
 	ah->config.cck_trig_low = 100;
 	ah->config.enable_ani = 1;
-	ah->config.noise_immunity_level = 4;
-	ah->config.ofdm_weaksignal_det = 1;
-	ah->config.cck_weaksignal_thr = 0;
-	ah->config.spur_immunity_level = 2;
-	ah->config.firstep_level = 0;
-	ah->config.rssi_thr_high = 40;
-	ah->config.rssi_thr_low = 7;
 	ah->config.diversity_control = 0;
 	ah->config.antenna_switch_swap = 0;
 
@@ -390,7 +380,7 @@ static void ath9k_hw_set_defaults(struct ath_hw *ah)
 		ah->config.spurchans[i][1] = AR_NO_SPUR;
 	}
 
-	ah->config.intr_mitigation = 1;
+	ah->config.intr_mitigation = true;
 
 	/*
 	 * We need this for PCI devices only (Cardbus, PCI, miniPCI)
@@ -463,8 +453,8 @@ static int ath9k_hw_rfattach(struct ath_hw *ah)
 
 	rfStatus = ath9k_hw_init_rf(ah, &ecode);
 	if (!rfStatus) {
-		DPRINTF(ah->ah_sc, ATH_DBG_RESET,
-			"RF setup failed, status %u\n", ecode);
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+			"RF setup failed, status: %u\n", ecode);
 		return ecode;
 	}
 
@@ -488,10 +478,9 @@ static int ath9k_hw_rf_claim(struct ath_hw *ah)
 	case AR_RAD2122_SREV_MAJOR:
 		break;
 	default:
-		DPRINTF(ah->ah_sc, ATH_DBG_CHANNEL,
-			"5G Radio Chip Rev 0x%02X is not "
-			"supported by this driver\n",
-			ah->hw_version.analog5GhzRev);
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+			"Radio Chip Rev 0x%02X not supported\n",
+			val & AR_RADIO_SREV_MAJOR);
 		return -EOPNOTSUPP;
 	}
 
@@ -513,12 +502,8 @@ static int ath9k_hw_init_macaddr(struct ath_hw *ah)
 		ah->macaddr[2 * i] = eeval >> 8;
 		ah->macaddr[2 * i + 1] = eeval & 0xff;
 	}
-	if (sum == 0 || sum == 0xffff * 3) {
-		DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
-			"mac address read failed: %pM\n",
-			ah->macaddr);
+	if (sum == 0 || sum == 0xffff * 3)
 		return -EADDRNOTAVAIL;
-	}
 
 	return 0;
 }
@@ -575,11 +560,8 @@ static int ath9k_hw_post_attach(struct ath_hw *ah)
 {
 	int ecode;
 
-	if (!ath9k_hw_chip_test(ah)) {
-		DPRINTF(ah->ah_sc, ATH_DBG_REG_IO,
-			"hardware self-test failed\n");
+	if (!ath9k_hw_chip_test(ah))
 		return -ENODEV;
-	}
 
 	ecode = ath9k_hw_rf_claim(ah);
 	if (ecode != 0)
@@ -617,17 +599,14 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 
 	ath9k_hw_set_defaults(ah);
 
-	if (ah->config.intr_mitigation != 0)
-		ah->intr_mitigation = true;
-
 	if (!ath9k_hw_set_reset_reg(ah, ATH9K_RESET_POWER_ON)) {
-		DPRINTF(sc, ATH_DBG_RESET, "Couldn't reset chip\n");
+		DPRINTF(sc, ATH_DBG_FATAL, "Couldn't reset chip\n");
 		ecode = -EIO;
 		goto bad;
 	}
 
 	if (!ath9k_hw_setpower(ah, ATH9K_PM_AWAKE)) {
-		DPRINTF(sc, ATH_DBG_RESET, "Couldn't wakeup chip\n");
+		DPRINTF(sc, ATH_DBG_FATAL, "Couldn't wakeup chip\n");
 		ecode = -EIO;
 		goto bad;
 	}
@@ -650,7 +629,7 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 	    (ah->hw_version.macVersion != AR_SREV_VERSION_5416_PCIE) &&
 	    (ah->hw_version.macVersion != AR_SREV_VERSION_9160) &&
 	    (!AR_SREV_9100(ah)) && (!AR_SREV_9280(ah)) && (!AR_SREV_9285(ah))) {
-		DPRINTF(sc, ATH_DBG_RESET,
+		DPRINTF(sc, ATH_DBG_FATAL,
 			"Mac Chip Rev 0x%02x.%x is not supported by "
 			"this driver\n", ah->hw_version.macVersion,
 			ah->hw_version.macRev);
@@ -689,10 +668,6 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 	ah->ani_function = ATH9K_ANI_ALL;
 	if (AR_SREV_9280_10_OR_LATER(ah))
 		ah->ani_function &= ~ATH9K_ANI_NOISE_IMMUNITY_LEVEL;
-
-	DPRINTF(sc, ATH_DBG_RESET,
-		"This Mac Chip Rev 0x%02x.%x is \n",
-		ah->hw_version.macVersion, ah->hw_version.macRev);
 
 	if (AR_SREV_9285_12_OR_LATER(ah)) {
 
@@ -859,11 +834,7 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 	if (AR_SREV_9280_20(ah))
 		ath9k_hw_init_txgain_ini(ah);
 
-	if (!ath9k_hw_fill_cap_info(ah)) {
-		DPRINTF(sc, ATH_DBG_RESET, "failed ath9k_hw_fill_cap_info\n");
-		ecode = -EINVAL;
-		goto bad;
-	}
+	ath9k_hw_fill_cap_info(ah);
 
 	if ((ah->hw_version.devid == AR9280_DEVID_PCI) &&
 	    test_bit(ATH9K_MODE_11A, ah->caps.wireless_modes)) {
@@ -885,8 +856,8 @@ static struct ath_hw *ath9k_hw_do_attach(u16 devid, struct ath_softc *sc,
 
 	ecode = ath9k_hw_init_macaddr(ah);
 	if (ecode != 0) {
-		DPRINTF(sc, ATH_DBG_RESET,
-			"failed initializing mac address\n");
+		DPRINTF(sc, ATH_DBG_FATAL,
+			"Failed to initialize MAC address\n");
 		goto bad;
 	}
 
@@ -1054,7 +1025,7 @@ static void ath9k_hw_init_interrupt_masks(struct ath_hw *ah,
 		AR_IMR_RXORN |
 		AR_IMR_BCNMISC;
 
-	if (ah->intr_mitigation)
+	if (ah->config.intr_mitigation)
 		ah->mask_reg |= AR_IMR_RXINTM | AR_IMR_RXMINTR;
 	else
 		ah->mask_reg |= AR_IMR_RXOK;
@@ -1203,23 +1174,23 @@ static u32 ath9k_hw_def_ini_fixup(struct ath_hw *ah,
 	switch (ah->hw_version.devid) {
 	case AR9280_DEVID_PCI:
 		if (reg == 0x7894) {
-			DPRINTF(ah->ah_sc, ATH_DBG_ANY,
+			DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
 				"ini VAL: %x  EEPROM: %x\n", value,
 				(pBase->version & 0xff));
 
 			if ((pBase->version & 0xff) > 0x0a) {
-				DPRINTF(ah->ah_sc, ATH_DBG_ANY,
+				DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
 					"PWDCLKIND: %d\n",
 					pBase->pwdclkind);
 				value &= ~AR_AN_TOP2_PWDCLKIND;
 				value |= AR_AN_TOP2_PWDCLKIND &
 					(pBase->pwdclkind << AR_AN_TOP2_PWDCLKIND_S);
 			} else {
-				DPRINTF(ah->ah_sc, ATH_DBG_ANY,
+				DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
 					"PWDCLKIND Earlier Rev\n");
 			}
 
-			DPRINTF(ah->ah_sc, ATH_DBG_ANY,
+			DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
 				"final ini VAL: %x\n", value);
 		}
 		break;
@@ -1366,13 +1337,13 @@ static int ath9k_hw_process_ini(struct ath_hw *ah,
 				  min((u32) MAX_RATE_POWER,
 				      (u32) ah->regulatory.power_limit));
 	if (status != 0) {
-		DPRINTF(ah->ah_sc, ATH_DBG_POWER_MGMT,
-			"error init'ing transmit power\n");
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+			"Error initializing transmit power\n");
 		return -EIO;
 	}
 
 	if (!ath9k_hw_set_rf_regs(ah, chan, freqIndex)) {
-		DPRINTF(ah->ah_sc, ATH_DBG_REG_IO,
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
 			"ar5416SetRfRegs failed\n");
 		return -EIO;
 	}
@@ -1678,7 +1649,7 @@ static bool ath9k_hw_channel_change(struct ath_hw *ah,
 	REG_WRITE(ah, AR_PHY_RFBUS_REQ, AR_PHY_RFBUS_REQ_EN);
 	if (!ath9k_hw_wait(ah, AR_PHY_RFBUS_GRANT, AR_PHY_RFBUS_GRANT_EN,
 			   AR_PHY_RFBUS_GRANT_EN, AH_WAIT_TIMEOUT)) {
-		DPRINTF(ah->ah_sc, ATH_DBG_REG_IO,
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
 			"Could not kill baseband RX\n");
 		return false;
 	}
@@ -1687,14 +1658,14 @@ static bool ath9k_hw_channel_change(struct ath_hw *ah,
 
 	if (AR_SREV_9280_10_OR_LATER(ah)) {
 		if (!(ath9k_hw_ar9280_set_channel(ah, chan))) {
-			DPRINTF(ah->ah_sc, ATH_DBG_CHANNEL,
-				"failed to set channel\n");
+			DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+				"Failed to set channel\n");
 			return false;
 		}
 	} else {
 		if (!(ath9k_hw_set_channel(ah, chan))) {
-			DPRINTF(ah->ah_sc, ATH_DBG_CHANNEL,
-				"failed to set channel\n");
+			DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+				"Failed to set channel\n");
 			return false;
 		}
 	}
@@ -1706,7 +1677,7 @@ static bool ath9k_hw_channel_change(struct ath_hw *ah,
 			     min((u32) MAX_RATE_POWER,
 				 (u32) ah->regulatory.power_limit)) != 0) {
 		DPRINTF(ah->ah_sc, ATH_DBG_EEPROM,
-			"error init'ing transmit power\n");
+			"Error initializing transmit power\n");
 		return false;
 	}
 
@@ -2199,14 +2170,6 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 	ah->txchainmask = sc->tx_chainmask;
 	ah->rxchainmask = sc->rx_chainmask;
 
-	if (AR_SREV_9285(ah)) {
-		ah->txchainmask &= 0x1;
-		ah->rxchainmask &= 0x1;
-	} else if (AR_SREV_9280(ah)) {
-		ah->txchainmask &= 0x3;
-		ah->rxchainmask &= 0x3;
-	}
-
 	if (!ath9k_hw_setpower(ah, ATH9K_PM_AWAKE))
 		return -EIO;
 
@@ -2242,7 +2205,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 	ath9k_hw_mark_phy_inactive(ah);
 
 	if (!ath9k_hw_chip_reset(ah, chan)) {
-		DPRINTF(ah->ah_sc, ATH_DBG_RESET, "chip reset failed\n");
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL, "Chip reset failed\n");
 		return -EINVAL;
 	}
 
@@ -2335,8 +2298,7 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 
 	REG_WRITE(ah, AR_OBS, 8);
 
-	if (ah->intr_mitigation) {
-
+	if (ah->config.intr_mitigation) {
 		REG_RMW_FIELD(ah, AR_RIMT, AR_RIMT_LAST, 500);
 		REG_RMW_FIELD(ah, AR_RIMT, AR_RIMT_FIRST, 2000);
 	}
@@ -2385,8 +2347,8 @@ bool ath9k_hw_keyreset(struct ath_hw *ah, u16 entry)
 	u32 keyType;
 
 	if (entry >= ah->caps.keycache_size) {
-		DPRINTF(ah->ah_sc, ATH_DBG_KEYCACHE,
-			"entry %u out of range\n", entry);
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+			"keychache entry %u out of range\n", entry);
 		return false;
 	}
 
@@ -2422,8 +2384,8 @@ bool ath9k_hw_keysetmac(struct ath_hw *ah, u16 entry, const u8 *mac)
 	u32 macHi, macLo;
 
 	if (entry >= ah->caps.keycache_size) {
-		DPRINTF(ah->ah_sc, ATH_DBG_KEYCACHE,
-			"entry %u out of range\n", entry);
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+			"keychache entry %u out of range\n", entry);
 		return false;
 	}
 
@@ -2454,8 +2416,8 @@ bool ath9k_hw_set_keycache_entry(struct ath_hw *ah, u16 entry,
 	u32 keyType;
 
 	if (entry >= pCap->keycache_size) {
-		DPRINTF(ah->ah_sc, ATH_DBG_KEYCACHE,
-			"entry %u out of range\n", entry);
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+			"keycache entry %u out of range\n", entry);
 		return false;
 	}
 
@@ -2465,7 +2427,7 @@ bool ath9k_hw_set_keycache_entry(struct ath_hw *ah, u16 entry,
 		break;
 	case ATH9K_CIPHER_AES_CCM:
 		if (!(pCap->hw_caps & ATH9K_HW_CAP_CIPHER_AESCCM)) {
-			DPRINTF(ah->ah_sc, ATH_DBG_KEYCACHE,
+			DPRINTF(ah->ah_sc, ATH_DBG_ANY,
 				"AES-CCM not supported by mac rev 0x%x\n",
 				ah->hw_version.macRev);
 			return false;
@@ -2476,14 +2438,14 @@ bool ath9k_hw_set_keycache_entry(struct ath_hw *ah, u16 entry,
 		keyType = AR_KEYTABLE_TYPE_TKIP;
 		if (ATH9K_IS_MIC_ENABLED(ah)
 		    && entry + 64 >= pCap->keycache_size) {
-			DPRINTF(ah->ah_sc, ATH_DBG_KEYCACHE,
+			DPRINTF(ah->ah_sc, ATH_DBG_ANY,
 				"entry %u inappropriate for TKIP\n", entry);
 			return false;
 		}
 		break;
 	case ATH9K_CIPHER_WEP:
 		if (k->kv_len < LEN_WEP40) {
-			DPRINTF(ah->ah_sc, ATH_DBG_KEYCACHE,
+			DPRINTF(ah->ah_sc, ATH_DBG_ANY,
 				"WEP key length %u too small\n", k->kv_len);
 			return false;
 		}
@@ -2498,7 +2460,7 @@ bool ath9k_hw_set_keycache_entry(struct ath_hw *ah, u16 entry,
 		keyType = AR_KEYTABLE_TYPE_CLR;
 		break;
 	default:
-		DPRINTF(ah->ah_sc, ATH_DBG_KEYCACHE,
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
 			"cipher %u not supported\n", k->kv_type);
 		return false;
 	}
@@ -2716,7 +2678,7 @@ static bool ath9k_hw_set_power_awake(struct ath_hw *ah, int setChip)
 				    AR_RTC_FORCE_WAKE_EN);
 		}
 		if (i == 0) {
-			DPRINTF(ah->ah_sc, ATH_DBG_POWER_MGMT,
+			DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
 				"Failed to wakeup in %uus\n", POWER_UP_TIME / 20);
 			return false;
 		}
@@ -2737,9 +2699,8 @@ bool ath9k_hw_setpower(struct ath_hw *ah, enum ath9k_power_mode mode)
 		"UNDEFINED"
 	};
 
-	DPRINTF(ah->ah_sc, ATH_DBG_POWER_MGMT, "%s -> %s (%s)\n",
-		modes[ah->power_mode], modes[mode],
-		setChip ? "set chip " : "");
+	DPRINTF(ah->ah_sc, ATH_DBG_RESET, "%s -> %s\n",
+		modes[ah->power_mode], modes[mode]);
 
 	switch (mode) {
 	case ATH9K_PM_AWAKE:
@@ -2753,7 +2714,7 @@ bool ath9k_hw_setpower(struct ath_hw *ah, enum ath9k_power_mode mode)
 		ath9k_set_power_network_sleep(ah, setChip);
 		break;
 	default:
-		DPRINTF(ah->ah_sc, ATH_DBG_POWER_MGMT,
+		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
 			"Unknown power mode %u\n", mode);
 		return false;
 	}
@@ -2943,7 +2904,7 @@ bool ath9k_hw_getisr(struct ath_hw *ah, enum ath9k_int *masked)
 
 		*masked = isr & ATH9K_INT_COMMON;
 
-		if (ah->intr_mitigation) {
+		if (ah->config.intr_mitigation) {
 			if (isr & (AR_ISR_RXMINTR | AR_ISR_RXINTM))
 				*masked |= ATH9K_INT_RX;
 		}
@@ -3061,7 +3022,7 @@ enum ath9k_int ath9k_hw_set_interrupts(struct ath_hw *ah, enum ath9k_int ints)
 	}
 	if (ints & ATH9K_INT_RX) {
 		mask |= AR_IMR_RXERR;
-		if (ah->intr_mitigation)
+		if (ah->config.intr_mitigation)
 			mask |= AR_IMR_RXMINTR | AR_IMR_RXINTM;
 		else
 			mask |= AR_IMR_RXOK | AR_IMR_RXDESC;
@@ -3259,7 +3220,7 @@ void ath9k_hw_set_sta_beacon_timers(struct ath_hw *ah,
 /* HW Capabilities */
 /*******************/
 
-bool ath9k_hw_fill_cap_info(struct ath_hw *ah)
+void ath9k_hw_fill_cap_info(struct ath_hw *ah)
 {
 	struct ath9k_hw_capabilities *pCap = &ah->caps;
 	u16 capField = 0, eeval;
@@ -3343,8 +3304,6 @@ bool ath9k_hw_fill_cap_info(struct ath_hw *ah)
 	pCap->hw_caps |= ATH9K_HW_CAP_MIC_TKIP;
 	pCap->hw_caps |= ATH9K_HW_CAP_MIC_AESCCM;
 
-	pCap->hw_caps |= ATH9K_HW_CAP_CHAN_SPREAD;
-
 	if (ah->config.ht_enable)
 		pCap->hw_caps |= ATH9K_HW_CAP_HT;
 	else
@@ -3368,7 +3327,6 @@ bool ath9k_hw_fill_cap_info(struct ath_hw *ah)
 		pCap->keycache_size = AR_KEYTABLE_SIZE;
 
 	pCap->hw_caps |= ATH9K_HW_CAP_FASTCC;
-	pCap->num_mr_retries = 4;
 	pCap->tx_triglevel_max = MAX_TX_FIFO_THRESHOLD;
 
 	if (AR_SREV_9285_10_OR_LATER(ah))
@@ -3377,14 +3335,6 @@ bool ath9k_hw_fill_cap_info(struct ath_hw *ah)
 		pCap->num_gpio_pins = AR928X_NUM_GPIO;
 	else
 		pCap->num_gpio_pins = AR_NUM_GPIO;
-
-	if (AR_SREV_9280_10_OR_LATER(ah)) {
-		pCap->hw_caps |= ATH9K_HW_CAP_WOW;
-		pCap->hw_caps |= ATH9K_HW_CAP_WOW_MATCHPATTERN_EXACT;
-	} else {
-		pCap->hw_caps &= ~ATH9K_HW_CAP_WOW;
-		pCap->hw_caps &= ~ATH9K_HW_CAP_WOW_MATCHPATTERN_EXACT;
-	}
 
 	if (AR_SREV_9160_10_OR_LATER(ah) || AR_SREV_9100(ah)) {
 		pCap->hw_caps |= ATH9K_HW_CAP_CST;
@@ -3445,8 +3395,6 @@ bool ath9k_hw_fill_cap_info(struct ath_hw *ah)
 		ah->btactive_gpio = 6;
 		ah->wlanactive_gpio = 5;
 	}
-
-	return true;
 }
 
 bool ath9k_hw_getcapability(struct ath_hw *ah, enum ath9k_capability_type type,
