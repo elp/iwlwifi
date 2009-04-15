@@ -2976,6 +2976,7 @@ bool ath9k_hw_getisr(struct ath_hw *ah, enum ath9k_int *masked)
 				DPRINTF(ah->ah_sc, ATH_DBG_ANY,
 					"received PCI PERR interrupt\n");
 			}
+			*masked |= ATH9K_INT_FATAL;
 		}
 		if (sync_cause & AR_INTR_SYNC_RADM_CPL_TIMEOUT) {
 			DPRINTF(ah->ah_sc, ATH_DBG_INTERRUPT,
@@ -3376,7 +3377,8 @@ void ath9k_hw_fill_cap_info(struct ath_hw *ah)
 	    (ah->hw_version.macVersion == AR_SREV_VERSION_5416_PCIE) ||
 	    (ah->hw_version.macVersion == AR_SREV_VERSION_9160) ||
 	    (ah->hw_version.macVersion == AR_SREV_VERSION_9100) ||
-	    (ah->hw_version.macVersion == AR_SREV_VERSION_9280))
+	    (ah->hw_version.macVersion == AR_SREV_VERSION_9280) ||
+	    (ah->hw_version.macVersion == AR_SREV_VERSION_9285))
 		pCap->hw_caps &= ~ATH9K_HW_CAP_AUTOSLEEP;
 	else
 		pCap->hw_caps |= ATH9K_HW_CAP_AUTOSLEEP;

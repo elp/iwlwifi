@@ -367,28 +367,16 @@ static void ath_ani_calibrate(unsigned long data)
 
 		/* Perform calibration if necessary */
 		if (longcal || shortcal) {
-			bool iscaldone = false;
+			sc->ani.caldone = ath9k_hw_calibrate(ah, ah->curchan,
+						     sc->rx_chainmask, longcal);
 
-			if (ath9k_hw_calibrate(ah, ah->curchan,
-					       sc->rx_chainmask, longcal,
-					       &iscaldone)) {
-				if (longcal)
-					sc->ani.noise_floor =
-						ath9k_hw_getchan_noise(ah,
-							       ah->curchan);
+			if (longcal)
+				sc->ani.noise_floor = ath9k_hw_getchan_noise(ah,
+								     ah->curchan);
 
-				DPRINTF(sc, ATH_DBG_ANI,
-					"calibrate chan %u/%x nf: %d\n",
-					ah->curchan->channel,
-					ah->curchan->channelFlags,
-					sc->ani.noise_floor);
-			} else {
-				DPRINTF(sc, ATH_DBG_ANY,
-					"calibrate chan %u/%x failed\n",
-					ah->curchan->channel,
-					ah->curchan->channelFlags);
-			}
-			sc->ani.caldone = iscaldone;
+			DPRINTF(sc, ATH_DBG_ANI," calibrate chan %u/%x nf: %d\n",
+				ah->curchan->channel, ah->curchan->channelFlags,
+				sc->ani.noise_floor);
 		}
 	}
 
@@ -405,6 +393,18 @@ set_timer:
 		cal_interval = min(cal_interval, (u32)short_cal_interval);
 
 	mod_timer(&sc->ani.timer, jiffies + msecs_to_jiffies(cal_interval));
+}
+
+static void ath_start_ani(struct ath_softc *sc)
+{
+	unsigned long timestamp = jiffies_to_msecs(jiffies);
+
+	sc->ani.longcal_timer = timestamp;
+	sc->ani.shortcal_timer = timestamp;
+	sc->ani.checkani_timer = timestamp;
+
+	mod_timer(&sc->ani.timer,
+		  jiffies + msecs_to_jiffies(ATH_ANI_POLLINTERVAL));
 }
 
 /*
@@ -911,9 +911,7 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 		sc->nodestats.ns_avgtxrssi = ATH_RSSI_DUMMY_MARKER;
 		sc->nodestats.ns_avgtxrate = ATH_RATE_DUMMY_MARKER;
 
-		/* Start ANI */
-		mod_timer(&sc->ani.timer,
-			  jiffies + msecs_to_jiffies(ATH_ANI_POLLINTERVAL));
+		ath_start_ani(sc);
 	} else {
 		DPRINTF(sc, ATH_DBG_CONFIG, "Bss Info DISASSOC\n");
 		sc->curaid = 0;
@@ -1089,10 +1087,10 @@ void ath_radio_enable(struct ath_softc *sc)
 	int r;
 
 	ath9k_ps_wakeup(sc);
+	ath9k_hw_configpcipowersave(ah, 0);
+
 	spin_lock_bh(&sc->sc_resetlock);
-
 	r = ath9k_hw_reset(ah, ah->curchan, false);
-
 	if (r) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to reset channel %u (%uMhz) ",
@@ -1154,6 +1152,7 @@ void ath_radio_disable(struct ath_softc *sc)
 	spin_unlock_bh(&sc->sc_resetlock);
 
 	ath9k_hw_phy_disable(ah);
+	ath9k_hw_configpcipowersave(ah, 1);
 	ath9k_hw_setpower(ah, ATH9K_PM_FULL_SLEEP);
 	ath9k_ps_restore(sc);
 }
@@ -1417,8 +1416,9 @@ static int ath_init(u16 devid, struct ath_softc *sc)
 	for (i = 0; i < sc->keymax; i++)
 		ath9k_hw_keyreset(ah, (u16) i);
 
-	if (ath_regd_init(&sc->sc_ah->regulatory, sc->hw->wiphy,
-			  ath9k_reg_notifier))
+	error = ath_regd_init(&sc->sc_ah->regulatory, sc->hw->wiphy,
+			      ath9k_reg_notifier);
+	if (error)
 		goto bad;
 
 	/* default to MONITOR mode */
@@ -2238,12 +2238,8 @@ static int ath9k_add_interface(struct ieee80211_hw *hw,
 
 	ath9k_hw_set_interrupts(sc->sc_ah, sc->imask);
 
-	if (conf->type == NL80211_IFTYPE_AP) {
-		/* TODO: is this a suitable place to start ANI for AP mode? */
-		/* Start ANI */
-		mod_timer(&sc->ani.timer,
-			  jiffies + msecs_to_jiffies(ATH_ANI_POLLINTERVAL));
-	}
+	if (conf->type == NL80211_IFTYPE_AP)
+		ath_start_ani(sc);
 
 out:
 	mutex_unlock(&sc->mutex);
@@ -2748,6 +2744,7 @@ static void ath9k_sw_scan_complete(struct ieee80211_hw *hw)
 	mutex_lock(&sc->mutex);
 	aphy->state = ATH_WIPHY_ACTIVE;
 	sc->sc_flags &= ~SC_OP_SCANNING;
+	sc->sc_flags |= SC_OP_FULL_RESET;
 	mutex_unlock(&sc->mutex);
 }
 

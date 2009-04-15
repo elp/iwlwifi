@@ -61,11 +61,11 @@
 
 static int ath5k_calinterval = 10; /* Calibrate PHY every 10 secs (TODO: Fixme) */
 static int modparam_nohwcrypt;
-module_param_named(nohwcrypt, modparam_nohwcrypt, int, 0444);
+module_param_named(nohwcrypt, modparam_nohwcrypt, bool, S_IRUGO);
 MODULE_PARM_DESC(nohwcrypt, "Disable hardware encryption.");
 
 static int modparam_all_channels;
-module_param_named(all_channels, modparam_all_channels, int, 0444);
+module_param_named(all_channels, modparam_all_channels, bool, S_IRUGO);
 MODULE_PARM_DESC(all_channels, "Expose all channels the device can use.");
 
 
@@ -1618,9 +1618,8 @@ ath5k_rx_start(struct ath5k_softc *sc)
 	ATH5K_DBG(sc, ATH5K_DEBUG_RESET, "cachelsz %u rxbufsize %u\n",
 		sc->cachelsz, sc->rxbufsize);
 
-	sc->rxlink = NULL;
-
 	spin_lock_bh(&sc->rxbuflock);
+	sc->rxlink = NULL;
 	list_for_each_entry(bf, &sc->rxbuf, list) {
 		ret = ath5k_rxbuf_setup(sc, bf);
 		if (ret != 0) {
@@ -1629,9 +1628,9 @@ ath5k_rx_start(struct ath5k_softc *sc)
 		}
 	}
 	bf = list_first_entry(&sc->rxbuf, struct ath5k_buf, list);
+	ath5k_hw_set_rxdp(ah, bf->daddr);
 	spin_unlock_bh(&sc->rxbuflock);
 
-	ath5k_hw_set_rxdp(ah, bf->daddr);
 	ath5k_hw_start_rx_dma(ah);	/* enable recv descriptors */
 	ath5k_mode_setup(sc);		/* set filters, etc. */
 	ath5k_hw_start_rx_pcu(ah);	/* re-enable PCU/DMA engine */
@@ -1780,7 +1779,7 @@ ath5k_tasklet_rx(unsigned long data)
 	struct sk_buff *skb, *next_skb;
 	dma_addr_t next_skb_addr;
 	struct ath5k_softc *sc = (void *)data;
-	struct ath5k_buf *bf, *bf_last;
+	struct ath5k_buf *bf;
 	struct ath5k_desc *ds;
 	int ret;
 	int hdrlen;
@@ -1791,7 +1790,6 @@ ath5k_tasklet_rx(unsigned long data)
 		ATH5K_WARN(sc, "empty rx buf pool\n");
 		goto unlock;
 	}
-	bf_last = list_entry(sc->rxbuf.prev, struct ath5k_buf, list);
 	do {
 		rxs.flag = 0;
 
@@ -1800,24 +1798,9 @@ ath5k_tasklet_rx(unsigned long data)
 		skb = bf->skb;
 		ds = bf->desc;
 
-		/*
-		 * last buffer must not be freed to ensure proper hardware
-		 * function. When the hardware finishes also a packet next to
-		 * it, we are sure, it doesn't use it anymore and we can go on.
-		 */
-		if (bf_last == bf)
-			bf->flags |= 1;
-		if (bf->flags) {
-			struct ath5k_buf *bf_next = list_entry(bf->list.next,
-					struct ath5k_buf, list);
-			ret = sc->ah->ah_proc_rx_desc(sc->ah, bf_next->desc,
-					&rs);
-			if (ret)
-				break;
-			bf->flags &= ~1;
-			/* skip the overwritten one (even status is martian) */
-			goto next;
-		}
+		/* bail if HW is still using self-linked descriptor */
+		if (ath5k_hw_get_rxdp(sc->ah) == bf->daddr)
+			break;
 
 		ret = sc->ah->ah_proc_rx_desc(sc->ah, ds, &rs);
 		if (unlikely(ret == -EINPROGRESS))
@@ -2496,7 +2479,7 @@ ath5k_intr(int irq, void *dev_id)
 			tasklet_schedule(&sc->restq);
 		} else {
 			if (status & AR5K_INT_SWBA) {
-				tasklet_schedule(&sc->beacontq);
+				tasklet_hi_schedule(&sc->beacontq);
 			}
 			if (status & AR5K_INT_RXEOL) {
 				/*
