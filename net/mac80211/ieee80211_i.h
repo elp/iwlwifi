@@ -51,11 +51,6 @@ struct ieee80211_local;
  * increased memory use (about 2 kB of RAM per entry). */
 #define IEEE80211_FRAGMENT_MAX 4
 
-/* cfg80211 only supports 32 rates */
-#define MAC80211_PREQ_IE_LEN	( 2 + 32 /* SSID */\
-				+ 4 + 32 /* (ext) supp rates */\
-				+ sizeof(struct ieee80211_ht_cap))
-
 /*
  * Time after which we ignore scan results and no longer report/use
  * them in any way.
@@ -679,6 +674,7 @@ struct ieee80211_local {
 	const u8 *orig_ies;
 	int orig_ies_len;
 	int scan_channel_idx;
+	int scan_ies_len;
 
 	enum { SCAN_SET_CHANNEL, SCAN_SEND_PROBE } scan_state;
 	unsigned long last_scan_completed;

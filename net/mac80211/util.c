@@ -877,7 +877,10 @@ int ieee80211_build_preq_ies(struct ieee80211_local *local, u8 *buffer,
 		pos += 2 + 4 + 1; /* ext info, BF cap, antsel */
 	}
 
-	/* if adding more here, adjust MAC80211_PREQ_IE_LEN */
+	/*
+	 * If adding more here, adjust code in main.c
+	 * that calculates local->scan_ies_len.
+	 */
 
 	if (ie) {
 		memcpy(pos, ie, ie_len);

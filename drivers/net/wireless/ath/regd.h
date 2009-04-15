@@ -17,6 +17,26 @@
 #ifndef REGD_H
 #define REGD_H
 
+#include <linux/nl80211.h>
+
+#include <net/cfg80211.h>
+#include <net/wireless.h>
+
+#define NO_CTL 0xff
+#define SD_NO_CTL               0xE0
+#define NO_CTL                  0xff
+#define CTL_MODE_M              7
+#define CTL_11A                 0
+#define CTL_11B                 1
+#define CTL_11G                 2
+#define CTL_2GHT20              5
+#define CTL_5GHT20              6
+#define CTL_2GHT40              7
+#define CTL_5GHT40              8
+
+#define CTRY_DEBUG 0x1ff
+#define CTRY_DEFAULT 0
+
 #define COUNTRY_ERD_FLAG        0x8000
 #define WORLDWIDE_ROAMING_FLAG  0x4000
 
@@ -40,7 +60,7 @@ struct country_code_to_enum_rd {
 	const char *isoName;
 };
 
-struct ath9k_regulatory {
+struct ath_regulatory {
 	char alpha2[2];
 	u16 country_code;
 	u16 max_power_level;
@@ -233,15 +253,14 @@ enum CountryCode {
 	CTRY_BELGIUM2 = 5002
 };
 
-bool ath9k_is_world_regd(struct ath_hw *ah);
-const struct ieee80211_regdomain *ath9k_world_regdomain(struct ath_hw *ah);
-const struct ieee80211_regdomain *ath9k_default_world_regdomain(void);
-void ath9k_reg_apply_world_flags(struct wiphy *wiphy,
-				 enum nl80211_reg_initiator initiator);
-void ath9k_reg_apply_radar_flags(struct wiphy *wiphy);
-int ath9k_regd_init(struct ath_hw *ah);
-bool ath9k_regd_is_eeprom_valid(struct ath_hw *ah);
-u32 ath9k_regd_get_ctl(struct ath_hw *ah, struct ath9k_channel *chan);
-int ath9k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request);
+bool ath_is_world_regd(struct ath_regulatory *reg);
+int ath_regd_init(struct ath_regulatory *reg, struct wiphy *wiphy,
+		  int (*reg_notifier)(struct wiphy *wiphy,
+		  struct regulatory_request *request));
+u32 ath_regd_get_band_ctl(struct ath_regulatory *reg,
+			  enum ieee80211_band band);
+int ath_reg_notifier_apply(struct wiphy *wiphy,
+			   struct regulatory_request *request,
+			   struct ath_regulatory *reg);
 
 #endif

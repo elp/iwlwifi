@@ -16,7 +16,10 @@
 
 #include <linux/kernel.h>
 #include <linux/slab.h>
-#include "ath9k.h"
+#include <net/cfg80211.h>
+#include <net/mac80211.h>
+#include <net/wireless.h>
+#include "regd.h"
 #include "regd_common.h"
 
 /*
@@ -55,7 +58,7 @@
 
 /* Can be used for:
  * 0x60, 0x61, 0x62 */
-static const struct ieee80211_regdomain ath9k_world_regdom_60_61_62 = {
+static const struct ieee80211_regdomain ath_world_regdom_60_61_62 = {
 	.n_reg_rules = 5,
 	.alpha2 =  "99",
 	.reg_rules = {
@@ -65,7 +68,7 @@ static const struct ieee80211_regdomain ath9k_world_regdom_60_61_62 = {
 };
 
 /* Can be used by 0x63 and 0x65 */
-static const struct ieee80211_regdomain ath9k_world_regdom_63_65 = {
+static const struct ieee80211_regdomain ath_world_regdom_63_65 = {
 	.n_reg_rules = 4,
 	.alpha2 =  "99",
 	.reg_rules = {
@@ -76,7 +79,7 @@ static const struct ieee80211_regdomain ath9k_world_regdom_63_65 = {
 };
 
 /* Can be used by 0x64 only */
-static const struct ieee80211_regdomain ath9k_world_regdom_64 = {
+static const struct ieee80211_regdomain ath_world_regdom_64 = {
 	.n_reg_rules = 3,
 	.alpha2 =  "99",
 	.reg_rules = {
@@ -86,7 +89,7 @@ static const struct ieee80211_regdomain ath9k_world_regdom_64 = {
 };
 
 /* Can be used by 0x66 and 0x69 */
-static const struct ieee80211_regdomain ath9k_world_regdom_66_69 = {
+static const struct ieee80211_regdomain ath_world_regdom_66_69 = {
 	.n_reg_rules = 3,
 	.alpha2 =  "99",
 	.reg_rules = {
@@ -96,7 +99,7 @@ static const struct ieee80211_regdomain ath9k_world_regdom_66_69 = {
 };
 
 /* Can be used by 0x67, 0x6A and 0x68 */
-static const struct ieee80211_regdomain ath9k_world_regdom_67_68_6A = {
+static const struct ieee80211_regdomain ath_world_regdom_67_68_6A = {
 	.n_reg_rules = 4,
 	.alpha2 =  "99",
 	.reg_rules = {
@@ -112,49 +115,51 @@ static inline bool is_wwr_sku(u16 regd)
 		(regd == WORLD);
 }
 
-static u16 ath9k_regd_get_eepromRD(struct ath_hw *ah)
+static u16 ath_regd_get_eepromRD(struct ath_regulatory *reg)
 {
-	return ah->regulatory.current_rd & ~WORLDWIDE_ROAMING_FLAG;
+	return reg->current_rd & ~WORLDWIDE_ROAMING_FLAG;
 }
 
-bool ath9k_is_world_regd(struct ath_hw *ah)
+bool ath_is_world_regd(struct ath_regulatory *reg)
 {
-	return is_wwr_sku(ath9k_regd_get_eepromRD(ah));
+	return is_wwr_sku(ath_regd_get_eepromRD(reg));
 }
+EXPORT_SYMBOL(ath_is_world_regd);
 
-const struct ieee80211_regdomain *ath9k_default_world_regdomain(void)
+static const struct ieee80211_regdomain *ath_default_world_regdomain(void)
 {
 	/* this is the most restrictive */
-	return &ath9k_world_regdom_64;
+	return &ath_world_regdom_64;
 }
 
-const struct ieee80211_regdomain *ath9k_world_regdomain(struct ath_hw *ah)
+static const struct
+ieee80211_regdomain *ath_world_regdomain(struct ath_regulatory *reg)
 {
-	switch (ah->regulatory.regpair->regDmnEnum) {
+	switch (reg->regpair->regDmnEnum) {
 	case 0x60:
 	case 0x61:
 	case 0x62:
-		return &ath9k_world_regdom_60_61_62;
+		return &ath_world_regdom_60_61_62;
 	case 0x63:
 	case 0x65:
-		return &ath9k_world_regdom_63_65;
+		return &ath_world_regdom_63_65;
 	case 0x64:
-		return &ath9k_world_regdom_64;
+		return &ath_world_regdom_64;
 	case 0x66:
 	case 0x69:
-		return &ath9k_world_regdom_66_69;
+		return &ath_world_regdom_66_69;
 	case 0x67:
 	case 0x68:
 	case 0x6A:
-		return &ath9k_world_regdom_67_68_6A;
+		return &ath_world_regdom_67_68_6A;
 	default:
 		WARN_ON(1);
-		return ath9k_default_world_regdomain();
+		return ath_default_world_regdomain();
 	}
 }
 
 /* Frequency is one where radar detection is required */
-static bool ath9k_is_radar_freq(u16 center_freq)
+static bool ath_is_radar_freq(u16 center_freq)
 {
 	return (center_freq >= 5260 && center_freq <= 5700);
 }
@@ -168,9 +173,9 @@ static bool ath9k_is_radar_freq(u16 center_freq)
  *   received a beacon on a channel we can enable active scan and
  *   adhoc (or beaconing).
  */
-static void ath9k_reg_apply_beaconing_flags(
-	struct wiphy *wiphy,
-	enum nl80211_reg_initiator initiator)
+static void
+ath_reg_apply_beaconing_flags(struct wiphy *wiphy,
+			      enum nl80211_reg_initiator initiator)
 {
 	enum ieee80211_band band;
 	struct ieee80211_supported_band *sband;
@@ -191,7 +196,7 @@ static void ath9k_reg_apply_beaconing_flags(
 
 			ch = &sband->channels[i];
 
-			if (ath9k_is_radar_freq(ch->center_freq) ||
+			if (ath_is_radar_freq(ch->center_freq) ||
 			    (ch->flags & IEEE80211_CHAN_RADAR))
 				continue;
 
@@ -227,9 +232,9 @@ static void ath9k_reg_apply_beaconing_flags(
 }
 
 /* Allows active scan scan on Ch 12 and 13 */
-static void ath9k_reg_apply_active_scan_flags(
-	struct wiphy *wiphy,
-	enum nl80211_reg_initiator initiator)
+static void
+ath_reg_apply_active_scan_flags(struct wiphy *wiphy,
+				enum nl80211_reg_initiator initiator)
 {
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_channel *ch;
@@ -278,7 +283,7 @@ static void ath9k_reg_apply_active_scan_flags(
 }
 
 /* Always apply Radar/DFS rules on freq range 5260 MHz - 5700 MHz */
-void ath9k_reg_apply_radar_flags(struct wiphy *wiphy)
+static void ath_reg_apply_radar_flags(struct wiphy *wiphy)
 {
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_channel *ch;
@@ -291,7 +296,7 @@ void ath9k_reg_apply_radar_flags(struct wiphy *wiphy)
 
 	for (i = 0; i < sband->n_channels; i++) {
 		ch = &sband->channels[i];
-		if (!ath9k_is_radar_freq(ch->center_freq))
+		if (!ath_is_radar_freq(ch->center_freq))
 			continue;
 		/* We always enable radar detection/DFS on this
 		 * frequency range. Additionally we also apply on
@@ -310,37 +315,31 @@ void ath9k_reg_apply_radar_flags(struct wiphy *wiphy)
 	}
 }
 
-void ath9k_reg_apply_world_flags(struct wiphy *wiphy,
-				 enum nl80211_reg_initiator initiator)
+static void ath_reg_apply_world_flags(struct wiphy *wiphy,
+				      enum nl80211_reg_initiator initiator,
+				      struct ath_regulatory *reg)
 {
-	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
-	struct ath_wiphy *aphy = hw->priv;
-	struct ath_softc *sc = aphy->sc;
-	struct ath_hw *ah = sc->sc_ah;
-
-	switch (ah->regulatory.regpair->regDmnEnum) {
+	switch (reg->regpair->regDmnEnum) {
 	case 0x60:
 	case 0x63:
 	case 0x66:
 	case 0x67:
-		ath9k_reg_apply_beaconing_flags(wiphy, initiator);
+		ath_reg_apply_beaconing_flags(wiphy, initiator);
 		break;
 	case 0x68:
-		ath9k_reg_apply_beaconing_flags(wiphy, initiator);
-		ath9k_reg_apply_active_scan_flags(wiphy, initiator);
+		ath_reg_apply_beaconing_flags(wiphy, initiator);
+		ath_reg_apply_active_scan_flags(wiphy, initiator);
 		break;
 	}
 	return;
 }
 
-int ath9k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request)
+int ath_reg_notifier_apply(struct wiphy *wiphy,
+			   struct regulatory_request *request,
+			   struct ath_regulatory *reg)
 {
-	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
-	struct ath_wiphy *aphy = hw->priv;
-	struct ath_softc *sc = aphy->sc;
-
 	/* We always apply this */
-	ath9k_reg_apply_radar_flags(wiphy);
+	ath_reg_apply_radar_flags(wiphy);
 
 	switch (request->initiator) {
 	case NL80211_REGDOM_SET_BY_DRIVER:
@@ -348,17 +347,19 @@ int ath9k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request)
 	case NL80211_REGDOM_SET_BY_USER:
 		break;
 	case NL80211_REGDOM_SET_BY_COUNTRY_IE:
-		if (ath9k_is_world_regd(sc->sc_ah))
-			ath9k_reg_apply_world_flags(wiphy, request->initiator);
+		if (ath_is_world_regd(reg))
+			ath_reg_apply_world_flags(wiphy, request->initiator,
+						  reg);
 		break;
 	}
 
 	return 0;
 }
+EXPORT_SYMBOL(ath_reg_notifier_apply);
 
-bool ath9k_regd_is_eeprom_valid(struct ath_hw *ah)
+static bool ath_regd_is_eeprom_valid(struct ath_regulatory *reg)
 {
-	u16 rd = ath9k_regd_get_eepromRD(ah);
+	 u16 rd = ath_regd_get_eepromRD(reg);
 	int i;
 
 	if (rd & COUNTRY_ERD_FLAG) {
@@ -373,14 +374,14 @@ bool ath9k_regd_is_eeprom_valid(struct ath_hw *ah)
 			if (regDomainPairs[i].regDmnEnum == rd)
 				return true;
 	}
-	DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY,
-		 "invalid regulatory domain/country code 0x%x\n", rd);
+	printk(KERN_DEBUG
+		 "ath: invalid regulatory domain/country code 0x%x\n", rd);
 	return false;
 }
 
 /* EEPROM country code to regpair mapping */
 static struct country_code_to_enum_rd*
-ath9k_regd_find_country(u16 countryCode)
+ath_regd_find_country(u16 countryCode)
 {
 	int i;
 
@@ -393,7 +394,7 @@ ath9k_regd_find_country(u16 countryCode)
 
 /* EEPROM rd code to regpair mapping */
 static struct country_code_to_enum_rd*
-ath9k_regd_find_country_by_rd(int regdmn)
+ath_regd_find_country_by_rd(int regdmn)
 {
 	int i;
 
@@ -405,13 +406,13 @@ ath9k_regd_find_country_by_rd(int regdmn)
 }
 
 /* Returns the map of the EEPROM set RD to a country code */
-static u16 ath9k_regd_get_default_country(u16 rd)
+static u16 ath_regd_get_default_country(u16 rd)
 {
 	if (rd & COUNTRY_ERD_FLAG) {
 		struct country_code_to_enum_rd *country = NULL;
 		u16 cc = rd & ~COUNTRY_ERD_FLAG;
 
-		country = ath9k_regd_find_country(cc);
+		country = ath_regd_find_country(cc);
 		if (country != NULL)
 			return cc;
 	}
@@ -420,7 +421,7 @@ static u16 ath9k_regd_get_default_country(u16 rd)
 }
 
 static struct reg_dmn_pair_mapping*
-ath9k_get_regpair(int regdmn)
+ath_get_regpair(int regdmn)
 {
 	int i;
 
@@ -433,87 +434,120 @@ ath9k_get_regpair(int regdmn)
 	return NULL;
 }
 
-int ath9k_regd_init(struct ath_hw *ah)
+static int
+ath_regd_init_wiphy(struct ath_regulatory *reg,
+		    struct wiphy *wiphy,
+		    int (*reg_notifier)(struct wiphy *wiphy,
+					struct regulatory_request *request))
+{
+	const struct ieee80211_regdomain *regd;
+
+	wiphy->reg_notifier = reg_notifier;
+	wiphy->strict_regulatory = true;
+
+	if (ath_is_world_regd(reg)) {
+		/*
+		 * Anything applied here (prior to wiphy registration) gets
+		 * saved on the wiphy orig_* parameters
+		 */
+		regd = ath_world_regdomain(reg);
+		wiphy->custom_regulatory = true;
+		wiphy->strict_regulatory = false;
+	} else {
+		/*
+		 * This gets applied in the case of the absense of CRDA,
+		 * it's our own custom world regulatory domain, similar to
+		 * cfg80211's but we enable passive scanning.
+		 */
+		regd = ath_default_world_regdomain();
+	}
+	wiphy_apply_custom_regulatory(wiphy, regd);
+	ath_reg_apply_radar_flags(wiphy);
+	ath_reg_apply_world_flags(wiphy, NL80211_REGDOM_SET_BY_DRIVER, reg);
+	return 0;
+}
+
+int
+ath_regd_init(struct ath_regulatory *reg,
+	      struct wiphy *wiphy,
+	      int (*reg_notifier)(struct wiphy *wiphy,
+				  struct regulatory_request *request))
 {
 	struct country_code_to_enum_rd *country = NULL;
 	u16 regdmn;
 
-	if (!ath9k_regd_is_eeprom_valid(ah)) {
-		DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY,
-			"Invalid EEPROM contents\n");
+	if (!ath_regd_is_eeprom_valid(reg)) {
+		printk(KERN_DEBUG "ath: Invalid EEPROM contents\n");
 		return -EINVAL;
 	}
 
-	regdmn = ath9k_regd_get_eepromRD(ah);
-	ah->regulatory.country_code = ath9k_regd_get_default_country(regdmn);
+	regdmn = ath_regd_get_eepromRD(reg);
+	reg->country_code = ath_regd_get_default_country(regdmn);
 
-	if (ah->regulatory.country_code == CTRY_DEFAULT &&
+	if (reg->country_code == CTRY_DEFAULT &&
 	    regdmn == CTRY_DEFAULT)
-		ah->regulatory.country_code = CTRY_UNITED_STATES;
+		reg->country_code = CTRY_UNITED_STATES;
 
-	if (ah->regulatory.country_code == CTRY_DEFAULT) {
+	if (reg->country_code == CTRY_DEFAULT) {
 		country = NULL;
 	} else {
-		country = ath9k_regd_find_country(ah->regulatory.country_code);
+		country = ath_regd_find_country(reg->country_code);
 		if (country == NULL) {
-			DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY,
-				"Country is NULL!!!!, cc= %d\n",
-				ah->regulatory.country_code);
+			printk(KERN_DEBUG
+				"ath: Country is NULL!!!!, cc= %d\n",
+				reg->country_code);
 			return -EINVAL;
 		} else
 			regdmn = country->regDmnEnum;
 	}
 
-	ah->regulatory.regpair = ath9k_get_regpair(regdmn);
+	reg->regpair = ath_get_regpair(regdmn);
 
-	if (!ah->regulatory.regpair) {
-		DPRINTF(ah->ah_sc, ATH_DBG_FATAL,
+	if (!reg->regpair) {
+		printk(KERN_DEBUG "ath: "
 			"No regulatory domain pair found, cannot continue\n");
 		return -EINVAL;
 	}
 
 	if (!country)
-		country = ath9k_regd_find_country_by_rd(regdmn);
+		country = ath_regd_find_country_by_rd(regdmn);
 
 	if (country) {
-		ah->regulatory.alpha2[0] = country->isoName[0];
-		ah->regulatory.alpha2[1] = country->isoName[1];
+		reg->alpha2[0] = country->isoName[0];
+		reg->alpha2[1] = country->isoName[1];
 	} else {
-		ah->regulatory.alpha2[0] = '0';
-		ah->regulatory.alpha2[1] = '0';
+		reg->alpha2[0] = '0';
+		reg->alpha2[1] = '0';
 	}
 
-	DPRINTF(ah->ah_sc, ATH_DBG_REGULATORY,
-		"Country alpha2 being used: %c%c\n"
-		"Regulatory.Regpair detected: 0x%0x\n",
-		ah->regulatory.alpha2[0], ah->regulatory.alpha2[1],
-		ah->regulatory.regpair->regDmnEnum);
+	printk(KERN_DEBUG "ath: Country alpha2 being used: %c%c\n",
+		reg->alpha2[0], reg->alpha2[1]);
+	printk(KERN_DEBUG "ath: Regpair detected: 0x%0x\n",
+		reg->regpair->regDmnEnum);
 
+	ath_regd_init_wiphy(reg, wiphy, reg_notifier);
 	return 0;
 }
+EXPORT_SYMBOL(ath_regd_init);
 
-u32 ath9k_regd_get_ctl(struct ath_hw *ah, struct ath9k_channel *chan)
+u32 ath_regd_get_band_ctl(struct ath_regulatory *reg,
+			  enum ieee80211_band band)
 {
-	u32 ctl = NO_CTL;
-
-	if (!ah->regulatory.regpair ||
-	    (ah->regulatory.country_code == CTRY_DEFAULT &&
-	     is_wwr_sku(ath9k_regd_get_eepromRD(ah)))) {
-		if (IS_CHAN_B(chan))
-			ctl = SD_NO_CTL | CTL_11B;
-		else if (IS_CHAN_G(chan))
-			ctl = SD_NO_CTL | CTL_11G;
-		else
-			ctl = SD_NO_CTL | CTL_11A;
-		return ctl;
+	if (!reg->regpair ||
+	    (reg->country_code == CTRY_DEFAULT &&
+	     is_wwr_sku(ath_regd_get_eepromRD(reg)))) {
+		return SD_NO_CTL;
 	}
 
-	if (IS_CHAN_B(chan))
-		ctl = ah->regulatory.regpair->reg_2ghz_ctl | CTL_11B;
-	else if (IS_CHAN_G(chan))
-		ctl = ah->regulatory.regpair->reg_2ghz_ctl | CTL_11G;
-	else
-		ctl = ah->regulatory.regpair->reg_5ghz_ctl | CTL_11A;
+	switch (band) {
+	case IEEE80211_BAND_2GHZ:
+		return reg->regpair->reg_2ghz_ctl;
+	case IEEE80211_BAND_5GHZ:
+		return reg->regpair->reg_5ghz_ctl;
+	default:
+		return NO_CTL;
+	}
 
-	return ctl;
+	return NO_CTL;
 }
+EXPORT_SYMBOL(ath_regd_get_band_ctl);

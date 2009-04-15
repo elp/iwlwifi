@@ -1044,6 +1044,7 @@ static void p54_rx_stats(struct ieee80211_hw *dev, struct sk_buff *skb)
 
 static void p54_rx_trap(struct ieee80211_hw *dev, struct sk_buff *skb)
 {
+	struct p54_common *priv = dev->priv;
 	struct p54_hdr *hdr = (struct p54_hdr *) skb->data;
 	struct p54_trap *trap = (struct p54_trap *) hdr->data;
 	u16 event = le16_to_cpu(trap->event);
@@ -1057,6 +1058,8 @@ static void p54_rx_trap(struct ieee80211_hw *dev, struct sk_buff *skb)
 			wiphy_name(dev->wiphy), freq);
 		break;
 	case P54_TRAP_NO_BEACON:
+		if (priv->vif)
+			ieee80211_beacon_loss(priv->vif);
 		break;
 	case P54_TRAP_SCAN:
 		break;
@@ -1939,7 +1942,8 @@ static int p54_set_ps(struct ieee80211_hw *dev)
 	int i;
 
 	if (dev->conf.flags & IEEE80211_CONF_PS)
-		mode = P54_PSM | P54_PSM_DTIM | P54_PSM_MCBC;
+		mode = P54_PSM | P54_PSM_BEACON_TIMEOUT | P54_PSM_DTIM |
+		       P54_PSM_CHECKSUM | P54_PSM_MCBC;
 	else
 		mode = P54_PSM_CAM;
 
@@ -1957,9 +1961,10 @@ static int p54_set_ps(struct ieee80211_hw *dev)
 		psm->intervals[i].periods = cpu_to_le16(1);
 	}
 
-	psm->beacon_rssi_skip_max = 60;
+	psm->beacon_rssi_skip_max = 200;
 	psm->rssi_delta_threshold = 0;
-	psm->nr = 0;
+	psm->nr = 10;
+	psm->exclude[0] = 0;
 
 	priv->tx(dev, skb);
 
@@ -2088,6 +2093,9 @@ static void p54_stop(struct ieee80211_hw *dev)
 	priv->softled_state = 0;
 	p54_set_leds(dev);
 
+#ifdef CONFIG_P54_LEDS
+	cancel_delayed_work_sync(&priv->led_work);
+#endif /* CONFIG_P54_LEDS */
 	cancel_delayed_work_sync(&priv->work);
 	if (priv->cached_beacon)
 		p54_tx_cancel(dev, priv->cached_beacon);
@@ -2110,6 +2118,8 @@ static int p54_add_interface(struct ieee80211_hw *dev,
 		mutex_unlock(&priv->conf_mutex);
 		return -EOPNOTSUPP;
 	}
+
+	priv->vif = conf->vif;
 
 	switch (conf->type) {
 	case NL80211_IFTYPE_STATION:
@@ -2135,6 +2145,7 @@ static void p54_remove_interface(struct ieee80211_hw *dev,
 	struct p54_common *priv = dev->priv;
 
 	mutex_lock(&priv->conf_mutex);
+	priv->vif = NULL;
 	if (priv->cached_beacon)
 		p54_tx_cancel(dev, priv->cached_beacon);
 	priv->mode = NL80211_IFTYPE_MONITOR;
@@ -2421,6 +2432,43 @@ static int p54_set_key(struct ieee80211_hw *dev, enum set_key_cmd cmd,
 }
 
 #ifdef CONFIG_P54_LEDS
+static void p54_update_leds(struct work_struct *work)
+{
+	struct p54_common *priv = container_of(work, struct p54_common,
+					       led_work.work);
+	int err, i, tmp, blink_delay = 400;
+	bool rerun = false;
+
+	/* Don't toggle the LED, when the device is down. */
+	if (priv->mode == NL80211_IFTYPE_UNSPECIFIED)
+		return ;
+
+	for (i = 0; i < ARRAY_SIZE(priv->leds); i++)
+		if (priv->leds[i].toggled) {
+			priv->softled_state |= BIT(i);
+
+			tmp = 70 + 200 / (priv->leds[i].toggled);
+			if (tmp < blink_delay)
+				blink_delay = tmp;
+
+			if (priv->leds[i].led_dev.brightness == LED_OFF)
+				rerun = true;
+
+			priv->leds[i].toggled =
+				!!priv->leds[i].led_dev.brightness;
+		} else
+			priv->softled_state &= ~BIT(i);
+
+	err = p54_set_leds(priv->hw);
+	if (err && net_ratelimit())
+		printk(KERN_ERR "%s: failed to update LEDs.\n",
+			wiphy_name(priv->hw->wiphy));
+
+	if (rerun)
+		queue_delayed_work(priv->hw->workqueue, &priv->led_work,
+			msecs_to_jiffies(blink_delay));
+}
+
 static void p54_led_brightness_set(struct led_classdev *led_dev,
 				   enum led_brightness brightness)
 {
@@ -2428,28 +2476,23 @@ static void p54_led_brightness_set(struct led_classdev *led_dev,
 					       led_dev);
 	struct ieee80211_hw *dev = led->hw_dev;
 	struct p54_common *priv = dev->priv;
-	int err;
 
-	/* Don't toggle the LED, when the device is down. */
 	if (priv->mode == NL80211_IFTYPE_UNSPECIFIED)
 		return ;
 
-	if (brightness != LED_OFF)
-		priv->softled_state |= BIT(led->index);
-	else
-		priv->softled_state &= ~BIT(led->index);
-
-	err = p54_set_leds(dev);
-	if (err && net_ratelimit())
-		printk(KERN_ERR "%s: failed to update %s LED.\n",
-			wiphy_name(dev->wiphy), led_dev->name);
+	if (brightness) {
+		led->toggled++;
+		queue_delayed_work(priv->hw->workqueue, &priv->led_work,
+				   HZ/10);
+	}
 }
 
 static int p54_register_led(struct ieee80211_hw *dev,
-			    struct p54_led_dev *led,
 			    unsigned int led_index,
 			    char *name, char *trigger)
 {
+	struct p54_common *priv = dev->priv;
+	struct p54_led_dev *led = &priv->leds[led_index];
 	int err;
 
 	if (led->registered)
@@ -2482,16 +2525,27 @@ static int p54_init_leds(struct ieee80211_hw *dev)
 	 * TODO:
 	 * Figure out if the EEPROM contains some hints about the number
 	 * of available/programmable LEDs of the device.
-	 * But for now, we can assume that we have two programmable LEDs.
 	 */
 
-	err = p54_register_led(dev, &priv->assoc_led, 0, "assoc",
+	INIT_DELAYED_WORK(&priv->led_work, p54_update_leds);
+
+	err = p54_register_led(dev, 0, "assoc",
 			       ieee80211_get_assoc_led_name(dev));
 	if (err)
 		return err;
 
-	err = p54_register_led(dev, &priv->tx_led, 1, "tx",
+	err = p54_register_led(dev, 1, "tx",
 			       ieee80211_get_tx_led_name(dev));
+	if (err)
+		return err;
+
+	err = p54_register_led(dev, 2, "rx",
+			       ieee80211_get_rx_led_name(dev));
+	if (err)
+		return err;
+
+	err = p54_register_led(dev, 3, "radio",
+			       ieee80211_get_radio_led_name(dev));
 	if (err)
 		return err;
 
@@ -2502,11 +2556,11 @@ static int p54_init_leds(struct ieee80211_hw *dev)
 static void p54_unregister_leds(struct ieee80211_hw *dev)
 {
 	struct p54_common *priv = dev->priv;
+	int i;
 
-	if (priv->tx_led.registered)
-		led_classdev_unregister(&priv->tx_led.led_dev);
-	if (priv->assoc_led.registered)
-		led_classdev_unregister(&priv->assoc_led.led_dev);
+	for (i = 0; i < ARRAY_SIZE(priv->leds); i++)
+		if (priv->leds[i].registered)
+			led_classdev_unregister(&priv->leds[i].led_dev);
 }
 #endif /* CONFIG_P54_LEDS */
 
@@ -2546,7 +2600,8 @@ struct ieee80211_hw *p54_init_common(size_t priv_data_len)
 		     IEEE80211_HW_SUPPORTS_PS |
 		     IEEE80211_HW_PS_NULLFUNC_STACK |
 		     IEEE80211_HW_SIGNAL_DBM |
-		     IEEE80211_HW_NOISE_DBM;
+		     IEEE80211_HW_NOISE_DBM |
+		     IEEE80211_HW_BEACON_FILTER;
 
 	dev->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION) |
 				      BIT(NL80211_IFTYPE_ADHOC) |

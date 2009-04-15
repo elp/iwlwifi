@@ -67,6 +67,8 @@ static const struct pci_device_id ath5k_led_devices[] = {
 	{ ATH_SDEVICE(PCI_VENDOR_ID_AMBIT, 0x0428), ATH_LED(3, 0) },
 	/* Acer Extensa 5620z (nekoreeve@gmail.com) */
 	{ ATH_SDEVICE(PCI_VENDOR_ID_QMI, 0x0105), ATH_LED(3, 0) },
+	/* Fukato Datacask Jupiter 1014a (mrb74@gmx.at) */
+	{ ATH_SDEVICE(PCI_VENDOR_ID_AZWAVE, 0x1026), ATH_LED(3, 0) },
 	{ }
 };
 
@@ -78,7 +80,7 @@ void ath5k_led_enable(struct ath5k_softc *sc)
 	}
 }
 
-void ath5k_led_on(struct ath5k_softc *sc)
+static void ath5k_led_on(struct ath5k_softc *sc)
 {
 	if (!test_bit(ATH_STAT_LEDSOFT, sc->status))
 		return;

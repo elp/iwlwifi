@@ -466,7 +466,8 @@ int ieee80211_start_scan(struct ieee80211_sub_if_data *scan_sdata,
 		u8 *ies;
 		int rc, ielen;
 
-		ies = kmalloc(MAC80211_PREQ_IE_LEN + req->ie_len, GFP_KERNEL);
+		ies = kmalloc(2 + IEEE80211_MAX_SSID_LEN +
+			      local->scan_ies_len + req->ie_len, GFP_KERNEL);
 		if (!ies)
 			return -ENOMEM;
 

@@ -156,6 +156,30 @@ static inline void *nl80211hdr_put(struct sk_buff *skb, u32 pid, u32 seq,
 	return genlmsg_put(skb, pid, seq, &nl80211_fam, flags, cmd);
 }
 
+static int nl80211_msg_put_channel(struct sk_buff *msg,
+				   struct ieee80211_channel *chan)
+{
+	NLA_PUT_U32(msg, NL80211_FREQUENCY_ATTR_FREQ,
+		    chan->center_freq);
+
+	if (chan->flags & IEEE80211_CHAN_DISABLED)
+		NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_DISABLED);
+	if (chan->flags & IEEE80211_CHAN_PASSIVE_SCAN)
+		NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_PASSIVE_SCAN);
+	if (chan->flags & IEEE80211_CHAN_NO_IBSS)
+		NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_NO_IBSS);
+	if (chan->flags & IEEE80211_CHAN_RADAR)
+		NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_RADAR);
+
+	NLA_PUT_U32(msg, NL80211_FREQUENCY_ATTR_MAX_TX_POWER,
+		    DBM_TO_MBM(chan->max_power));
+
+	return 0;
+
+ nla_put_failure:
+	return -ENOBUFS;
+}
+
 /* netlink command implementations */
 
 static int nl80211_send_wiphy(struct sk_buff *msg, u32 pid, u32 seq, int flags,
@@ -185,6 +209,10 @@ static int nl80211_send_wiphy(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 		   dev->wiphy.max_scan_ssids);
 	NLA_PUT_U16(msg, NL80211_ATTR_MAX_SCAN_IE_LEN,
 		    dev->wiphy.max_scan_ie_len);
+
+	NLA_PUT(msg, NL80211_ATTR_CIPHER_SUITES,
+		sizeof(u32) * dev->wiphy.n_cipher_suites,
+		dev->wiphy.cipher_suites);
 
 	nl_modes = nla_nest_start(msg, NL80211_ATTR_SUPPORTED_IFTYPES);
 	if (!nl_modes)
@@ -236,20 +264,9 @@ static int nl80211_send_wiphy(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 				goto nla_put_failure;
 
 			chan = &dev->wiphy.bands[band]->channels[i];
-			NLA_PUT_U32(msg, NL80211_FREQUENCY_ATTR_FREQ,
-				    chan->center_freq);
 
-			if (chan->flags & IEEE80211_CHAN_DISABLED)
-				NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_DISABLED);
-			if (chan->flags & IEEE80211_CHAN_PASSIVE_SCAN)
-				NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_PASSIVE_SCAN);
-			if (chan->flags & IEEE80211_CHAN_NO_IBSS)
-				NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_NO_IBSS);
-			if (chan->flags & IEEE80211_CHAN_RADAR)
-				NLA_PUT_FLAG(msg, NL80211_FREQUENCY_ATTR_RADAR);
-
-			NLA_PUT_U32(msg, NL80211_FREQUENCY_ATTR_MAX_TX_POWER,
-				    DBM_TO_MBM(chan->max_power));
+			if (nl80211_msg_put_channel(msg, chan))
+				goto nla_put_failure;
 
 			nla_nest_end(msg, nl_freq);
 		}
@@ -968,7 +985,7 @@ static int nl80211_set_key(struct sk_buff *skb, struct genl_info *info)
 static int nl80211_new_key(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *drv;
-	int err;
+	int err, i;
 	struct net_device *dev;
 	struct key_params params;
 	u8 key_idx = 0;
@@ -1036,6 +1053,14 @@ static int nl80211_new_key(struct sk_buff *skb, struct genl_info *info)
 	err = get_drv_dev_by_info_ifindex(info->attrs, &drv, &dev);
 	if (err)
 		goto unlock_rtnl;
+
+	for (i = 0; i < drv->wiphy.n_cipher_suites; i++)
+		if (params.cipher == drv->wiphy.cipher_suites[i])
+			break;
+	if (i == drv->wiphy.n_cipher_suites) {
+		err = -EINVAL;
+		goto out;
+	}
 
 	if (!drv->ops->add_key) {
 		err = -EOPNOTSUPP;
@@ -3476,6 +3501,60 @@ void nl80211_michael_mic_failure(struct cfg80211_registered_device *rdev,
 	return;
 
  nla_put_failure:
+	genlmsg_cancel(msg, hdr);
+	nlmsg_free(msg);
+}
+
+void nl80211_send_beacon_hint_event(struct wiphy *wiphy,
+				    struct ieee80211_channel *channel_before,
+				    struct ieee80211_channel *channel_after)
+{
+	struct sk_buff *msg;
+	void *hdr;
+	struct nlattr *nl_freq;
+
+	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_ATOMIC);
+	if (!msg)
+		return;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_REG_BEACON_HINT);
+	if (!hdr) {
+		nlmsg_free(msg);
+		return;
+	}
+
+	/*
+	 * Since we are applying the beacon hint to a wiphy we know its
+	 * wiphy_idx is valid
+	 */
+	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY, get_wiphy_idx(wiphy));
+
+	/* Before */
+	nl_freq = nla_nest_start(msg, NL80211_ATTR_FREQ_BEFORE);
+	if (!nl_freq)
+		goto nla_put_failure;
+	if (nl80211_msg_put_channel(msg, channel_before))
+		goto nla_put_failure;
+	nla_nest_end(msg, nl_freq);
+
+	/* After */
+	nl_freq = nla_nest_start(msg, NL80211_ATTR_FREQ_AFTER);
+	if (!nl_freq)
+		goto nla_put_failure;
+	if (nl80211_msg_put_channel(msg, channel_after))
+		goto nla_put_failure;
+	nla_nest_end(msg, nl_freq);
+
+	if (genlmsg_end(msg, hdr) < 0) {
+		nlmsg_free(msg);
+		return;
+	}
+
+	genlmsg_multicast(msg, 0, nl80211_regulatory_mcgrp.id, GFP_ATOMIC);
+
+	return;
+
+nla_put_failure:
 	genlmsg_cancel(msg, hdr);
 	nlmsg_free(msg);
 }

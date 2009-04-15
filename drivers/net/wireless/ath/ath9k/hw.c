@@ -1220,6 +1220,21 @@ static void ath9k_olc_init(struct ath_hw *ah)
 	ah->PDADCdelta = 0;
 }
 
+static u32 ath9k_regd_get_ctl(struct ath_regulatory *reg,
+			      struct ath9k_channel *chan)
+{
+	u32 ctl = ath_regd_get_band_ctl(reg, chan->chan->band);
+
+	if (IS_CHAN_B(chan))
+		ctl |= CTL_11B;
+	else if (IS_CHAN_G(chan))
+		ctl |= CTL_11G;
+	else
+		ctl |= CTL_11A;
+
+	return ctl;
+}
+
 static int ath9k_hw_process_ini(struct ath_hw *ah,
 				struct ath9k_channel *chan,
 				enum ath9k_ht_macmode macmode)
@@ -1331,7 +1346,7 @@ static int ath9k_hw_process_ini(struct ath_hw *ah,
 		ath9k_olc_init(ah);
 
 	status = ah->eep_ops->set_txpower(ah, chan,
-				  ath9k_regd_get_ctl(ah, chan),
+				  ath9k_regd_get_ctl(&ah->regulatory, chan),
 				  channel->max_antenna_gain * 2,
 				  channel->max_power * 2,
 				  min((u32) MAX_RATE_POWER,
@@ -1671,7 +1686,7 @@ static bool ath9k_hw_channel_change(struct ath_hw *ah,
 	}
 
 	if (ah->eep_ops->set_txpower(ah, chan,
-			     ath9k_regd_get_ctl(ah, chan),
+			     ath9k_regd_get_ctl(&ah->regulatory, chan),
 			     channel->max_antenna_gain * 2,
 			     channel->max_power * 2,
 			     min((u32) MAX_RATE_POWER,
@@ -3710,7 +3725,7 @@ bool ath9k_hw_set_txpowerlimit(struct ath_hw *ah, u32 limit)
 	ah->regulatory.power_limit = min(limit, (u32) MAX_RATE_POWER);
 
 	if (ah->eep_ops->set_txpower(ah, chan,
-			     ath9k_regd_get_ctl(ah, chan),
+			     ath9k_regd_get_ctl(&ah->regulatory, chan),
 			     channel->max_antenna_gain * 2,
 			     channel->max_power * 2,
 			     min((u32) MAX_RATE_POWER,
