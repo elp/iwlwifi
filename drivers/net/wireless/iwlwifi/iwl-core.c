@@ -2474,7 +2474,11 @@ int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 
 	mutex_lock(&priv->mutex);
 
-	WARN(!iwl_is_ready(priv), "Device - not ready\n");
+	if (!iwl_is_ready(priv)) {
+		IWL_DEBUG_MAC80211(priv, "leave - not ready\n");
+		ret = -EIO;
+		goto out;
+	}
 
 	IWL_DEBUG_MAC80211(priv, "enter to channel %d changed 0x%X\n",
 					conf->channel->hw_value, changed);
