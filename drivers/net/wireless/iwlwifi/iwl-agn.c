@@ -190,9 +190,6 @@ int iwl_commit_rxon(struct iwl_priv *priv)
 
 	priv->cfg->ops->smgmt->clear_station_table(priv);
 
-	if (!priv->error_recovering)
-		priv->start_calib = 0;
-
 	/* Add the broadcast address so we can send broadcast frames */
 	if (iwl_rxon_add_station(priv, iwl_bcast_addr, 0) ==
 						IWL_INVALID_STATION) {
@@ -966,23 +963,6 @@ static inline void iwl_synchronize_irq(struct iwl_priv *priv)
 	tasklet_kill(&priv->irq_tasklet);
 }
 
-static void iwl_error_recovery(struct iwl_priv *priv)
-{
-	unsigned long flags;
-
-	memcpy(&priv->staging_rxon, &priv->recovery_rxon,
-	       sizeof(priv->staging_rxon));
-	priv->staging_rxon.filter_flags &= ~RXON_FILTER_ASSOC_MSK;
-	iwlcore_commit_rxon(priv);
-
-	iwl_rxon_add_station(priv, priv->bssid, 1);
-
-	spin_lock_irqsave(&priv->lock, flags);
-	priv->assoc_id = le16_to_cpu(priv->staging_rxon.assoc_id);
-	priv->error_recovering = 0;
-	spin_unlock_irqrestore(&priv->lock, flags);
-}
-
 static void iwl_irq_tasklet(struct iwl_priv *priv)
 {
 	u32 inta, handled = 0;
@@ -1513,9 +1493,6 @@ static void iwl_alive_start(struct iwl_priv *priv)
 	set_bit(STATUS_READY, &priv->status);
 	wake_up_interruptible(&priv->wait_command_queue);
 
-	if (priv->error_recovering)
-		iwl_error_recovery(priv);
-
 	iwl_power_update_mode(priv, 1);
 
 	/* reassociate for ADHOC mode */
@@ -1714,9 +1691,6 @@ static int __iwl_up(struct iwl_priv *priv)
 			continue;
 		}
 
-		/* Clear out the uCode error bit if it is set */
-		clear_bit(STATUS_FW_ERROR, &priv->status);
-
 		/* start card; "initialize" will load runtime ucode */
 		iwl_nic_start(priv);
 
@@ -1785,6 +1759,8 @@ static void iwl_bg_run_time_calib_work(struct work_struct *work)
 		iwl_chain_noise_calibration(priv, &priv->statistics);
 
 		iwl_sensitivity_calibration(priv, &priv->statistics);
+
+		priv->start_calib = 0;
 	}
 
 	mutex_unlock(&priv->mutex);
@@ -1811,8 +1787,17 @@ static void iwl_bg_restart(struct work_struct *data)
 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
 		return;
 
-	iwl_down(priv);
-	queue_work(priv->workqueue, &priv->up);
+	if (test_and_clear_bit(STATUS_FW_ERROR, &priv->status)) {
+		mutex_lock(&priv->mutex);
+		priv->vif = NULL;
+		priv->is_open = 0;
+		mutex_unlock(&priv->mutex);
+		iwl_down(priv);
+		ieee80211_restart_hw(priv->hw);
+	} else {
+		iwl_down(priv);
+		queue_work(priv->workqueue, &priv->up);
+	}
 }
 
 static void iwl_bg_rx_replenish(struct work_struct *data)
@@ -2008,10 +1993,8 @@ static void iwl_mac_stop(struct ieee80211_hw *hw)
 
 	IWL_DEBUG_MAC80211(priv, "enter\n");
 
-	if (!priv->is_open) {
-		IWL_DEBUG_MAC80211(priv, "leave - skip\n");
+	if (!priv->is_open)
 		return;
-	}
 
 	priv->is_open = 0;
 
