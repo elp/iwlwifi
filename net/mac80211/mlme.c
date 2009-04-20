@@ -528,6 +528,9 @@ static bool ieee80211_check_tim(struct ieee802_11_elems *elems, u16 aid)
 	u8 index, indexn1, indexn2;
 	struct ieee80211_tim_ie *tim = (struct ieee80211_tim_ie *) elems->tim;
 
+	if (unlikely(!tim || elems->tim_len < 4))
+		return false;
+
 	aid &= 0x3fff;
 	index = aid / 8;
 	mask  = 1 << (aid & 7);
@@ -2205,12 +2208,13 @@ void ieee80211_dynamic_ps_enable_work(struct work_struct *work)
 	struct ieee80211_local *local =
 		container_of(work, struct ieee80211_local,
 			     dynamic_ps_enable_work);
+	/* XXX: using scan_sdata is completely broken! */
 	struct ieee80211_sub_if_data *sdata = local->scan_sdata;
 
 	if (local->hw.conf.flags & IEEE80211_CONF_PS)
 		return;
 
-	if (local->hw.flags & IEEE80211_HW_PS_NULLFUNC_STACK)
+	if (local->hw.flags & IEEE80211_HW_PS_NULLFUNC_STACK && sdata)
 		ieee80211_send_nullfunc(local, sdata, 1);
 
 	local->hw.conf.flags |= IEEE80211_CONF_PS;
