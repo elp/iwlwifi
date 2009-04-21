@@ -11,6 +11,22 @@ config MAC80211
 	  This option enables the hardware independent IEEE 802.11
 	  networking stack.
 
+config MAC80211_DEFAULT_PS
+	bool "enable powersave by default"
+	depends on MAC80211
+	default y
+	help
+	  This option enables powersave mode by default.
+
+	  If this causes your applications to misbehave you should fix your
+	  applications instead -- they need to register their network
+	  latency requirement, see Documentation/power/pm_qos_interface.txt.
+
+config MAC80211_DEFAULT_PS_VALUE
+	int
+	default 1 if MAC80211_DEFAULT_PS
+	default 0
+
 menu "Rate control algorithm selection"
 	depends on MAC80211 != n
 
@@ -202,10 +218,3 @@ config MAC80211_DEBUG_COUNTERS
 	  and show them in debugfs.
 
 	  If unsure, say N.
-
-config MAC80211_VERBOSE_SPECT_MGMT_DEBUG
-	bool "Verbose Spectrum Management (IEEE 802.11h)debugging"
-	depends on MAC80211_DEBUG_MENU
-	---help---
-	  Say Y here to print out verbose Spectrum Management (IEEE 802.11h)
-	  debug messages.
