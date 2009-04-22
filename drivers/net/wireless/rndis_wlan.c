@@ -415,12 +415,12 @@ static int rndis_change_virtual_intf(struct wiphy *wiphy, int ifindex,
 static int rndis_scan(struct wiphy *wiphy, struct net_device *dev,
 			struct cfg80211_scan_request *request);
 
-struct cfg80211_ops rndis_config_ops = {
+static struct cfg80211_ops rndis_config_ops = {
 	.change_virtual_intf = rndis_change_virtual_intf,
 	.scan = rndis_scan,
 };
 
-void *rndis_wiphy_privid = &rndis_wiphy_privid;
+static void *rndis_wiphy_privid = &rndis_wiphy_privid;
 
 static const int bcm4320_power_output[4] = { 25, 50, 75, 100 };
 
@@ -2384,6 +2384,12 @@ static int rndis_wext_bind(struct usbnet *usbdev, struct usb_interface *intf)
 	mutex_init(&priv->command_lock);
 	spin_lock_init(&priv->stats_lock);
 
+	/* because rndis_command() sleeps we need to use workqueue */
+	priv->workqueue = create_singlethread_workqueue("rndis_wlan");
+	INIT_WORK(&priv->work, rndis_wext_worker);
+	INIT_DELAYED_WORK(&priv->stats_work, rndis_update_wireless_stats);
+	INIT_DELAYED_WORK(&priv->scan_work, rndis_get_scan_results);
+
 	/* try bind rndis_host */
 	retval = generic_rndis_bind(usbdev, intf, FLAG_RNDIS_PHYM_WIRELESS);
 	if (retval < 0)
@@ -2443,8 +2449,8 @@ static int rndis_wext_bind(struct usbnet *usbdev, struct usb_interface *intf)
 	set_wiphy_dev(wiphy, &usbdev->udev->dev);
 
 	if (wiphy_register(wiphy)) {
-		wiphy_free(wiphy);
-		return -ENODEV;
+		retval = -ENODEV;
+		goto fail;
 	}
 
 	set_default_iw_params(usbdev);
@@ -2454,18 +2460,19 @@ static int rndis_wext_bind(struct usbnet *usbdev, struct usb_interface *intf)
 	disassociate(usbdev, 1);
 	netif_carrier_off(usbdev->net);
 
-	/* because rndis_command() sleeps we need to use workqueue */
-	priv->workqueue = create_singlethread_workqueue("rndis_wlan");
-	INIT_DELAYED_WORK(&priv->stats_work, rndis_update_wireless_stats);
 	queue_delayed_work(priv->workqueue, &priv->stats_work,
 		round_jiffies_relative(STATS_UPDATE_JIFFIES));
-	INIT_DELAYED_WORK(&priv->scan_work, rndis_get_scan_results);
-	INIT_WORK(&priv->work, rndis_wext_worker);
 
 	return 0;
 
 fail:
-	kfree(priv);
+	cancel_delayed_work_sync(&priv->stats_work);
+	cancel_delayed_work_sync(&priv->scan_work);
+	cancel_work_sync(&priv->work);
+	flush_workqueue(priv->workqueue);
+	destroy_workqueue(priv->workqueue);
+
+	wiphy_free(wiphy);
 	return retval;
 }
 
