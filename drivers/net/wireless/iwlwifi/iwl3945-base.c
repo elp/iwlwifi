@@ -1443,8 +1443,7 @@ void iwl3945_rx_replenish(void *data)
  * This free routine walks the list of POOL entries and if SKB is set to
  * non NULL it is unmapped and freed
  */
-static void iwl3945_rx_queue_free(struct iwl_priv *priv,
-				  struct iwl_rx_queue *rxq)
+static void iwl3945_rx_queue_free(struct iwl_priv *priv, struct iwl_rx_queue *rxq)
 {
 	int i;
 	for (i = 0; i < RX_QUEUE_SIZE + RX_FREE_BUFFERS; i++) {
