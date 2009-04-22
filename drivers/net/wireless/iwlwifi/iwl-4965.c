@@ -314,8 +314,8 @@ restart:
 
 static int is_fat_channel(__le32 rxon_flags)
 {
-	return (rxon_flags & RXON_FLG_CHANNEL_MODE_PURE_40_MSK) ||
-		(rxon_flags & RXON_FLG_CHANNEL_MODE_MIXED_MSK);
+	return (rxon_flags & RXON_FLG_CHANNEL_MODE_PURE_40) ||
+		(rxon_flags & RXON_FLG_CHANNEL_MODE_MIXED);
 }
 
 /*
