@@ -545,10 +545,19 @@ void ieee80211_recalc_ps(struct ieee80211_local *local, s32 latency)
 		beaconint_us = ieee80211_tu_to_usec(
 					found->vif.bss_conf.beacon_int);
 
-		if (beaconint_us > latency)
+		if (beaconint_us > latency) {
 			local->ps_sdata = NULL;
-		else
+		} else {
+			u8 dtimper = found->vif.bss_conf.dtim_period;
+			int maxslp = 1;
+
+			if (dtimper > 1)
+				maxslp = min_t(int, dtimper,
+						    latency / beaconint_us);
+
+			local->hw.conf.max_sleep_interval = maxslp;
 			local->ps_sdata = found;
+		}
 	} else {
 		local->ps_sdata = NULL;
 	}
@@ -851,8 +860,11 @@ static void ieee80211_set_associated(struct ieee80211_sub_if_data *sdata,
 	ieee80211_bss_info_change_notify(sdata, bss_info_changed);
 
 	/* will be same as sdata */
-	if (local->ps_sdata)
-		ieee80211_enable_ps(local, sdata);
+	if (local->ps_sdata) {
+		mutex_lock(&local->iflist_mtx);
+		ieee80211_recalc_ps(local, -1);
+		mutex_unlock(&local->iflist_mtx);
+	}
 
 	netif_tx_start_all_queues(sdata->dev);
 	netif_carrier_on(sdata->dev);
@@ -920,7 +932,7 @@ static void ieee80211_authenticate(struct ieee80211_sub_if_data *sdata)
 		       " timed out\n",
 		       sdata->dev->name, ifmgd->bssid);
 		ifmgd->state = IEEE80211_STA_MLME_DISABLED;
-		ieee80211_sta_send_apinfo(sdata);
+		cfg80211_send_auth_timeout(sdata->dev, ifmgd->bssid);
 		ieee80211_rx_bss_remove(sdata, ifmgd->bssid,
 				sdata->local->hw.conf.channel->center_freq,
 				ifmgd->ssid, ifmgd->ssid_len);
@@ -1103,7 +1115,7 @@ static void ieee80211_associate(struct ieee80211_sub_if_data *sdata)
 		       " timed out\n",
 		       sdata->dev->name, ifmgd->bssid);
 		ifmgd->state = IEEE80211_STA_MLME_DISABLED;
-		ieee80211_sta_send_apinfo(sdata);
+		cfg80211_send_assoc_timeout(sdata->dev, ifmgd->bssid);
 		ieee80211_rx_bss_remove(sdata, ifmgd->bssid,
 				sdata->local->hw.conf.channel->center_freq,
 				ifmgd->ssid, ifmgd->ssid_len);
@@ -1743,12 +1755,12 @@ static void ieee80211_rx_mgmt_probe_resp(struct ieee80211_sub_if_data *sdata,
  *	look out for other vendor IEs.
  */
 static const u64 care_about_ies =
-	BIT(WLAN_EID_COUNTRY) |
-	BIT(WLAN_EID_ERP_INFO) |
-	BIT(WLAN_EID_CHANNEL_SWITCH) |
-	BIT(WLAN_EID_PWR_CONSTRAINT) |
-	BIT(WLAN_EID_HT_CAPABILITY) |
-	BIT(WLAN_EID_HT_INFORMATION);
+	(1ULL << WLAN_EID_COUNTRY) |
+	(1ULL << WLAN_EID_ERP_INFO) |
+	(1ULL << WLAN_EID_CHANNEL_SWITCH) |
+	(1ULL << WLAN_EID_PWR_CONSTRAINT) |
+	(1ULL << WLAN_EID_HT_CAPABILITY) |
+	(1ULL << WLAN_EID_HT_INFORMATION);
 
 static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 				     struct ieee80211_mgmt *mgmt,

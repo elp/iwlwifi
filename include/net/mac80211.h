@@ -517,7 +517,7 @@ struct ieee80211_rx_status {
  * Flags to define PHY configuration options
  *
  * @IEEE80211_CONF_RADIOTAP: add radiotap header at receive time (if supported)
- * @IEEE80211_CONF_PS: Enable 802.11 power save mode
+ * @IEEE80211_CONF_PS: Enable 802.11 power save mode (managed mode only)
  */
 enum ieee80211_conf_flags {
 	IEEE80211_CONF_RADIOTAP		= (1<<0),
@@ -532,8 +532,7 @@ enum ieee80211_conf_flags {
  * @IEEE80211_CONF_CHANGE_BEACON_INTERVAL: the beacon interval changed
  * @IEEE80211_CONF_CHANGE_LISTEN_INTERVAL: the listen interval changed
  * @IEEE80211_CONF_CHANGE_RADIOTAP: the radiotap flag changed
- * @IEEE80211_CONF_CHANGE_PS: the PS flag changed
- * @IEEE80211_CONF_CHANGE_DYNPS_TIMEOUT: the dynamic PS timeout changed
+ * @IEEE80211_CONF_CHANGE_PS: the PS flag or dynamic PS timeout changed
  * @IEEE80211_CONF_CHANGE_POWER: the TX power changed
  * @IEEE80211_CONF_CHANGE_CHANNEL: the channel/channel_type changed
  * @IEEE80211_CONF_CHANGE_RETRY_LIMITS: retry limits changed
@@ -544,10 +543,9 @@ enum ieee80211_conf_changed {
 	IEEE80211_CONF_CHANGE_LISTEN_INTERVAL	= BIT(2),
 	IEEE80211_CONF_CHANGE_RADIOTAP		= BIT(3),
 	IEEE80211_CONF_CHANGE_PS		= BIT(4),
-	IEEE80211_CONF_CHANGE_DYNPS_TIMEOUT	= BIT(5),
-	IEEE80211_CONF_CHANGE_POWER		= BIT(6),
-	IEEE80211_CONF_CHANGE_CHANNEL		= BIT(7),
-	IEEE80211_CONF_CHANGE_RETRY_LIMITS	= BIT(8),
+	IEEE80211_CONF_CHANGE_POWER		= BIT(5),
+	IEEE80211_CONF_CHANGE_CHANNEL		= BIT(6),
+	IEEE80211_CONF_CHANGE_RETRY_LIMITS	= BIT(7),
 };
 
 /**
@@ -555,14 +553,26 @@ enum ieee80211_conf_changed {
  *
  * This struct indicates how the driver shall configure the hardware.
  *
+ * @flags: configuration flags defined above
+ *
  * @radio_enabled: when zero, driver is required to switch off the radio.
  * @beacon_int: beacon interval (TODO make interface config)
+ *
  * @listen_interval: listen interval in units of beacon interval
- * @flags: configuration flags defined above
+ * @max_sleep_interval: the maximum number of beacon intervals to sleep for
+ *	before checking the beacon for a TIM bit (managed mode only); this
+ *	value will be only achievable between DTIM frames, the hardware
+ *	needs to check for the multicast traffic bit in DTIM beacons.
+ *	This variable is valid only when the CONF_PS flag is set.
+ * @dynamic_ps_timeout: The dynamic powersave timeout (in ms), see the
+ *	powersave documentation below. This variable is valid only when
+ *	the CONF_PS flag is set.
+ *
  * @power_level: requested transmit power (in dBm)
- * @dynamic_ps_timeout: dynamic powersave timeout (in ms)
+ *
  * @channel: the channel to tune to
  * @channel_type: the channel (HT) type
+ *
  * @long_frame_max_tx_count: Maximum number of transmissions for a "long" frame
  *    (a frame not RTS protected), called "dot11LongRetryLimit" in 802.11,
  *    but actually means the number of transmissions not the number of retries
@@ -574,6 +584,7 @@ struct ieee80211_conf {
 	int beacon_int;
 	u32 flags;
 	int power_level, dynamic_ps_timeout;
+	int max_sleep_interval;
 
 	u16 listen_interval;
 	bool radio_enabled;
