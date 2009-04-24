@@ -702,7 +702,7 @@ static void iwl_bg_request_scan(struct work_struct *data)
 	if (priv->scan_bands & BIT(IEEE80211_BAND_2GHZ)) {
 		band = IEEE80211_BAND_2GHZ;
 		scan->flags = RXON_FLG_BAND_24G_MSK | RXON_FLG_AUTO_DETECT_MSK;
-		if (priv->active_rxon.flags & RXON_FLG_CHANNEL_MODE_PURE_40) {
+		if (priv->active_rxon.flags & RXON_FLG_CHANNEL_MODE_PURE_40_MSK) {
 			rate = IWL_RATE_6M_PLCP;
 		} else {
 			rate = IWL_RATE_1M_PLCP;
