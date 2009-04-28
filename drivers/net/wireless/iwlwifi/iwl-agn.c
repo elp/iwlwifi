@@ -564,7 +564,8 @@ static void iwl_setup_rxon_timing(struct iwl_priv *priv)
 		beacon_int = iwl_adjust_beacon_interval(priv->beacon_int);
 		priv->rxon_timing.atim_window = 0;
 	} else {
-		beacon_int = iwl_adjust_beacon_interval(conf->beacon_int);
+		beacon_int = iwl_adjust_beacon_interval(
+			priv->vif->bss_conf.beacon_int);
 
 		/* TODO: we need to get atim_window from upper stack
 		 * for now we set to 0 */
@@ -2605,7 +2606,6 @@ static struct ieee80211_ops iwl_hw_ops = {
 	.add_interface = iwl_mac_add_interface,
 	.remove_interface = iwl_mac_remove_interface,
 	.config = iwl_mac_config,
-	.config_interface = iwl_mac_config_interface,
 	.configure_filter = iwl_configure_filter,
 	.set_key = iwl_mac_set_key,
 	.update_tkip_key = iwl_mac_update_tkip_key,

@@ -23,6 +23,7 @@
 #include <asm/unaligned.h>
 
 #include "ieee80211_i.h"
+#include "driver-ops.h"
 #include "rate.h"
 #include "led.h"
 
@@ -487,6 +488,13 @@ static void ieee80211_enable_ps(struct ieee80211_local *local,
 {
 	struct ieee80211_conf *conf = &local->hw.conf;
 
+	/*
+	 * If we are scanning right now then the parameters will
+	 * take effect when scan finishes.
+	 */
+	if (local->hw_scanning || local->sw_scanning)
+		return;
+
 	if (conf->dynamic_ps_timeout > 0 &&
 	    !(local->hw.flags & IEEE80211_HW_SUPPORTS_DYNAMIC_PS)) {
 		mod_timer(&local->dynamic_ps_timer, jiffies +
@@ -555,7 +563,7 @@ void ieee80211_recalc_ps(struct ieee80211_local *local, s32 latency)
 				maxslp = min_t(int, dtimper,
 						    latency / beaconint_us);
 
-			local->hw.conf.max_sleep_interval = maxslp;
+			local->hw.conf.max_sleep_period = maxslp;
 			local->ps_sdata = found;
 		}
 	} else {
@@ -676,11 +684,10 @@ static void ieee80211_sta_wmm_params(struct ieee80211_local *local,
 		       local->mdev->name, queue, aci, acm, params.aifs, params.cw_min,
 		       params.cw_max, params.txop);
 #endif
-		if (local->ops->conf_tx &&
-		    local->ops->conf_tx(local_to_hw(local), queue, &params)) {
+		if (drv_conf_tx(local, queue, &params) && local->ops->conf_tx)
 			printk(KERN_DEBUG "%s: failed to set TX queue "
-			       "parameters for queue %d\n", local->mdev->name, queue);
-		}
+			       "parameters for queue %d\n", local->mdev->name,
+			       queue);
 	}
 }
 
@@ -835,6 +842,7 @@ static void ieee80211_set_associated(struct ieee80211_sub_if_data *sdata,
 		sdata->vif.bss_conf.timestamp = bss->cbss.tsf;
 		sdata->vif.bss_conf.dtim_period = bss->dtim_period;
 
+		bss_info_changed |= BSS_CHANGED_BEACON_INT;
 		bss_info_changed |= ieee80211_handle_bss_capability(sdata,
 			bss->cbss.capability, bss->has_erp_value, bss->erp_value);
 
@@ -882,7 +890,7 @@ static void ieee80211_direct_probe(struct ieee80211_sub_if_data *sdata)
 		printk(KERN_DEBUG "%s: direct probe to AP %pM timed out\n",
 		       sdata->dev->name, ifmgd->bssid);
 		ifmgd->state = IEEE80211_STA_MLME_DISABLED;
-		ieee80211_sta_send_apinfo(sdata);
+		cfg80211_send_auth_timeout(sdata->dev, ifmgd->bssid);
 
 		/*
 		 * Most likely AP is not in the range so remove the
@@ -906,8 +914,6 @@ static void ieee80211_direct_probe(struct ieee80211_sub_if_data *sdata)
 			ifmgd->direct_probe_tries);
 
 	ifmgd->state = IEEE80211_STA_MLME_DIRECT_PROBE;
-
-	set_bit(IEEE80211_STA_REQ_DIRECT_PROBE, &ifmgd->request);
 
 	/* Direct probe is sent to broadcast address as some APs
 	 * will not answer to direct packet in unassociated state.
@@ -1730,8 +1736,7 @@ static void ieee80211_rx_mgmt_probe_resp(struct ieee80211_sub_if_data *sdata,
 	ieee80211_rx_bss_info(sdata, mgmt, len, rx_status, &elems, false);
 
 	/* direct probe may be part of the association flow */
-	if (test_and_clear_bit(IEEE80211_STA_REQ_DIRECT_PROBE,
-			       &ifmgd->request)) {
+	if (ifmgd->state == IEEE80211_STA_MLME_DIRECT_PROBE) {
 		printk(KERN_DEBUG "%s direct probe responded\n",
 		       sdata->dev->name);
 		ieee80211_authenticate(sdata);
@@ -1974,10 +1979,8 @@ static void ieee80211_sta_reset_auth(struct ieee80211_sub_if_data *sdata)
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
 	struct ieee80211_local *local = sdata->local;
 
-	if (local->ops->reset_tsf) {
-		/* Reset own TSF to allow time synchronization work. */
-		local->ops->reset_tsf(local_to_hw(local));
-	}
+	/* Reset own TSF to allow time synchronization work. */
+	drv_reset_tsf(local);
 
 	ifmgd->wmm_last_param_set = -1; /* allow any WMM update */
 
@@ -2065,19 +2068,15 @@ static int ieee80211_sta_config_auth(struct ieee80211_sub_if_data *sdata)
 		return 0;
 	} else {
 		if (ifmgd->assoc_scan_tries < IEEE80211_ASSOC_SCANS_MAX_TRIES) {
-			ifmgd->assoc_scan_tries++;
-			/* XXX maybe racy? */
-			if (local->scan_req)
-				return -1;
-			memcpy(local->int_scan_req.ssids[0].ssid,
-			       ifmgd->ssid, IEEE80211_MAX_SSID_LEN);
-			if (ifmgd->flags & IEEE80211_STA_AUTO_SSID_SEL)
-				local->int_scan_req.ssids[0].ssid_len = 0;
-			else
-				local->int_scan_req.ssids[0].ssid_len = ifmgd->ssid_len;
+			u8 ssid_len = 0;
 
-			if (ieee80211_start_scan(sdata, &local->int_scan_req))
-				ieee80211_scan_failed(local);
+			if (!(ifmgd->flags & IEEE80211_STA_AUTO_SSID_SEL))
+				ssid_len = ifmgd->ssid_len;
+
+			ifmgd->assoc_scan_tries++;
+
+			ieee80211_request_internal_scan(sdata, ifmgd->ssid,
+							ssid_len);
 
 			ifmgd->state = IEEE80211_STA_MLME_AUTHENTICATE;
 			set_bit(IEEE80211_STA_REQ_AUTH, &ifmgd->request);
@@ -2115,14 +2114,8 @@ static void ieee80211_sta_work(struct work_struct *work)
 	    ifmgd->state != IEEE80211_STA_MLME_AUTHENTICATE &&
 	    ifmgd->state != IEEE80211_STA_MLME_ASSOCIATE &&
 	    test_and_clear_bit(IEEE80211_STA_REQ_SCAN, &ifmgd->request)) {
-		/*
-		 * The call to ieee80211_start_scan can fail but ieee80211_request_scan
-		 * (which queued ieee80211_sta_work) did not return an error. Thus, call
-		 * ieee80211_scan_failed here if ieee80211_start_scan fails in order to
-		 * notify the scan requester.
-		 */
-		if (ieee80211_start_scan(sdata, local->scan_req))
-			ieee80211_scan_failed(local);
+		queue_delayed_work(local->hw.workqueue, &local->scan_work,
+				   round_jiffies_relative(0));
 		return;
 	}
 
@@ -2291,12 +2284,8 @@ int ieee80211_sta_set_bssid(struct ieee80211_sub_if_data *sdata, u8 *bssid)
 		ifmgd->flags &= ~IEEE80211_STA_BSSID_SET;
 	}
 
-	if (netif_running(sdata->dev)) {
-		if (ieee80211_if_config(sdata, IEEE80211_IFCC_BSSID)) {
-			printk(KERN_DEBUG "%s: Failed to config new BSSID to "
-			       "the low-level driver\n", sdata->dev->name);
-		}
-	}
+	if (netif_running(sdata->dev))
+		ieee80211_bss_info_change_notify(sdata, BSS_CHANGED_BSSID);
 
 	return ieee80211_sta_commit(sdata);
 }
