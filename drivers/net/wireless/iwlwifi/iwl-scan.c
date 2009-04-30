@@ -736,9 +736,9 @@ static void iwl_bg_request_scan(struct work_struct *data)
 
 	/* MIMO is not used here, but value is required */
 	scan->rx_chain = RXON_RX_CHAIN_DRIVER_FORCE_MSK |
-				cpu_to_le16((ANT_ABC << RXON_RX_CHAIN_VALID_POS) |
+				cpu_to_le16((0x7 << RXON_RX_CHAIN_VALID_POS) |
 				(rx_chain << RXON_RX_CHAIN_FORCE_SEL_POS) |
-				(ANT_ABC << RXON_RX_CHAIN_FORCE_MIMO_SEL_POS));
+				(0x7 << RXON_RX_CHAIN_FORCE_MIMO_SEL_POS));
 	cmd_len = iwl_fill_probe_req(priv,
 				(struct ieee80211_mgmt *)scan->data,
 				priv->scan_request->ie,
