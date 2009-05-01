@@ -558,6 +558,10 @@ ieee80211_tx_h_rate_ctrl(struct ieee80211_tx_data *tx)
 	if (unlikely(!info->control.rates[0].count))
 		info->control.rates[0].count = 1;
 
+	if (WARN_ON_ONCE((info->control.rates[0].count > 1) &&
+			 (info->flags & IEEE80211_TX_CTL_NO_ACK)))
+		info->control.rates[0].count = 1;
+
 	if (is_multicast_ether_addr(hdr->addr1)) {
 		/*
 		 * XXX: verify the rate is in the basic rateset
@@ -788,7 +792,7 @@ ieee80211_tx_h_fragment(struct ieee80211_tx_data *tx)
 	hdrlen = ieee80211_hdrlen(hdr->frame_control);
 
 	/* internal error, why is TX_FRAGMENTED set? */
-	if (WARN_ON(skb->len <= frag_threshold))
+	if (WARN_ON(skb->len + FCS_LEN <= frag_threshold))
 		return TX_DROP;
 
 	/*
