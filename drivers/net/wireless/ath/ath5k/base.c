@@ -516,6 +516,7 @@ ath5k_pci_probe(struct pci_dev *pdev,
 		    IEEE80211_HW_NOISE_DBM;
 
 	hw->wiphy->interface_modes =
+		BIT(NL80211_IFTYPE_AP) |
 		BIT(NL80211_IFTYPE_STATION) |
 		BIT(NL80211_IFTYPE_ADHOC) |
 		BIT(NL80211_IFTYPE_MESH_POINT);
@@ -1278,7 +1279,7 @@ ath5k_txbuf_setup(struct ath5k_softc *sc, struct ath5k_buf *bf)
 		ieee80211_get_hdrlen_from_skb(skb), AR5K_PKT_TYPE_NORMAL,
 		(sc->power_level * 2),
 		hw_rate,
-		info->control.rates[0].count, keyidx, 0, flags,
+		info->control.rates[0].count, keyidx, ah->ah_tx_ant, flags,
 		cts_rate, duration);
 	if (ret)
 		goto err_unmap;
@@ -1738,35 +1739,6 @@ ath5k_check_ibss_tsf(struct ath5k_softc *sc, struct sk_buff *skb,
 	}
 }
 
-static void ath5k_tasklet_beacon(unsigned long data)
-{
-	struct ath5k_softc *sc = (struct ath5k_softc *) data;
-
-	/*
-	 * Software beacon alert--time to send a beacon.
-	 *
-	 * In IBSS mode we use this interrupt just to
-	 * keep track of the next TBTT (target beacon
-	 * transmission time) in order to detect wether
-	 * automatic TSF updates happened.
-	 */
-	if (sc->opmode == NL80211_IFTYPE_ADHOC) {
-		/* XXX: only if VEOL suppported */
-		u64 tsf = ath5k_hw_get_tsf64(sc->ah);
-		sc->nexttbtt += sc->bintval;
-		ATH5K_DBG(sc, ATH5K_DEBUG_BEACON,
-				"SWBA nexttbtt: %x hw_tu: %x "
-				"TSF: %llx\n",
-				sc->nexttbtt,
-				TSF_TO_TU(tsf),
-				(unsigned long long) tsf);
-	} else {
-		spin_lock(&sc->block);
-		ath5k_beacon_send(sc);
-		spin_unlock(&sc->block);
-	}
-}
-
 static void
 ath5k_tasklet_rx(unsigned long data)
 {
@@ -2037,7 +2009,8 @@ ath5k_beacon_setup(struct ath5k_softc *sc, struct ath5k_buf *bf)
 	struct	ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ath5k_hw *ah = sc->ah;
 	struct ath5k_desc *ds;
-	int ret, antenna = 0;
+	int ret = 0;
+	u8 antenna;
 	u32 flags;
 
 	bf->skbaddr = pci_map_single(sc->pdev, skb->data, skb->len,
@@ -2051,23 +2024,35 @@ ath5k_beacon_setup(struct ath5k_softc *sc, struct ath5k_buf *bf)
 	}
 
 	ds = bf->desc;
+	antenna = ah->ah_tx_ant;
 
 	flags = AR5K_TXDESC_NOACK;
 	if (sc->opmode == NL80211_IFTYPE_ADHOC && ath5k_hw_hasveol(ah)) {
 		ds->ds_link = bf->daddr;	/* self-linked */
 		flags |= AR5K_TXDESC_VEOL;
-		/*
-		 * Let hardware handle antenna switching if txantenna is not set
-		 */
-	} else {
+	} else
 		ds->ds_link = 0;
-		/*
-		 * Switch antenna every 4 beacons if txantenna is not set
-		 * XXX assumes two antennas
-		 */
-		if (antenna == 0)
-			antenna = sc->bsent & 4 ? 2 : 1;
-	}
+
+	/*
+	 * If we use multiple antennas on AP and use
+	 * the Sectored AP scenario, switch antenna every
+	 * 4 beacons to make sure everybody hears our AP.
+	 * When a client tries to associate, hw will keep
+	 * track of the tx antenna to be used for this client
+	 * automaticaly, based on ACKed packets.
+	 *
+	 * Note: AP still listens and transmits RTS on the
+	 * default antenna which is supposed to be an omni.
+	 *
+	 * Note2: On sectored scenarios it's possible to have
+	 * multiple antennas (1omni -the default- and 14 sectors)
+	 * so if we choose to actually support this mode we need
+	 * to allow user to set how many antennas we have and tweak
+	 * the code below to send beacons on all of them.
+	 */
+	if (ah->ah_ant_mode == AR5K_ANTMODE_SECTOR_AP)
+		antenna = sc->bsent & 4 ? 2 : 1;
+
 
 	/* FIXME: If we are in g mode and rate is a CCK rate
 	 * subtract ah->ah_txpower.txp_cck_ofdm_pwr_delta
@@ -2120,7 +2105,7 @@ ath5k_beacon_send(struct ath5k_softc *sc)
 		sc->bmisscount++;
 		ATH5K_DBG(sc, ATH5K_DEBUG_BEACON,
 			"missed %u consecutive beacons\n", sc->bmisscount);
-		if (sc->bmisscount > 3) {		/* NB: 3 is a guess */
+		if (sc->bmisscount > 10) {	/* NB: 10 is a guess */
 			ATH5K_DBG(sc, ATH5K_DEBUG_BEACON,
 				"stuck beacon time (%u missed)\n",
 				sc->bmisscount);
@@ -2141,10 +2126,12 @@ ath5k_beacon_send(struct ath5k_softc *sc)
 	 * are still pending on the queue.
 	 */
 	if (unlikely(ath5k_hw_stop_tx_dma(ah, sc->bhalq))) {
-		ATH5K_WARN(sc, "beacon queue %u didn't stop?\n", sc->bhalq);
+		ATH5K_WARN(sc, "beacon queue %u didn't start/stop ?\n", sc->bhalq);
 		/* NB: hw still stops DMA, so proceed */
 	}
 
+	/* Note: Beacon buffer is updated on beacon_update when mac80211
+	 * calls config_interface */
 	ath5k_hw_set_txdp(ah, sc->bhalq, bf->daddr);
 	ath5k_hw_start_tx_dma(ah, sc->bhalq);
 	ATH5K_DBG(sc, ATH5K_DEBUG_BEACON, "TXDP[%u] = %llx (%p)\n",
@@ -2299,6 +2286,35 @@ ath5k_beacon_config(struct ath5k_softc *sc)
 	}
 
 	ath5k_hw_set_imr(ah, sc->imask);
+}
+
+static void ath5k_tasklet_beacon(unsigned long data)
+{
+	struct ath5k_softc *sc = (struct ath5k_softc *) data;
+
+	/*
+	 * Software beacon alert--time to send a beacon.
+	 *
+	 * In IBSS mode we use this interrupt just to
+	 * keep track of the next TBTT (target beacon
+	 * transmission time) in order to detect wether
+	 * automatic TSF updates happened.
+	 */
+	if (sc->opmode == NL80211_IFTYPE_ADHOC) {
+		/* XXX: only if VEOL suppported */
+		u64 tsf = ath5k_hw_get_tsf64(sc->ah);
+		sc->nexttbtt += sc->bintval;
+		ATH5K_DBG(sc, ATH5K_DEBUG_BEACON,
+				"SWBA nexttbtt: %x hw_tu: %x "
+				"TSF: %llx\n",
+				sc->nexttbtt,
+				TSF_TO_TU(tsf),
+				(unsigned long long) tsf);
+	} else {
+		spin_lock(&sc->block);
+		ath5k_beacon_send(sc);
+		spin_unlock(&sc->block);
+	}
 }
 
 
@@ -2747,17 +2763,47 @@ static int
 ath5k_config(struct ieee80211_hw *hw, u32 changed)
 {
 	struct ath5k_softc *sc = hw->priv;
+	struct ath5k_hw *ah = sc->ah;
 	struct ieee80211_conf *conf = &hw->conf;
-	int ret;
+	int ret = 0;
 
 	mutex_lock(&sc->lock);
 
-	sc->power_level = conf->power_level;
+	sc->bintval = conf->beacon_int;
 
 	ret = ath5k_chan_set(sc, conf->channel);
+	if (ret < 0)
+		return ret;
+
+	if ((changed & IEEE80211_CONF_CHANGE_POWER) &&
+	(sc->power_level != conf->power_level)) {
+		sc->power_level = conf->power_level;
+
+		/* Half dB steps */
+		ath5k_hw_set_txpower_limit(ah, (conf->power_level * 2));
+	}
+
+	/* TODO:
+	 * 1) Move this on config_interface and handle each case
+	 * separately eg. when we have only one STA vif, use
+	 * AR5K_ANTMODE_SINGLE_AP
+	 *
+	 * 2) Allow the user to change antenna mode eg. when only
+	 * one antenna is present
+	 *
+	 * 3) Allow the user to set default/tx antenna when possible
+	 *
+	 * 4) Default mode should handle 90% of the cases, together
+	 * with fixed a/b and single AP modes we should be able to
+	 * handle 99%. Sectored modes are extreme cases and i still
+	 * haven't found a usage for them. If we decide to support them,
+	 * then we must allow the user to set how many tx antennas we
+	 * have available
+	 */
+	ath5k_hw_set_antenna_mode(ah, AR5K_ANTMODE_DEFAULT);
 
 	mutex_unlock(&sc->lock);
-	return ret;
+	return 0;
 }
 
 #define SUPPORTED_FIF_FLAGS \
