@@ -672,6 +672,7 @@ struct cfg80211_auth_request {
  * @ssid_len: Length of ssid in octets
  * @ie: Extra IEs to add to (Re)Association Request frame or %NULL
  * @ie_len: Length of ie buffer in octets
+ * @use_mfp: Use management frame protection (IEEE 802.11w) in this association
  */
 struct cfg80211_assoc_request {
 	struct ieee80211_channel *chan;
@@ -680,6 +681,7 @@ struct cfg80211_assoc_request {
 	size_t ssid_len;
 	const u8 *ie;
 	size_t ie_len;
+	bool use_mfp;
 };
 
 /**
@@ -858,13 +860,13 @@ struct cfg80211_ops {
 				       struct vif_params *params);
 
 	int	(*add_key)(struct wiphy *wiphy, struct net_device *netdev,
-			   u8 key_index, u8 *mac_addr,
+			   u8 key_index, const u8 *mac_addr,
 			   struct key_params *params);
 	int	(*get_key)(struct wiphy *wiphy, struct net_device *netdev,
-			   u8 key_index, u8 *mac_addr, void *cookie,
+			   u8 key_index, const u8 *mac_addr, void *cookie,
 			   void (*callback)(void *cookie, struct key_params*));
 	int	(*del_key)(struct wiphy *wiphy, struct net_device *netdev,
-			   u8 key_index, u8 *mac_addr);
+			   u8 key_index, const u8 *mac_addr);
 	int	(*set_default_key)(struct wiphy *wiphy,
 				   struct net_device *netdev,
 				   u8 key_index);
@@ -1145,8 +1147,11 @@ struct wireless_dev {
 
 #ifdef CONFIG_WIRELESS_EXT
 	/* wext data */
-	struct cfg80211_ibss_params wext;
-	u8 wext_bssid[ETH_ALEN];
+	struct {
+		struct cfg80211_ibss_params ibss;
+		u8 bssid[ETH_ALEN];
+		s8 default_key, default_mgmt_key;
+	} wext;
 #endif
 };
 
@@ -1396,6 +1401,15 @@ int cfg80211_wext_siwretry(struct net_device *dev,
 int cfg80211_wext_giwretry(struct net_device *dev,
 			   struct iw_request_info *info,
 			   struct iw_param *retry, char *extra);
+int cfg80211_wext_siwencodeext(struct net_device *dev,
+			       struct iw_request_info *info,
+			       struct iw_point *erq, char *extra);
+int cfg80211_wext_siwencode(struct net_device *dev,
+			    struct iw_request_info *info,
+			    struct iw_point *erq, char *keybuf);
+int cfg80211_wext_giwencode(struct net_device *dev,
+			    struct iw_request_info *info,
+			    struct iw_point *erq, char *keybuf);
 
 /*
  * callbacks for asynchronous cfg80211 methods, notification

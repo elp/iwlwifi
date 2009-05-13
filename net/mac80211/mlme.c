@@ -95,15 +95,13 @@ static u32 ieee80211_enable_ht(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
-	struct ieee80211_bss_ht_conf ht;
 	struct sta_info *sta;
 	u32 changed = 0;
+	u16 ht_opmode;
 	bool enable_ht = true, ht_changed;
 	enum nl80211_channel_type channel_type = NL80211_CHAN_NO_HT;
 
 	sband = local->hw.wiphy->bands[local->hw.conf.channel->band];
-
-	memset(&ht, 0, sizeof(ht));
 
 	/* HT is not supported */
 	if (!sband->ht_cap.ht_supported)
@@ -148,19 +146,20 @@ static u32 ieee80211_enable_ht(struct ieee80211_sub_if_data *sdata,
 						 IEEE80211_RC_HT_CHANGED);
 
 		rcu_read_unlock();
-
         }
 
 	/* disable HT */
 	if (!enable_ht)
 		return 0;
 
-	ht.operation_mode = le16_to_cpu(hti->operation_mode);
+	ht_opmode = le16_to_cpu(hti->operation_mode);
 
 	/* if bss configuration changed store the new one */
-	if (memcmp(&sdata->vif.bss_conf.ht, &ht, sizeof(ht))) {
+	if (!sdata->ht_opmode_valid ||
+	    sdata->vif.bss_conf.ht_operation_mode != ht_opmode) {
 		changed |= BSS_CHANGED_HT;
-		sdata->vif.bss_conf.ht = ht;
+		sdata->vif.bss_conf.ht_operation_mode = ht_opmode;
+		sdata->ht_opmode_valid = true;
 	}
 
 	return changed;
@@ -1043,10 +1042,15 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 
 	rcu_read_unlock();
 
+	ieee80211_set_wmm_default(sdata);
+
 	ieee80211_recalc_idle(local);
 
 	/* channel(_type) changes are handled by ieee80211_hw_config */
 	local->oper_channel_type = NL80211_CHAN_NO_HT;
+
+	/* on the next assoc, re-program HT parameters */
+	sdata->ht_opmode_valid = false;
 
 	local->power_constr_level = 0;
 
@@ -1658,6 +1662,8 @@ static void ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 	if (elems.wmm_param)
 		ieee80211_sta_wmm_params(local, ifmgd, elems.wmm_param,
 					 elems.wmm_param_len);
+	else
+		ieee80211_set_wmm_default(sdata);
 
 	if (elems.ht_info_elem && elems.wmm_param &&
 	    (ifmgd->flags & IEEE80211_STA_WMM_ENABLED) &&
