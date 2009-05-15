@@ -557,7 +557,7 @@ int cfg80211_wext_siwencode(struct net_device *dev,
 	if (idx == 0) {
 		idx = wdev->wext.default_key;
 		if (idx < 0)
-			return -EINVAL;
+			idx = 0;
 	} else if (idx < 1 || idx > 4)
 		return -EINVAL;
 	else
@@ -580,7 +580,7 @@ int cfg80211_wext_siwencode(struct net_device *dev,
 		params.cipher = WLAN_CIPHER_SUITE_WEP40;
 	else if (erq->length == 13)
 		params.cipher = WLAN_CIPHER_SUITE_WEP104;
-	else
+	else if (!remove)
 		return -EINVAL;
 
 	return cfg80211_set_encryption(rdev, dev, NULL, remove,
@@ -614,9 +614,9 @@ int cfg80211_wext_siwencodeext(struct net_device *dev,
 		cipher = 0;
 		break;
 	case IW_ENCODE_ALG_WEP:
-		if (erq->length == 5)
+		if (ext->key_len == 5)
 			cipher = WLAN_CIPHER_SUITE_WEP40;
-		else if (erq->length == 13)
+		else if (ext->key_len == 13)
 			cipher = WLAN_CIPHER_SUITE_WEP104;
 		else
 			return -EINVAL;
@@ -640,13 +640,9 @@ int cfg80211_wext_siwencodeext(struct net_device *dev,
 	idx = erq->flags & IW_ENCODE_INDEX;
 	if (cipher == WLAN_CIPHER_SUITE_AES_CMAC) {
 		if (idx < 4 || idx > 5) {
-			/*
-			 * XXX: Only wpa_supplicant ever used this
-			 *	can we still change the ABI a little
-			 *	so we do not need to keep track of
-			 *	the default key?
-			 */
-			return -EINVAL;
+			idx = wdev->wext.default_mgmt_key;
+			if (idx < 0)
+				return -EINVAL;
 		} else
 			idx--;
 	} else {
@@ -666,6 +662,11 @@ int cfg80211_wext_siwencodeext(struct net_device *dev,
 	params.key = ext->key;
 	params.key_len = ext->key_len;
 	params.cipher = cipher;
+
+	if (ext->ext_flags & IW_ENCODE_EXT_RX_SEQ_VALID) {
+		params.seq = ext->rx_seq;
+		params.seq_len = 6;
+	}
 
 	return cfg80211_set_encryption(
 			rdev, dev, addr, remove,

@@ -650,14 +650,12 @@ static int wireless_seq_show(struct seq_file *seq, void *v)
 }
 
 static void *wireless_dev_seq_start(struct seq_file *seq, loff_t *pos)
-	__acquires(dev_base_lock)
 {
 	rtnl_lock();
 	return dev_seq_start(seq, pos);
 }
 
 static void wireless_dev_seq_stop(struct seq_file *seq, void *v)
-	__releases(dev_base_lock)
 {
 	dev_seq_stop(seq, v);
 	rtnl_unlock();
@@ -799,6 +797,14 @@ static int ioctl_standard_iw_point(struct iw_point *iwp, unsigned int cmd,
 				   descr->token_size)) {
 			err = -EFAULT;
 			goto out;
+		}
+
+		if (cmd == SIOCSIWENCODEEXT) {
+			struct iw_encode_ext *ee = (struct iw_encode_ext *)
+							extra;
+
+			if (iwp->length < sizeof(*ee) + ee->key_len)
+				return -EFAULT;
 		}
 	}
 
