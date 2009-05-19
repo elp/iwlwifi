@@ -507,8 +507,7 @@ void ath_beacon_tasklet(unsigned long data)
  * slot. Slots that are not occupied will generate nothing.
  */
 static void ath_beacon_config_ap(struct ath_softc *sc,
-				 struct ath_beacon_config *conf,
-				 struct ath_vif *avp)
+				 struct ath_beacon_config *conf)
 {
 	u32 nexttbtt, intval;
 
@@ -553,8 +552,7 @@ static void ath_beacon_config_ap(struct ath_softc *sc,
  * we've associated with.
  */
 static void ath_beacon_config_sta(struct ath_softc *sc,
-				  struct ath_beacon_config *conf,
-				  struct ath_vif *avp)
+				  struct ath_beacon_config *conf)
 {
 	struct ath9k_beacon_state bs;
 	int dtimperiod, dtimcount, sleepduration;
@@ -654,7 +652,6 @@ static void ath_beacon_config_sta(struct ath_softc *sc,
 
 static void ath_beacon_config_adhoc(struct ath_softc *sc,
 				    struct ath_beacon_config *conf,
-				    struct ath_vif *avp,
 				    struct ieee80211_vif *vif)
 {
 	u64 tsf;
@@ -698,43 +695,50 @@ static void ath_beacon_config_adhoc(struct ath_softc *sc,
 	sc->beacon.bmisscnt = 0;
 	ath9k_hw_set_interrupts(sc->sc_ah, sc->imask);
 
-	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_VEOL)
+	/* FIXME: Handle properly when vif is NULL */
+	if (vif && sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_VEOL)
 		ath_beacon_start_adhoc(sc, vif);
 }
 
 void ath_beacon_config(struct ath_softc *sc, struct ieee80211_vif *vif)
 {
-	struct ath_beacon_config conf;
+	struct ath_beacon_config *cur_conf = &sc->cur_beacon_conf;
+	enum nl80211_iftype iftype;
 
 	/* Setup the beacon configuration parameters */
 
-	memset(&conf, 0, sizeof(struct ath_beacon_config));
-	conf.beacon_interval = sc->beacon_interval ? : ATH_DEFAULT_BINTVAL;
-	conf.listen_interval = 1;
-	conf.dtim_period = conf.beacon_interval;
-	conf.dtim_count = 1;
-	conf.bmiss_timeout = ATH_DEFAULT_BMISS_LIMIT * conf.beacon_interval;
-
 	if (vif) {
-		struct ath_vif *avp = (struct ath_vif *)vif->drv_priv;
+		struct ieee80211_bss_conf *bss_conf = &vif->bss_conf;
 
-		switch(avp->av_opmode) {
-		case NL80211_IFTYPE_AP:
-			ath_beacon_config_ap(sc, &conf, avp);
-			break;
-		case NL80211_IFTYPE_ADHOC:
-		case NL80211_IFTYPE_MESH_POINT:
-			ath_beacon_config_adhoc(sc, &conf, avp, vif);
-			break;
-		case NL80211_IFTYPE_STATION:
-			ath_beacon_config_sta(sc, &conf, avp);
-			break;
-		default:
-			DPRINTF(sc, ATH_DBG_CONFIG,
-				"Unsupported beaconing mode\n");
-			return;
-		}
+		iftype = vif->type;
 
-		sc->sc_flags |= SC_OP_BEACONS;
+		cur_conf->beacon_interval = bss_conf->beacon_int;
+		cur_conf->dtim_period = bss_conf->dtim_period;
+		cur_conf->listen_interval = 1;
+		cur_conf->dtim_count = 1;
+		cur_conf->bmiss_timeout =
+			ATH_DEFAULT_BMISS_LIMIT * cur_conf->beacon_interval;
+	} else {
+		iftype = sc->sc_ah->opmode;
 	}
+
+
+	switch (iftype) {
+	case NL80211_IFTYPE_AP:
+		ath_beacon_config_ap(sc, cur_conf);
+		break;
+	case NL80211_IFTYPE_ADHOC:
+	case NL80211_IFTYPE_MESH_POINT:
+		ath_beacon_config_adhoc(sc, cur_conf, vif);
+		break;
+	case NL80211_IFTYPE_STATION:
+		ath_beacon_config_sta(sc, cur_conf);
+		break;
+	default:
+		DPRINTF(sc, ATH_DBG_CONFIG,
+			"Unsupported beaconing mode\n");
+		return;
+	}
+
+	sc->sc_flags |= SC_OP_BEACONS;
 }

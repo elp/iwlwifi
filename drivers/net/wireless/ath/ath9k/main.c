@@ -280,7 +280,7 @@ int ath_set_channel(struct ath_softc *sc, struct ieee80211_hw *hw,
 	if (r) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to reset channel (%u Mhz) "
-			"reset status %u\n",
+			"reset status %d\n",
 			channel->center_freq, r);
 		spin_unlock_bh(&sc->sc_resetlock);
 		return r;
@@ -455,8 +455,11 @@ static void ath9k_tasklet(unsigned long data)
 	struct ath_softc *sc = (struct ath_softc *)data;
 	u32 status = sc->intrstatus;
 
+	ath9k_ps_wakeup(sc);
+
 	if (status & ATH9K_INT_FATAL) {
 		ath_reset(sc, false);
+		ath9k_ps_restore(sc);
 		return;
 	}
 
@@ -471,6 +474,7 @@ static void ath9k_tasklet(unsigned long data)
 
 	/* re-enable hardware interrupt */
 	ath9k_hw_set_interrupts(sc->sc_ah, sc->imask);
+	ath9k_ps_restore(sc);
 }
 
 irqreturn_t ath_isr(int irq, void *dev)
@@ -498,14 +502,11 @@ irqreturn_t ath_isr(int irq, void *dev)
 	if (sc->sc_flags & SC_OP_INVALID)
 		return IRQ_NONE;
 
-	ath9k_ps_wakeup(sc);
 
 	/* shared irq, not for us */
 
-	if (!ath9k_hw_intrpend(ah)) {
-		ath9k_ps_restore(sc);
+	if (!ath9k_hw_intrpend(ah))
 		return IRQ_NONE;
-	}
 
 	/*
 	 * Figure out the reason(s) for the interrupt.  Note
@@ -520,10 +521,8 @@ irqreturn_t ath_isr(int irq, void *dev)
 	 * If there are no status bits set, then this interrupt was not
 	 * for me (should have been caught above).
 	 */
-	if (!status) {
-		ath9k_ps_restore(sc);
+	if (!status)
 		return IRQ_NONE;
-	}
 
 	/* Cache the status */
 	sc->intrstatus = status;
@@ -560,20 +559,17 @@ irqreturn_t ath_isr(int irq, void *dev)
 		ath9k_hw_set_interrupts(ah, sc->imask);
 	}
 
-	if (status & ATH9K_INT_TIM_TIMER) {
-		if (!(ah->caps.hw_caps & ATH9K_HW_CAP_AUTOSLEEP)) {
+	if (!(ah->caps.hw_caps & ATH9K_HW_CAP_AUTOSLEEP))
+		if (status & ATH9K_INT_TIM_TIMER) {
 			/* Clear RxAbort bit so that we can
 			 * receive frames */
 			ath9k_hw_setpower(ah, ATH9K_PM_AWAKE);
-			ath9k_hw_setrxabort(ah, 0);
-			sched = true;
+			ath9k_hw_setrxabort(sc->sc_ah, 0);
 			sc->sc_flags |= SC_OP_WAIT_FOR_BEACON;
 		}
-	}
 
 chip_reset:
 
-	ath9k_ps_restore(sc);
 	ath_debug_stat_interrupt(sc, status);
 
 	if (sched) {
@@ -1094,7 +1090,7 @@ void ath_radio_enable(struct ath_softc *sc)
 	if (r) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to reset channel %u (%uMhz) ",
-			"reset status %u\n",
+			"reset status %d\n",
 			channel->center_freq, r);
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
@@ -1146,7 +1142,7 @@ void ath_radio_disable(struct ath_softc *sc)
 	if (r) {
 		DPRINTF(sc, ATH_DBG_FATAL,
 			"Unable to reset channel %u (%uMhz) "
-			"reset status %u\n",
+			"reset status %d\n",
 			channel->center_freq, r);
 	}
 	spin_unlock_bh(&sc->sc_resetlock);
@@ -1709,7 +1705,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 	r = ath9k_hw_reset(ah, sc->sc_ah->curchan, false);
 	if (r)
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset hardware; reset status %u\n", r);
+			"Unable to reset hardware; reset status %d\n", r);
 	spin_unlock_bh(&sc->sc_resetlock);
 
 	if (ath_startrecv(sc) != 0)
@@ -2001,7 +1997,7 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	r = ath9k_hw_reset(sc->sc_ah, init_channel, false);
 	if (r) {
 		DPRINTF(sc, ATH_DBG_FATAL,
-			"Unable to reset hardware; reset status %u "
+			"Unable to reset hardware; reset status %d "
 			"(freq %u MHz)\n", r,
 			curchan->center_freq);
 		spin_unlock_bh(&sc->sc_resetlock);
