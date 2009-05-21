@@ -1958,16 +1958,13 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 		directed_tim = ieee80211_check_tim(elems.tim, elems.tim_len,
 						   ifmgd->aid);
 
-	ncrc = crc32_be(ncrc, (void *)&directed_tim, sizeof(directed_tim));
+	if (ncrc != ifmgd->beacon_crc) {
+		ieee80211_rx_bss_info(sdata, mgmt, len, rx_status, &elems,
+				      true);
 
-	if (ncrc == ifmgd->beacon_crc)
-		return;
-	ifmgd->beacon_crc = ncrc;
-
-	ieee80211_rx_bss_info(sdata, mgmt, len, rx_status, &elems, true);
-
-	ieee80211_sta_wmm_params(local, ifmgd, elems.wmm_param,
-				 elems.wmm_param_len);
+		ieee80211_sta_wmm_params(local, ifmgd, elems.wmm_param,
+					 elems.wmm_param_len);
+	}
 
 	if (local->hw.flags & IEEE80211_HW_PS_NULLFUNC_STACK) {
 		if (directed_tim) {
@@ -1991,6 +1988,10 @@ static void ieee80211_rx_mgmt_beacon(struct ieee80211_sub_if_data *sdata,
 			}
 		}
 	}
+
+	if (ncrc == ifmgd->beacon_crc)
+		return;
+	ifmgd->beacon_crc = ncrc;
 
 	if (elems.erp_info && elems.erp_info_len >= 1) {
 		erp_valid = true;
@@ -2494,6 +2495,13 @@ int ieee80211_sta_set_extra_ie(struct ieee80211_sub_if_data *sdata,
 			       const char *ie, size_t len)
 {
 	struct ieee80211_if_managed *ifmgd = &sdata->u.mgd;
+
+	if (len == 0 && ifmgd->extra_ie_len == 0)
+		return -EALREADY;
+
+	if (len == ifmgd->extra_ie_len && ifmgd->extra_ie &&
+	    memcmp(ifmgd->extra_ie, ie, len) == 0)
+		return -EALREADY;
 
 	kfree(ifmgd->extra_ie);
 	if (len == 0) {

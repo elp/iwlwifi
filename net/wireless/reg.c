@@ -382,6 +382,8 @@ static int call_crda(const char *alpha2)
 /* Used by nl80211 before kmalloc'ing our regulatory domain */
 bool reg_is_valid_request(const char *alpha2)
 {
+	assert_cfg80211_lock();
+
 	if (!last_request)
 		return false;
 
@@ -1342,13 +1344,22 @@ void wiphy_apply_custom_regulatory(struct wiphy *wiphy,
 				   const struct ieee80211_regdomain *regd)
 {
 	enum ieee80211_band band;
+	unsigned int bands_set = 0;
 
 	mutex_lock(&cfg80211_mutex);
 	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
-		if (wiphy->bands[band])
-			handle_band_custom(wiphy, band, regd);
+		if (!wiphy->bands[band])
+			continue;
+		handle_band_custom(wiphy, band, regd);
+		bands_set++;
 	}
 	mutex_unlock(&cfg80211_mutex);
+
+	/*
+	 * no point in calling this if it won't have any effect
+	 * on your device's supportd bands.
+	 */
+	WARN_ON(!bands_set);
 }
 EXPORT_SYMBOL(wiphy_apply_custom_regulatory);
 
@@ -1668,6 +1679,13 @@ static int regulatory_hint_core(const char *alpha2)
 	request->initiator = NL80211_REGDOM_SET_BY_CORE;
 
 	queue_regulatory_request(request);
+
+	/*
+	 * This ensures last_request is populated once modules
+	 * come swinging in and calling regulatory hints and
+	 * wiphy_apply_custom_regulatory().
+	 */
+	flush_scheduled_work();
 
 	return 0;
 }
