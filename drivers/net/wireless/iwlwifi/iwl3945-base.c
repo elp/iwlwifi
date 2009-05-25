@@ -95,144 +95,6 @@ struct iwl_mod_params iwl3945_mod_params = {
 	/* the rest are 0 by default */
 };
 
-/*************** STATION TABLE MANAGEMENT ****
- * mac80211 should be examined to determine if sta_info is duplicating
- * the functionality provided here
- */
-
-/**************************************************************/
-#if 0 /* temporary disable till we add real remove station */
-/**
- * iwl3945_remove_station - Remove driver's knowledge of station.
- *
- * NOTE:  This does not remove station from device's station table.
- */
-static u8 iwl3945_remove_station(struct iwl_priv *priv, const u8 *addr, int is_ap)
-{
-	int index = IWL_INVALID_STATION;
-	int i;
-	unsigned long flags;
-
-	spin_lock_irqsave(&priv->sta_lock, flags);
-
-	if (is_ap)
-		index = IWL_AP_ID;
-	else if (is_broadcast_ether_addr(addr))
-		index = priv->hw_params.bcast_sta_id;
-	else
-		for (i = IWL_STA_ID; i < priv->hw_params.max_stations; i++)
-			if (priv->stations_39[i].used &&
-			    !compare_ether_addr(priv->stations_39[i].sta.sta.addr,
-						addr)) {
-				index = i;
-				break;
-			}
-
-	if (unlikely(index == IWL_INVALID_STATION))
-		goto out;
-
-	if (priv->stations_39[index].used) {
-		priv->stations_39[index].used = 0;
-		priv->num_stations--;
-	}
-
-	BUG_ON(priv->num_stations < 0);
-
-out:
-	spin_unlock_irqrestore(&priv->sta_lock, flags);
-	return 0;
-}
-#endif
-
-/**
- * iwl3945_clear_stations_table - Clear the driver's station table
- *
- * NOTE:  This does not clear or otherwise alter the device's station table.
- */
-void iwl3945_clear_stations_table(struct iwl_priv *priv)
-{
-	unsigned long flags;
-
-	spin_lock_irqsave(&priv->sta_lock, flags);
-
-	priv->num_stations = 0;
-	memset(priv->stations_39, 0, sizeof(priv->stations_39));
-
-	spin_unlock_irqrestore(&priv->sta_lock, flags);
-}
-
-/**
- * iwl3945_add_station - Add station to station tables in driver and device
- */
-u8 iwl3945_add_station(struct iwl_priv *priv, const u8 *addr, int is_ap, u8 flags, struct ieee80211_sta_ht_cap *ht_info)
-{
-	int i;
-	int index = IWL_INVALID_STATION;
-	struct iwl3945_station_entry *station;
-	unsigned long flags_spin;
-	u8 rate;
-
-	spin_lock_irqsave(&priv->sta_lock, flags_spin);
-	if (is_ap)
-		index = IWL_AP_ID;
-	else if (is_broadcast_ether_addr(addr))
-		index = priv->hw_params.bcast_sta_id;
-	else
-		for (i = IWL_STA_ID; i < priv->hw_params.max_stations; i++) {
-			if (!compare_ether_addr(priv->stations_39[i].sta.sta.addr,
-						addr)) {
-				index = i;
-				break;
-			}
-
-			if (!priv->stations_39[i].used &&
-			    index == IWL_INVALID_STATION)
-				index = i;
-		}
-
-	/* These two conditions has the same outcome but keep them separate
-	  since they have different meaning */
-	if (unlikely(index == IWL_INVALID_STATION)) {
-		spin_unlock_irqrestore(&priv->sta_lock, flags_spin);
-		return index;
-	}
-
-	if (priv->stations_39[index].used &&
-	   !compare_ether_addr(priv->stations_39[index].sta.sta.addr, addr)) {
-		spin_unlock_irqrestore(&priv->sta_lock, flags_spin);
-		return index;
-	}
-
-	IWL_DEBUG_ASSOC(priv, "Add STA ID %d: %pM\n", index, addr);
-	station = &priv->stations_39[index];
-	station->used = 1;
-	priv->num_stations++;
-
-	/* Set up the REPLY_ADD_STA command to send to device */
-	memset(&station->sta, 0, sizeof(struct iwl3945_addsta_cmd));
-	memcpy(station->sta.sta.addr, addr, ETH_ALEN);
-	station->sta.mode = 0;
-	station->sta.sta.sta_id = index;
-	station->sta.station_flags = 0;
-
-	if (priv->band == IEEE80211_BAND_5GHZ)
-		rate = IWL_RATE_6M_PLCP;
-	else
-		rate =	IWL_RATE_1M_PLCP;
-
-	/* Turn on both antennas for the station... */
-	station->sta.rate_n_flags =
-			iwl3945_hw_set_rate_n_flags(rate, RATE_MCS_ANT_AB_MSK);
-
-	spin_unlock_irqrestore(&priv->sta_lock, flags_spin);
-
-	/* Add station to device's station table */
-	iwl_send_add_sta(priv,
-			 (struct iwl_addsta_cmd *)&station->sta, flags);
-	return index;
-
-}
-
 /**
  * iwl3945_get_antenna_flags - Get antenna flags for RXON command
  * @priv: eeprom and antenna fields are used to determine antenna flags
@@ -2589,7 +2451,7 @@ static void iwl3945_alive_start(struct iwl_priv *priv)
 		goto restart;
 	}
 
-	priv->cfg->ops->smgmt->clear_station_table(priv);
+	iwl_clear_stations_table(priv);
 
 	rfkill = iwl_read_prph(priv, APMG_RFKILL_REG);
 	IWL_DEBUG_INFO(priv, "RFKILL status: 0x%x\n", rfkill);
@@ -2681,7 +2543,7 @@ static void __iwl3945_down(struct iwl_priv *priv)
 		set_bit(STATUS_EXIT_PENDING, &priv->status);
 
 	iwl3945_led_unregister(priv);
-	priv->cfg->ops->smgmt->clear_station_table(priv);
+	iwl_clear_stations_table(priv);
 
 	/* Unblock any waiting calls */
 	wake_up_interruptible_all(&priv->wait_command_queue);
@@ -2833,7 +2695,7 @@ static int __iwl3945_up(struct iwl_priv *priv)
 
 	for (i = 0; i < MAX_HW_RESTARTS; i++) {
 
-		priv->cfg->ops->smgmt->clear_station_table(priv);
+		iwl_clear_stations_table(priv);
 
 		/* load bootstrap state machine,
 		 * load bootstrap program into processor's memory,
@@ -3247,7 +3109,7 @@ void iwl3945_post_associate(struct iwl_priv *priv)
 	case NL80211_IFTYPE_ADHOC:
 
 		priv->assoc_id = 1;
-		priv->cfg->ops->smgmt->add_station(priv, priv->bssid, 0, 0, NULL);
+		iwl_add_station(priv, priv->bssid, 0, CMD_SYNC, NULL);
 		iwl3945_sync_sta(priv, IWL_STA_ID,
 				 (priv->band == IEEE80211_BAND_5GHZ) ?
 				 IWL_RATE_6M_PLCP : IWL_RATE_1M_PLCP,
@@ -3438,7 +3300,7 @@ void iwl3945_config_ap(struct iwl_priv *priv)
 		/* restore RXON assoc */
 		priv->staging_rxon.filter_flags |= RXON_FILTER_ASSOC_MSK;
 		iwlcore_commit_rxon(priv);
-		priv->cfg->ops->smgmt->add_station(priv, iwl_bcast_addr, 0, 0, NULL);
+		iwl_add_station(priv, iwl_bcast_addr, 0, CMD_SYNC, NULL);
 	}
 	iwl3945_send_beacon_cmd(priv);
 
@@ -3469,7 +3331,7 @@ static int iwl3945_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	static_key = !iwl_is_associated(priv);
 
 	if (!static_key) {
-		sta_id = priv->cfg->ops->smgmt->find_station(priv, addr);
+		sta_id = iwl_find_station(priv, addr);
 		if (sta_id == IWL_INVALID_STATION) {
 			IWL_DEBUG_MAC80211(priv, "leave - %pM not in station map.\n",
 					    addr);
@@ -4044,7 +3906,7 @@ static int iwl3945_init_drv(struct iwl_priv *priv)
 	mutex_init(&priv->mutex);
 
 	/* Clear the driver's (not device's) station table */
-	priv->cfg->ops->smgmt->clear_station_table(priv);
+	iwl_clear_stations_table(priv);
 
 	priv->data_retry_limit = -1;
 	priv->ieee_channels = NULL;
@@ -4407,7 +4269,7 @@ static void __devexit iwl3945_pci_remove(struct pci_dev *pdev)
 	iwl3945_hw_txq_ctx_free(priv);
 
 	iwl3945_unset_hw_params(priv);
-	priv->cfg->ops->smgmt->clear_station_table(priv);
+	iwl_clear_stations_table(priv);
 
 	/*netif_stop_queue(dev); */
 	flush_workqueue(priv->workqueue);
