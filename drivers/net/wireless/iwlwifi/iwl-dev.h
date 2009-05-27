@@ -1118,8 +1118,6 @@ struct iwl_priv {
 
 	struct iwl3945_notif_statistics statistics_39;
 
-	struct iwl3945_station_entry stations_39[IWL_STATION_COUNT];
-
 	u32 sta_supp_rates;
 }; /*iwl_priv */
 
