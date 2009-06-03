@@ -820,7 +820,6 @@ void iwl_bg_scan_completed(struct work_struct *work)
 
 	cancel_delayed_work(&priv->scan_check);
 
-	priv->scan_request = NULL;
 	ieee80211_scan_completed(priv->hw, false);
 
 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
