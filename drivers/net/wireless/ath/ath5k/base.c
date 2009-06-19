@@ -248,6 +248,8 @@ static void ath5k_bss_info_changed(struct ieee80211_hw *hw,
 		struct ieee80211_vif *vif,
 		struct ieee80211_bss_conf *bss_conf,
 		u32 changes);
+static void ath5k_sw_scan_start(struct ieee80211_hw *hw);
+static void ath5k_sw_scan_complete(struct ieee80211_hw *hw);
 
 static const struct ieee80211_ops ath5k_hw_ops = {
 	.tx 		= ath5k_tx,
@@ -265,6 +267,8 @@ static const struct ieee80211_ops ath5k_hw_ops = {
 	.set_tsf 	= ath5k_set_tsf,
 	.reset_tsf 	= ath5k_reset_tsf,
 	.bss_info_changed = ath5k_bss_info_changed,
+	.sw_scan_start	= ath5k_sw_scan_start,
+	.sw_scan_complete = ath5k_sw_scan_complete,
 };
 
 /*
@@ -538,6 +542,7 @@ ath5k_pci_probe(struct pci_dev *pdev,
 	sc->iobase = mem; /* So we can unmap it on detach */
 	sc->cachelsz = csz * sizeof(u32); /* convert to bytes */
 	sc->opmode = NL80211_IFTYPE_STATION;
+	sc->bintval = 1000;
 	mutex_init(&sc->lock);
 	spin_lock_init(&sc->rxbuflock);
 	spin_lock_init(&sc->txbuflock);
@@ -685,6 +690,13 @@ ath5k_pci_resume(struct pci_dev *pdev)
 	err = pci_enable_device(pdev);
 	if (err)
 		return err;
+
+	/*
+	 * Suspend/Resume resets the PCI configuration space, so we have to
+	 * re-disable the RETRY_TIMEOUT register (0x41) to keep
+	 * PCI Tx retries from interfering with C3 CPU state
+	 */
+	pci_write_config_byte(pdev, 0x41, 0);
 
 	err = request_irq(pdev->irq, ath5k_intr, IRQF_SHARED, "ath", sc);
 	if (err) {
@@ -1893,7 +1905,8 @@ accept:
 		if (sc->opmode == NL80211_IFTYPE_ADHOC)
 			ath5k_check_ibss_tsf(sc, skb, &rxs);
 
-		__ieee80211_rx(sc->hw, skb, &rxs);
+		memcpy(IEEE80211_SKB_RXCB(skb), &rxs, sizeof(rxs));
+		ieee80211_rx(sc->hw, skb);
 
 		bf->skb = next_skb;
 		bf->skbaddr = next_skb_addr;
@@ -2748,9 +2761,6 @@ static int ath5k_add_interface(struct ieee80211_hw *hw,
 		goto end;
 	}
 
-	/* Set to a reasonable value. Note that this will
-	 * be set to mac80211's value at ath5k_config(). */
-	sc->bintval = 1000;
 	ath5k_hw_set_lladdr(sc->ah, conf->mac_addr);
 
 	ret = 0;
@@ -3162,6 +3172,8 @@ static void ath5k_bss_info_changed(struct ieee80211_hw *hw,
 		sc->assoc = bss_conf->assoc;
 		if (sc->opmode == NL80211_IFTYPE_STATION)
 			set_beacon_filter(hw, sc->assoc);
+		ath5k_hw_set_ledstate(sc->ah, sc->assoc ?
+			AR5K_LED_ASSOC : AR5K_LED_INIT);
 	}
 
 	if (changes & BSS_CHANGED_BEACON &&
@@ -3173,4 +3185,18 @@ static void ath5k_bss_info_changed(struct ieee80211_hw *hw,
 
  unlock:
 	mutex_unlock(&sc->lock);
+}
+
+static void ath5k_sw_scan_start(struct ieee80211_hw *hw)
+{
+	struct ath5k_softc *sc = hw->priv;
+	if (!sc->assoc)
+		ath5k_hw_set_ledstate(sc->ah, AR5K_LED_SCAN);
+}
+
+static void ath5k_sw_scan_complete(struct ieee80211_hw *hw)
+{
+	struct ath5k_softc *sc = hw->priv;
+	ath5k_hw_set_ledstate(sc->ah, sc->assoc ?
+		AR5K_LED_ASSOC : AR5K_LED_INIT);
 }

@@ -866,7 +866,8 @@ struct cfg80211_ops {
 				    enum nl80211_iftype type, u32 *flags,
 				    struct vif_params *params);
 	int	(*del_virtual_intf)(struct wiphy *wiphy, int ifindex);
-	int	(*change_virtual_intf)(struct wiphy *wiphy, int ifindex,
+	int	(*change_virtual_intf)(struct wiphy *wiphy,
+				       struct net_device *dev,
 				       enum nl80211_iftype type, u32 *flags,
 				       struct vif_params *params);
 
@@ -1055,6 +1056,17 @@ static inline void *wiphy_priv(struct wiphy *wiphy)
 {
 	BUG_ON(!wiphy);
 	return &wiphy->priv;
+}
+
+/**
+ * priv_to_wiphy - return the wiphy containing the priv
+ *
+ * @priv: a pointer previously returned by wiphy_priv
+ */
+static inline struct wiphy *priv_to_wiphy(void *priv)
+{
+	BUG_ON(!priv);
+	return container_of(priv, struct wiphy, priv);
 }
 
 /**

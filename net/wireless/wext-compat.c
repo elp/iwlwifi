@@ -103,7 +103,7 @@ int cfg80211_wext_siwmode(struct net_device *dev, struct iw_request_info *info,
 
 	memset(&vifparams, 0, sizeof(vifparams));
 
-	ret = rdev->ops->change_virtual_intf(wdev->wiphy, dev->ifindex, type,
+	ret = rdev->ops->change_virtual_intf(wdev->wiphy, dev, type,
 					     NULL, &vifparams);
 	WARN_ON(!ret && wdev->iftype != type);
 
@@ -173,9 +173,6 @@ int cfg80211_wext_giwrange(struct net_device *dev,
 	range->min_frag = 256;
 	range->max_frag = 2346;
 
-	range->encoding_size[0] = 5;
-	range->encoding_size[1] = 13;
-	range->num_encoding_sizes = 2;
 	range->max_encoding_tokens = 4;
 
 	range->max_qual.updated = IW_QUAL_NOISE_INVALID;
@@ -204,8 +201,29 @@ int cfg80211_wext_giwrange(struct net_device *dev,
 	range->avg_qual.noise = range->max_qual.noise / 2;
 	range->avg_qual.updated = range->max_qual.updated;
 
-	range->enc_capa = IW_ENC_CAPA_WPA | IW_ENC_CAPA_WPA2 |
-			  IW_ENC_CAPA_CIPHER_TKIP | IW_ENC_CAPA_CIPHER_CCMP;
+	for (c = 0; c < wdev->wiphy->n_cipher_suites; c++) {
+		switch (wdev->wiphy->cipher_suites[c]) {
+		case WLAN_CIPHER_SUITE_TKIP:
+			range->enc_capa |= (IW_ENC_CAPA_CIPHER_TKIP |
+					    IW_ENC_CAPA_WPA);
+			break;
+
+		case WLAN_CIPHER_SUITE_CCMP:
+			range->enc_capa |= (IW_ENC_CAPA_CIPHER_CCMP |
+					    IW_ENC_CAPA_WPA2);
+			break;
+
+		case WLAN_CIPHER_SUITE_WEP40:
+			range->encoding_size[range->num_encoding_sizes++] =
+				WLAN_KEY_LEN_WEP40;
+			break;
+
+		case WLAN_CIPHER_SUITE_WEP104:
+			range->encoding_size[range->num_encoding_sizes++] =
+				WLAN_KEY_LEN_WEP104;
+			break;
+		}
+	}
 
 	for (band = 0; band < IEEE80211_NUM_BANDS; band ++) {
 		int i;
@@ -236,7 +254,8 @@ int cfg80211_wext_giwrange(struct net_device *dev,
 	IW_EVENT_CAPA_SET(range->event_capa, SIOCGIWAP);
 	IW_EVENT_CAPA_SET(range->event_capa, SIOCGIWSCAN);
 
-	range->scan_capa |= IW_SCAN_CAPA_ESSID;
+	if (wdev->wiphy->max_scan_ssids > 0)
+		range->scan_capa |= IW_SCAN_CAPA_ESSID;
 
 	return 0;
 }

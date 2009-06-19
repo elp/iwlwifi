@@ -766,7 +766,7 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *drv;
 	struct vif_params params;
-	int err, ifindex;
+	int err;
 	enum nl80211_iftype otype, ntype;
 	struct net_device *dev;
 	u32 _flags, *flags = NULL;
@@ -780,9 +780,7 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		goto unlock_rtnl;
 
-	ifindex = dev->ifindex;
 	otype = ntype = dev->ieee80211_ptr->iftype;
-	dev_put(dev);
 
 	if (info->attrs[NL80211_ATTR_IFTYPE]) {
 		ntype = nla_get_u32(info->attrs[NL80211_ATTR_IFTYPE]);
@@ -825,20 +823,20 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (change)
-		err = drv->ops->change_virtual_intf(&drv->wiphy, ifindex,
+		err = drv->ops->change_virtual_intf(&drv->wiphy, dev,
 						    ntype, flags, &params);
 	else
 		err = 0;
 
-	dev = __dev_get_by_index(&init_net, ifindex);
-	WARN_ON(!dev || (!err && dev->ieee80211_ptr->iftype != ntype));
+	WARN_ON(!err && dev->ieee80211_ptr->iftype != ntype);
 
-	if (dev && !err && (ntype != otype)) {
+	if (!err && (ntype != otype)) {
 		if (otype == NL80211_IFTYPE_ADHOC)
 			cfg80211_clear_ibss(dev, false);
 	}
 
  unlock:
+	dev_put(dev);
 	cfg80211_put_dev(drv);
  unlock_rtnl:
 	rtnl_unlock();
@@ -1687,13 +1685,52 @@ static int nl80211_set_station(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		goto out_rtnl;
 
-	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP &&
-	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP_VLAN) {
-		err = -EINVAL;
+	err = get_vlan(info->attrs[NL80211_ATTR_STA_VLAN], drv, &params.vlan);
+	if (err)
 		goto out;
+
+	/* validate settings */
+	err = 0;
+
+	switch (dev->ieee80211_ptr->iftype) {
+	case NL80211_IFTYPE_AP:
+	case NL80211_IFTYPE_AP_VLAN:
+		/* disallow mesh-specific things */
+		if (params.plink_action)
+			err = -EINVAL;
+		break;
+	case NL80211_IFTYPE_STATION:
+		/* disallow everything but AUTHORIZED flag */
+		if (params.plink_action)
+			err = -EINVAL;
+		if (params.vlan)
+			err = -EINVAL;
+		if (params.supported_rates)
+			err = -EINVAL;
+		if (params.ht_capa)
+			err = -EINVAL;
+		if (params.listen_interval >= 0)
+			err = -EINVAL;
+		if (params.sta_flags_mask & ~BIT(NL80211_STA_FLAG_AUTHORIZED))
+			err = -EINVAL;
+		break;
+	case NL80211_IFTYPE_MESH_POINT:
+		/* disallow things mesh doesn't support */
+		if (params.vlan)
+			err = -EINVAL;
+		if (params.ht_capa)
+			err = -EINVAL;
+		if (params.listen_interval >= 0)
+			err = -EINVAL;
+		if (params.supported_rates)
+			err = -EINVAL;
+		if (params.sta_flags_mask)
+			err = -EINVAL;
+		break;
+	default:
+		err = -EINVAL;
 	}
 
-	err = get_vlan(info->attrs[NL80211_ATTR_STA_VLAN], drv, &params.vlan);
 	if (err)
 		goto out;
 
@@ -1728,9 +1765,6 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 	if (!info->attrs[NL80211_ATTR_MAC])
 		return -EINVAL;
 
-	if (!info->attrs[NL80211_ATTR_STA_AID])
-		return -EINVAL;
-
 	if (!info->attrs[NL80211_ATTR_STA_LISTEN_INTERVAL])
 		return -EINVAL;
 
@@ -1745,9 +1779,11 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 	params.listen_interval =
 		nla_get_u16(info->attrs[NL80211_ATTR_STA_LISTEN_INTERVAL]);
 
-	params.aid = nla_get_u16(info->attrs[NL80211_ATTR_STA_AID]);
-	if (!params.aid || params.aid > IEEE80211_MAX_AID)
-		return -EINVAL;
+	if (info->attrs[NL80211_ATTR_STA_AID]) {
+		params.aid = nla_get_u16(info->attrs[NL80211_ATTR_STA_AID]);
+		if (!params.aid || params.aid > IEEE80211_MAX_AID)
+			return -EINVAL;
+	}
 
 	if (info->attrs[NL80211_ATTR_HT_CAPABILITY])
 		params.ht_capa =
@@ -1762,13 +1798,39 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		goto out_rtnl;
 
-	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP &&
-	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP_VLAN) {
-		err = -EINVAL;
+	err = get_vlan(info->attrs[NL80211_ATTR_STA_VLAN], drv, &params.vlan);
+	if (err)
 		goto out;
+
+	/* validate settings */
+	err = 0;
+
+	switch (dev->ieee80211_ptr->iftype) {
+	case NL80211_IFTYPE_AP:
+	case NL80211_IFTYPE_AP_VLAN:
+		/* all ok but must have AID */
+		if (!params.aid)
+			err = -EINVAL;
+		break;
+	case NL80211_IFTYPE_MESH_POINT:
+		/* disallow things mesh doesn't support */
+		if (params.vlan)
+			err = -EINVAL;
+		if (params.aid)
+			err = -EINVAL;
+		if (params.ht_capa)
+			err = -EINVAL;
+		if (params.listen_interval >= 0)
+			err = -EINVAL;
+		if (params.supported_rates)
+			err = -EINVAL;
+		if (params.sta_flags_mask)
+			err = -EINVAL;
+		break;
+	default:
+		err = -EINVAL;
 	}
 
-	err = get_vlan(info->attrs[NL80211_ATTR_STA_VLAN], drv, &params.vlan);
 	if (err)
 		goto out;
 
@@ -1812,7 +1874,8 @@ static int nl80211_del_station(struct sk_buff *skb, struct genl_info *info)
 		goto out_rtnl;
 
 	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP &&
-	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP_VLAN) {
+	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP_VLAN &&
+	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_MESH_POINT) {
 		err = -EINVAL;
 		goto out;
 	}
@@ -2631,6 +2694,31 @@ static int nl80211_set_reg(struct sk_buff *skb, struct genl_info *info)
 	return r;
 }
 
+static int validate_scan_freqs(struct nlattr *freqs)
+{
+	struct nlattr *attr1, *attr2;
+	int n_channels = 0, tmp1, tmp2;
+
+	nla_for_each_nested(attr1, freqs, tmp1) {
+		n_channels++;
+		/*
+		 * Some hardware has a limited channel list for
+		 * scanning, and it is pretty much nonsensical
+		 * to scan for a channel twice, so disallow that
+		 * and don't require drivers to check that the
+		 * channel list they get isn't longer than what
+		 * they can scan, as long as they can scan all
+		 * the channels they registered at once.
+		 */
+		nla_for_each_nested(attr2, freqs, tmp2)
+			if (attr1 != attr2 &&
+			    nla_get_u32(attr1) == nla_get_u32(attr2))
+				return 0;
+	}
+
+	return n_channels;
+}
+
 static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *drv;
@@ -2640,7 +2728,7 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	struct ieee80211_channel *channel;
 	struct nlattr *attr;
 	struct wiphy *wiphy;
-	int err, tmp, n_ssids = 0, n_channels = 0, i;
+	int err, tmp, n_ssids = 0, n_channels, i;
 	enum ieee80211_band band;
 	size_t ie_len;
 
@@ -2671,13 +2759,15 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[NL80211_ATTR_SCAN_FREQUENCIES]) {
-		nla_for_each_nested(attr, info->attrs[NL80211_ATTR_SCAN_FREQUENCIES], tmp)
-			n_channels++;
+		n_channels = validate_scan_freqs(
+				info->attrs[NL80211_ATTR_SCAN_FREQUENCIES]);
 		if (!n_channels) {
 			err = -EINVAL;
 			goto out;
 		}
 	} else {
+		n_channels = 0;
+
 		for (band = 0; band < IEEE80211_NUM_BANDS; band++)
 			if (wiphy->bands[band])
 				n_channels += wiphy->bands[band]->n_channels;
@@ -2774,6 +2864,9 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 
 	drv->scan_req = request;
 	err = drv->ops->scan(&drv->wiphy, dev, request);
+
+	if (!err)
+		nl80211_send_scan_start(drv, dev);
 
  out_free:
 	if (err) {
@@ -3601,11 +3694,11 @@ static int nl80211_add_scan_req(struct sk_buff *msg,
 	return -ENOBUFS;
 }
 
-static int nl80211_send_scan_donemsg(struct sk_buff *msg,
-				     struct cfg80211_registered_device *rdev,
-				     struct net_device *netdev,
-				     u32 pid, u32 seq, int flags,
-				     u32 cmd)
+static int nl80211_send_scan_msg(struct sk_buff *msg,
+				 struct cfg80211_registered_device *rdev,
+				 struct net_device *netdev,
+				 u32 pid, u32 seq, int flags,
+				 u32 cmd)
 {
 	void *hdr;
 
@@ -3626,6 +3719,24 @@ static int nl80211_send_scan_donemsg(struct sk_buff *msg,
 	return -EMSGSIZE;
 }
 
+void nl80211_send_scan_start(struct cfg80211_registered_device *rdev,
+			     struct net_device *netdev)
+{
+	struct sk_buff *msg;
+
+	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	if (!msg)
+		return;
+
+	if (nl80211_send_scan_msg(msg, rdev, netdev, 0, 0, 0,
+				  NL80211_CMD_TRIGGER_SCAN) < 0) {
+		nlmsg_free(msg);
+		return;
+	}
+
+	genlmsg_multicast(msg, 0, nl80211_scan_mcgrp.id, GFP_KERNEL);
+}
+
 void nl80211_send_scan_done(struct cfg80211_registered_device *rdev,
 			    struct net_device *netdev)
 {
@@ -3635,8 +3746,8 @@ void nl80211_send_scan_done(struct cfg80211_registered_device *rdev,
 	if (!msg)
 		return;
 
-	if (nl80211_send_scan_donemsg(msg, rdev, netdev, 0, 0, 0,
-				      NL80211_CMD_NEW_SCAN_RESULTS) < 0) {
+	if (nl80211_send_scan_msg(msg, rdev, netdev, 0, 0, 0,
+				  NL80211_CMD_NEW_SCAN_RESULTS) < 0) {
 		nlmsg_free(msg);
 		return;
 	}
@@ -3653,8 +3764,8 @@ void nl80211_send_scan_aborted(struct cfg80211_registered_device *rdev,
 	if (!msg)
 		return;
 
-	if (nl80211_send_scan_donemsg(msg, rdev, netdev, 0, 0, 0,
-				      NL80211_CMD_SCAN_ABORTED) < 0) {
+	if (nl80211_send_scan_msg(msg, rdev, netdev, 0, 0, 0,
+				  NL80211_CMD_SCAN_ABORTED) < 0) {
 		nlmsg_free(msg);
 		return;
 	}

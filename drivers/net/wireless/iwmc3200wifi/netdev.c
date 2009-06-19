@@ -48,29 +48,22 @@
 #include <linux/netdevice.h>
 
 #include "iwm.h"
+#include "commands.h"
 #include "cfg80211.h"
 #include "debug.h"
 
 static int iwm_open(struct net_device *ndev)
 {
 	struct iwm_priv *iwm = ndev_to_iwm(ndev);
-	int ret = 0;
 
-	if (!test_bit(IWM_RADIO_RFKILL_SW, &iwm->radio))
-		ret = iwm_up(iwm);
-
-	return ret;
+	return iwm_up(iwm);
 }
 
 static int iwm_stop(struct net_device *ndev)
 {
 	struct iwm_priv *iwm = ndev_to_iwm(ndev);
-	int ret = 0;
 
-	if (!test_bit(IWM_RADIO_RFKILL_SW, &iwm->radio))
-		ret = iwm_down(iwm);
-
-	return ret;
+	return iwm_down(iwm);
 }
 
 /*
@@ -114,32 +107,43 @@ void *iwm_if_alloc(int sizeof_bus, struct device *dev,
 	iwm = wdev_to_iwm(wdev);
 	iwm->bus_ops = if_ops;
 	iwm->wdev = wdev;
-	iwm_priv_init(iwm);
+
+	ret = iwm_priv_init(iwm);
+	if (ret) {
+		dev_err(dev, "failed to init iwm_priv\n");
+		goto out_wdev;
+	}
+
 	wdev->iftype = iwm_mode_to_nl80211_iftype(iwm->conf.mode);
 
-	ndev = alloc_netdev_mq(0, "wlan%d", ether_setup,
-			       IWM_TX_QUEUES);
+	ndev = alloc_netdev_mq(0, "wlan%d", ether_setup, IWM_TX_QUEUES);
 	if (!ndev) {
 		dev_err(dev, "no memory for network device instance\n");
-		goto out_wdev;
+		goto out_priv;
 	}
 
 	ndev->netdev_ops = &iwm_netdev_ops;
 	ndev->wireless_handlers = &iwm_iw_handler_def;
 	ndev->ieee80211_ptr = wdev;
 	SET_NETDEV_DEV(ndev, wiphy_dev(wdev->wiphy));
-	ret = register_netdev(ndev);
-	if (ret < 0) {
-		dev_err(dev, "Failed to register netdev: %d\n", ret);
-		goto out_ndev;
+	wdev->netdev = ndev;
+
+	iwm->umac_profile = kmalloc(sizeof(struct iwm_umac_profile),
+				    GFP_KERNEL);
+	if (!iwm->umac_profile) {
+		dev_err(dev, "Couldn't alloc memory for profile\n");
+		goto out_profile;
 	}
 
-	wdev->netdev = ndev;
+	iwm_init_default_profile(iwm, iwm->umac_profile);
 
 	return iwm;
 
- out_ndev:
+ out_profile:
 	free_netdev(ndev);
+
+ out_priv:
+	iwm_priv_deinit(iwm);
 
  out_wdev:
 	iwm_wdev_free(iwm);
@@ -148,15 +152,31 @@ void *iwm_if_alloc(int sizeof_bus, struct device *dev,
 
 void iwm_if_free(struct iwm_priv *iwm)
 {
-	int i;
-
 	if (!iwm_to_ndev(iwm))
 		return;
 
-	unregister_netdev(iwm_to_ndev(iwm));
 	free_netdev(iwm_to_ndev(iwm));
 	iwm_wdev_free(iwm);
-	destroy_workqueue(iwm->rx_wq);
-	for (i = 0; i < IWM_TX_QUEUES; i++)
-		destroy_workqueue(iwm->txq[i].wq);
+	iwm_priv_deinit(iwm);
+	kfree(iwm->umac_profile);
+	iwm->umac_profile = NULL;
+}
+
+int iwm_if_add(struct iwm_priv *iwm)
+{
+	struct net_device *ndev = iwm_to_ndev(iwm);
+	int ret;
+
+	ret = register_netdev(ndev);
+	if (ret < 0) {
+		dev_err(&ndev->dev, "Failed to register netdev: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+void iwm_if_remove(struct iwm_priv *iwm)
+{
+	unregister_netdev(iwm_to_ndev(iwm));
 }

@@ -135,9 +135,9 @@ void ieee80211_rx_bss_remove(struct ieee80211_sub_if_data *sdata, u8 *bssid,
 }
 
 ieee80211_rx_result
-ieee80211_scan_rx(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
-		  struct ieee80211_rx_status *rx_status)
+ieee80211_scan_rx(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb)
 {
+	struct ieee80211_rx_status *rx_status = IEEE80211_SKB_RXCB(skb);
 	struct ieee80211_mgmt *mgmt;
 	struct ieee80211_bss *bss;
 	u8 *elements;
@@ -307,16 +307,13 @@ void ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 	if (was_hw_scan)
 		goto done;
 
-	netif_tx_lock_bh(local->mdev);
-	netif_addr_lock(local->mdev);
+	spin_lock_bh(&local->filter_lock);
 	local->filter_flags &= ~FIF_BCN_PRBRESP_PROMISC;
 	drv_configure_filter(local, FIF_BCN_PRBRESP_PROMISC,
 			     &local->filter_flags,
-			     local->mdev->mc_count,
-			     local->mdev->mc_list);
-
-	netif_addr_unlock(local->mdev);
-	netif_tx_unlock_bh(local->mdev);
+			     local->mc_count,
+			     local->mc_list);
+	spin_unlock_bh(&local->filter_lock);
 
 	drv_sw_scan_complete(local);
 
@@ -395,13 +392,13 @@ static int ieee80211_start_sw_scan(struct ieee80211_local *local)
 	local->scan_state = SCAN_SET_CHANNEL;
 	local->scan_channel_idx = 0;
 
-	netif_addr_lock_bh(local->mdev);
+	spin_lock_bh(&local->filter_lock);
 	local->filter_flags |= FIF_BCN_PRBRESP_PROMISC;
 	drv_configure_filter(local, FIF_BCN_PRBRESP_PROMISC,
 			     &local->filter_flags,
-			     local->mdev->mc_count,
-			     local->mdev->mc_list);
-	netif_addr_unlock_bh(local->mdev);
+			     local->mc_count,
+			     local->mc_list);
+	spin_unlock_bh(&local->filter_lock);
 
 	/* TODO: start scan as soon as all nullfunc frames are ACKed */
 	queue_delayed_work(local->hw.workqueue, &local->scan_work,

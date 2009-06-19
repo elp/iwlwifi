@@ -162,13 +162,11 @@ struct iwm_umac_key_hdr {
 
 struct iwm_key {
 	struct iwm_umac_key_hdr hdr;
-	u8 in_use;
-	u8 alg;
-	u32 flags;
-	u8 tx_seq[IW_ENCODE_SEQ_MAX_SIZE];
-	u8 rx_seq[IW_ENCODE_SEQ_MAX_SIZE];
-	u8 key_len;
-	u8 key[32];
+	u32 cipher;
+	u8 key[WLAN_MAX_KEY_LEN];
+	u8 seq[IW_ENCODE_SEQ_MAX_SIZE];
+	int key_len;
+	int seq_len;
 };
 
 #define IWM_RX_ID_HASH  0xff
@@ -185,10 +183,6 @@ struct iwm_key {
 #define IWM_STATUS_SCAN_ABORTING	2
 #define IWM_STATUS_ASSOCIATING		3
 #define IWM_STATUS_ASSOCIATED		4
-
-#define IWM_RADIO_RFKILL_OFF		0
-#define IWM_RADIO_RFKILL_HW		1
-#define IWM_RADIO_RFKILL_SW		2
 
 struct iwm_tx_queue {
 	int id;
@@ -223,7 +217,6 @@ struct iwm_priv {
 	struct iwm_conf conf;
 
 	unsigned long status;
-	unsigned long radio;
 
 	struct list_head pending_notif;
 	wait_queue_head_t notif_queue;
@@ -242,6 +235,7 @@ struct iwm_priv {
 	u8 bssid[ETH_ALEN];
 	u8 channel;
 	u16 rate;
+	u32 txpower;
 
 	struct iwm_sta_info sta_table[IWM_STA_TABLE_NUM];
 	struct list_head bss_list;
@@ -276,7 +270,10 @@ struct iwm_priv {
 	struct iwm_tx_queue txq[IWM_TX_QUEUES];
 
 	struct iwm_key keys[IWM_NUM_KEYS];
-	struct iwm_key *default_key;
+	s8 default_key;
+
+	DECLARE_BITMAP(wifi_ntfy, WIFI_IF_NTFY_MAX);
+	wait_queue_head_t wifi_ntfy_queue;
 
 	wait_queue_head_t mlme_queue;
 
@@ -288,7 +285,7 @@ struct iwm_priv {
 	u8 *eeprom;
 	struct timer_list watchdog;
 	struct work_struct reset_worker;
-	struct rfkill *rfkill;
+	struct mutex mutex;
 
 	char private[0] __attribute__((__aligned__(NETDEV_ALIGN)));
 };
@@ -315,8 +312,11 @@ extern const struct iw_handler_def iwm_iw_handler_def;
 void *iwm_if_alloc(int sizeof_bus, struct device *dev,
 		   struct iwm_if_ops *if_ops);
 void iwm_if_free(struct iwm_priv *iwm);
+int iwm_if_add(struct iwm_priv *iwm);
+void iwm_if_remove(struct iwm_priv *iwm);
 int iwm_mode_to_nl80211_iftype(int mode);
 int iwm_priv_init(struct iwm_priv *iwm);
+void iwm_priv_deinit(struct iwm_priv *iwm);
 void iwm_reset(struct iwm_priv *iwm);
 void iwm_tx_credit_init_pools(struct iwm_priv *iwm,
 			      struct iwm_umac_notif_alive *alive);
