@@ -482,7 +482,7 @@ static ssize_t hso_sysfs_show_porttype(struct device *dev,
 				       struct device_attribute *attr,
 				       char *buf)
 {
-	struct hso_device *hso_dev = dev->driver_data;
+	struct hso_device *hso_dev = dev_get_drvdata(dev);
 	char *port_name;
 
 	if (!hso_dev)
@@ -816,7 +816,7 @@ static int hso_net_start_xmit(struct sk_buff *skb, struct net_device *net)
 	}
 	dev_kfree_skb(skb);
 	/* we're done */
-	return result;
+	return NETDEV_TX_OK;
 }
 
 static void hso_get_drvinfo(struct net_device *net, struct ethtool_drvinfo *info)
@@ -899,15 +899,14 @@ static void packetizeRx(struct hso_net *odev, unsigned char *ip_pkt,
 					continue;
 				}
 				/* Allocate an sk_buff */
-				odev->skb_rx_buf = dev_alloc_skb(frame_len);
+				odev->skb_rx_buf = netdev_alloc_skb(odev->net,
+								    frame_len);
 				if (!odev->skb_rx_buf) {
 					/* We got no receive buffer. */
 					D1("could not allocate memory");
 					odev->rx_parse_state = WAIT_SYNC;
 					return;
 				}
-				/* Here's where it came from */
-				odev->skb_rx_buf->dev = odev->net;
 
 				/* Copy what we got so far. make room for iphdr
 				 * after tail. */
@@ -2313,7 +2312,7 @@ static int hso_serial_common_create(struct hso_serial *serial, int num_urbs,
 	serial->parent->dev = tty_register_device(tty_drv, minor,
 					&serial->parent->interface->dev);
 	dev = serial->parent->dev;
-	dev->driver_data = serial->parent;
+	dev_set_drvdata(dev, serial->parent);
 	i = device_create_file(dev, &dev_attr_hsotype);
 
 	/* fill in specific data for later use */

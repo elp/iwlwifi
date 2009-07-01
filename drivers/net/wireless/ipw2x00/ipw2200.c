@@ -3177,11 +3177,8 @@ static int ipw_load_firmware(struct ipw_priv *priv, u8 * data, size_t len)
 	/* Start the Dma */
 	rc = ipw_fw_dma_enable(priv);
 
-	if (priv->sram_desc.last_cb_index > 0) {
-		/* the DMA is already ready this would be a bug. */
-		BUG();
-		goto out;
-	}
+	/* the DMA is already ready this would be a bug. */
+	BUG_ON(priv->sram_desc.last_cb_index > 0);
 
 	do {
 		chunk = (struct fw_chunk *)(data + offset);
@@ -11527,7 +11524,8 @@ static int ipw_prom_stop(struct net_device *dev)
 static int ipw_prom_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	IPW_DEBUG_INFO("prom dev->xmit\n");
-	return -EOPNOTSUPP;
+	dev_kfree_skb(skb);
+	return NETDEV_TX_OK;
 }
 
 static const struct net_device_ops ipw_prom_netdev_ops = {

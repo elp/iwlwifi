@@ -57,7 +57,7 @@ static int get_drv_dev_by_info_ifindex(struct nlattr **attrs,
 static struct nla_policy nl80211_policy[NL80211_ATTR_MAX+1] __read_mostly = {
 	[NL80211_ATTR_WIPHY] = { .type = NLA_U32 },
 	[NL80211_ATTR_WIPHY_NAME] = { .type = NLA_NUL_STRING,
-				      .len = BUS_ID_SIZE-1 },
+				      .len = 20-1 },
 	[NL80211_ATTR_WIPHY_TXQ_PARAMS] = { .type = NLA_NESTED },
 	[NL80211_ATTR_WIPHY_FREQ] = { .type = NLA_U32 },
 	[NL80211_ATTR_WIPHY_CHANNEL_TYPE] = { .type = NLA_U32 },
@@ -389,7 +389,7 @@ static int nl80211_get_wiphy(struct sk_buff *skb, struct genl_info *info)
 	if (IS_ERR(dev))
 		return PTR_ERR(dev);
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg)
 		goto out_err;
 
@@ -712,7 +712,7 @@ static int nl80211_get_interface(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		return err;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg)
 		goto out_err;
 
@@ -983,7 +983,7 @@ static int nl80211_get_key(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg) {
 		err = -ENOMEM;
 		goto out;
@@ -1594,7 +1594,7 @@ static int nl80211_get_station(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		goto out;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg)
 		goto out;
 
@@ -2063,7 +2063,7 @@ static int nl80211_get_mpath(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		goto out;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg)
 		goto out;
 
@@ -2379,7 +2379,7 @@ static int nl80211_get_mesh_params(struct sk_buff *skb,
 		goto out;
 
 	/* Draw up a netlink message to send back */
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg) {
 		err = -ENOBUFS;
 		goto out;
@@ -2557,7 +2557,7 @@ static int nl80211_get_reg(struct sk_buff *skb, struct genl_info *info)
 	if (!cfg80211_regdomain)
 		goto out;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg) {
 		err = -ENOBUFS;
 		goto out;
@@ -3650,7 +3650,7 @@ void nl80211_notify_dev_rename(struct cfg80211_registered_device *rdev)
 {
 	struct sk_buff *msg;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg)
 		return;
 
@@ -3742,7 +3742,7 @@ void nl80211_send_scan_done(struct cfg80211_registered_device *rdev,
 {
 	struct sk_buff *msg;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg)
 		return;
 
@@ -3760,7 +3760,7 @@ void nl80211_send_scan_aborted(struct cfg80211_registered_device *rdev,
 {
 	struct sk_buff *msg;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg)
 		return;
 
@@ -3782,7 +3782,7 @@ void nl80211_send_reg_change_event(struct regulatory_request *request)
 	struct sk_buff *msg;
 	void *hdr;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
 	if (!msg)
 		return;
 
@@ -3836,7 +3836,7 @@ static void nl80211_send_mlme_event(struct cfg80211_registered_device *rdev,
 	struct sk_buff *msg;
 	void *hdr;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_ATOMIC);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_ATOMIC);
 	if (!msg)
 		return;
 
@@ -3899,7 +3899,7 @@ static void nl80211_send_mlme_timeout(struct cfg80211_registered_device *rdev,
 	struct sk_buff *msg;
 	void *hdr;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_ATOMIC);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_ATOMIC);
 	if (!msg)
 		return;
 
@@ -3947,7 +3947,7 @@ void nl80211_send_ibss_bssid(struct cfg80211_registered_device *rdev,
 	struct sk_buff *msg;
 	void *hdr;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, gfp);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
 	if (!msg)
 		return;
 
@@ -3982,7 +3982,7 @@ void nl80211_michael_mic_failure(struct cfg80211_registered_device *rdev,
 	struct sk_buff *msg;
 	void *hdr;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_ATOMIC);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_ATOMIC);
 	if (!msg)
 		return;
 
@@ -4022,7 +4022,7 @@ void nl80211_send_beacon_hint_event(struct wiphy *wiphy,
 	void *hdr;
 	struct nlattr *nl_freq;
 
-	msg = nlmsg_new(NLMSG_GOODSIZE, GFP_ATOMIC);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_ATOMIC);
 	if (!msg)
 		return;
 
@@ -4072,17 +4072,12 @@ nla_put_failure:
 
 int nl80211_init(void)
 {
-	int err, i;
+	int err;
 
-	err = genl_register_family(&nl80211_fam);
+	err = genl_register_family_with_ops(&nl80211_fam,
+		nl80211_ops, ARRAY_SIZE(nl80211_ops));
 	if (err)
 		return err;
-
-	for (i = 0; i < ARRAY_SIZE(nl80211_ops); i++) {
-		err = genl_register_ops(&nl80211_fam, &nl80211_ops[i]);
-		if (err)
-			goto err_out;
-	}
 
 	err = genl_register_mc_group(&nl80211_fam, &nl80211_config_mcgrp);
 	if (err)
