@@ -2098,6 +2098,8 @@ static void rs_rate_scale_perform(struct iwl_priv *priv,
 
 	if (!((1 << index) & rate_scale_index_msk)) {
 		IWL_ERR(priv, "Current Rate is not valid\n");
+		/* reset to active table */
+		lq_sta->search_better_tbl = 0;
 		return;
 	}
 
