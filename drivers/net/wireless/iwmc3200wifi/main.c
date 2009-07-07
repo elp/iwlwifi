@@ -53,11 +53,7 @@
 static struct iwm_conf def_iwm_conf = {
 
 	.sdio_ior_timeout	= 5000,
-	.init_calib_map		= BIT(PHY_CALIBRATE_DC_CMD)	|
-				  BIT(PHY_CALIBRATE_LO_CMD)	|
-				  BIT(PHY_CALIBRATE_TX_IQ_CMD)	|
-				  BIT(PHY_CALIBRATE_RX_IQ_CMD),
-	.periodic_calib_map	= BIT(PHY_CALIBRATE_DC_CMD)	|
+	.calib_map		= BIT(PHY_CALIBRATE_DC_CMD)	|
 				  BIT(PHY_CALIBRATE_LO_CMD)	|
 				  BIT(PHY_CALIBRATE_TX_IQ_CMD)	|
 				  BIT(PHY_CALIBRATE_RX_IQ_CMD)	|
@@ -518,13 +514,6 @@ static void iwm_bss_list_clean(struct iwm_priv *iwm)
 static int iwm_channels_init(struct iwm_priv *iwm)
 {
 	int ret;
-
-#ifdef CONFIG_IWM_B0_HW_SUPPORT
-	if (iwm->conf.hw_b0) {
-		IWM_INFO(iwm, "Workaround EEPROM channels for B0 hardware\n");
-		return 0;
-	}
-#endif
 
 	ret = iwm_send_umac_channel_list(iwm);
 	if (ret) {

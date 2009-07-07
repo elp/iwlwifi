@@ -743,7 +743,7 @@ static int p54_rx_data(struct ieee80211_hw *dev, struct sk_buff *skb)
 {
 	struct p54_common *priv = dev->priv;
 	struct p54_rx_data *hdr = (struct p54_rx_data *) skb->data;
-	struct ieee80211_rx_status rx_status = {0};
+	struct ieee80211_rx_status *rx_status = IEEE80211_SKB_RXCB(skb);
 	u16 freq = le16_to_cpu(hdr->freq);
 	size_t header_len = sizeof(*hdr);
 	u32 tsf32;
@@ -762,39 +762,37 @@ static int p54_rx_data(struct ieee80211_hw *dev, struct sk_buff *skb)
 	}
 
 	if (hdr->decrypt_status == P54_DECRYPT_OK)
-		rx_status.flag |= RX_FLAG_DECRYPTED;
+		rx_status->flag |= RX_FLAG_DECRYPTED;
 	if ((hdr->decrypt_status == P54_DECRYPT_FAIL_MICHAEL) ||
 	    (hdr->decrypt_status == P54_DECRYPT_FAIL_TKIP))
-		rx_status.flag |= RX_FLAG_MMIC_ERROR;
+		rx_status->flag |= RX_FLAG_MMIC_ERROR;
 
-	rx_status.signal = p54_rssi_to_dbm(dev, hdr->rssi);
-	rx_status.noise = priv->noise;
+	rx_status->signal = p54_rssi_to_dbm(dev, hdr->rssi);
+	rx_status->noise = priv->noise;
 	if (hdr->rate & 0x10)
-		rx_status.flag |= RX_FLAG_SHORTPRE;
+		rx_status->flag |= RX_FLAG_SHORTPRE;
 	if (dev->conf.channel->band == IEEE80211_BAND_5GHZ)
-		rx_status.rate_idx = (rate < 4) ? 0 : rate - 4;
+		rx_status->rate_idx = (rate < 4) ? 0 : rate - 4;
 	else
-		rx_status.rate_idx = rate;
+		rx_status->rate_idx = rate;
 
-	rx_status.freq = freq;
-	rx_status.band =  dev->conf.channel->band;
-	rx_status.antenna = hdr->antenna;
+	rx_status->freq = freq;
+	rx_status->band =  dev->conf.channel->band;
+	rx_status->antenna = hdr->antenna;
 
 	tsf32 = le32_to_cpu(hdr->tsf32);
 	if (tsf32 < priv->tsf_low32)
 		priv->tsf_high32++;
-	rx_status.mactime = ((u64)priv->tsf_high32) << 32 | tsf32;
+	rx_status->mactime = ((u64)priv->tsf_high32) << 32 | tsf32;
 	priv->tsf_low32 = tsf32;
 
-	rx_status.flag |= RX_FLAG_TSFT;
+	rx_status->flag |= RX_FLAG_TSFT;
 
 	if (hdr->flags & cpu_to_le16(P54_HDR_FLAG_DATA_ALIGN))
 		header_len += hdr->align[0];
 
 	skb_pull(skb, header_len);
 	skb_trim(skb, le16_to_cpu(hdr->len));
-
-	memcpy(IEEE80211_SKB_RXCB(skb), &rx_status, sizeof(rx_status));
 	ieee80211_rx_irqsafe(dev, skb);
 
 	queue_delayed_work(dev->workqueue, &priv->work,
@@ -824,30 +822,30 @@ void p54_free_skb(struct ieee80211_hw *dev, struct sk_buff *skb)
 	struct p54_tx_info *range;
 	unsigned long flags;
 
-	if (unlikely(!skb || !dev || skb_queue_empty(&priv->tx_queue)))
+	if (unlikely(!skb || !dev || !skb_queue_len(&priv->tx_queue)))
 		return;
 
-	/* There used to be a check here to see if the SKB was on the
-	 * TX queue or not.  This can never happen because all SKBs we
-	 * see here successfully went through p54_assign_address()
-	 * which means the SKB is on the ->tx_queue.
+	/*
+	 * don't try to free an already unlinked skb
 	 */
+	if (unlikely((!skb->next) || (!skb->prev)))
+		return;
 
 	spin_lock_irqsave(&priv->tx_queue.lock, flags);
 	info = IEEE80211_SKB_CB(skb);
 	range = (void *)info->rate_driver_data;
-	if (!skb_queue_is_first(&priv->tx_queue, skb)) {
+	if (skb->prev != (struct sk_buff *)&priv->tx_queue) {
 		struct ieee80211_tx_info *ni;
 		struct p54_tx_info *mr;
 
-		ni = IEEE80211_SKB_CB(skb_queue_prev(&priv->tx_queue, skb));
+		ni = IEEE80211_SKB_CB(skb->prev);
 		mr = (struct p54_tx_info *)ni->rate_driver_data;
 	}
-	if (!skb_queue_is_last(&priv->tx_queue, skb)) {
+	if (skb->next != (struct sk_buff *)&priv->tx_queue) {
 		struct ieee80211_tx_info *ni;
 		struct p54_tx_info *mr;
 
-		ni = IEEE80211_SKB_CB(skb_queue_next(&priv->tx_queue, skb));
+		ni = IEEE80211_SKB_CB(skb->next);
 		mr = (struct p54_tx_info *)ni->rate_driver_data;
 	}
 	__skb_unlink(skb, &priv->tx_queue);
@@ -865,13 +863,15 @@ static struct sk_buff *p54_find_tx_entry(struct ieee80211_hw *dev,
 	unsigned long flags;
 
 	spin_lock_irqsave(&priv->tx_queue.lock, flags);
-	skb_queue_walk(&priv->tx_queue, entry) {
+	entry = priv->tx_queue.next;
+	while (entry != (struct sk_buff *)&priv->tx_queue) {
 		struct p54_hdr *hdr = (struct p54_hdr *) entry->data;
 
 		if (hdr->req_id == req_id) {
 			spin_unlock_irqrestore(&priv->tx_queue.lock, flags);
 			return entry;
 		}
+		entry = entry->next;
 	}
 	spin_unlock_irqrestore(&priv->tx_queue.lock, flags);
 	return NULL;
@@ -889,22 +889,24 @@ static void p54_rx_frame_sent(struct ieee80211_hw *dev, struct sk_buff *skb)
 	int count, idx;
 
 	spin_lock_irqsave(&priv->tx_queue.lock, flags);
-	skb_queue_walk(&priv->tx_queue, entry) {
+	entry = (struct sk_buff *) priv->tx_queue.next;
+	while (entry != (struct sk_buff *)&priv->tx_queue) {
 		struct ieee80211_tx_info *info = IEEE80211_SKB_CB(entry);
 		struct p54_hdr *entry_hdr;
 		struct p54_tx_data *entry_data;
 		unsigned int pad = 0, frame_len;
 
 		range = (void *)info->rate_driver_data;
-		if (range->start_addr != addr)
+		if (range->start_addr != addr) {
+			entry = entry->next;
 			continue;
+		}
 
-		if (!skb_queue_is_last(&priv->tx_queue, entry)) {
+		if (entry->next != (struct sk_buff *)&priv->tx_queue) {
 			struct ieee80211_tx_info *ni;
 			struct p54_tx_info *mr;
 
-			ni = IEEE80211_SKB_CB(skb_queue_next(&priv->tx_queue,
-							     entry));
+			ni = IEEE80211_SKB_CB(entry->next);
 			mr = (struct p54_tx_info *)ni->rate_driver_data;
 		}
 
@@ -1165,21 +1167,23 @@ static int p54_assign_address(struct ieee80211_hw *dev, struct sk_buff *skb,
 		}
 	}
 
-	skb_queue_walk(&priv->tx_queue, entry) {
+	entry = priv->tx_queue.next;
+	while (left--) {
 		u32 hole_size;
 		info = IEEE80211_SKB_CB(entry);
 		range = (void *)info->rate_driver_data;
 		hole_size = range->start_addr - last_addr;
 		if (!target_skb && hole_size >= len) {
-			target_skb = skb_queue_prev(&priv->tx_queue, entry);
+			target_skb = entry->prev;
 			hole_size -= len;
 			target_addr = last_addr;
 		}
 		largest_hole = max(largest_hole, hole_size);
 		last_addr = range->end_addr;
+		entry = entry->next;
 	}
 	if (!target_skb && priv->rx_end - last_addr >= len) {
-		target_skb = skb_peek_tail(&priv->tx_queue);
+		target_skb = priv->tx_queue.prev;
 		largest_hole = max(largest_hole, priv->rx_end - last_addr - len);
 		if (!skb_queue_empty(&priv->tx_queue)) {
 			info = IEEE80211_SKB_CB(target_skb);
@@ -2085,6 +2089,7 @@ out:
 static void p54_stop(struct ieee80211_hw *dev)
 {
 	struct p54_common *priv = dev->priv;
+	struct sk_buff *skb;
 
 	mutex_lock(&priv->conf_mutex);
 	priv->mode = NL80211_IFTYPE_UNSPECIFIED;
@@ -2099,7 +2104,8 @@ static void p54_stop(struct ieee80211_hw *dev)
 		p54_tx_cancel(dev, priv->cached_beacon);
 
 	priv->stop(dev);
-	skb_queue_purge(&priv->tx_queue);
+	while ((skb = skb_dequeue(&priv->tx_queue)))
+		kfree_skb(skb);
 	priv->cached_beacon = NULL;
 	priv->tsf_high32 = priv->tsf_low32 = 0;
 	mutex_unlock(&priv->conf_mutex);
