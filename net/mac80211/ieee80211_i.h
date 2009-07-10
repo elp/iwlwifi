@@ -247,18 +247,22 @@ struct ieee80211_mgd_work {
 
 	int tries;
 
+	u8 key[WLAN_KEY_LEN_WEP104];
+	u8 key_len, key_idx;
+
 	/* must be last */
 	u8 ie[0]; /* for auth or assoc frame, not probe */
 };
 
 /* flags used in struct ieee80211_if_managed.flags */
 enum ieee80211_sta_flags {
-	IEEE80211_STA_PROBEREQ_POLL	= BIT(3),
-	IEEE80211_STA_CONTROL_PORT	= BIT(4),
-	IEEE80211_STA_WMM_ENABLED	= BIT(5),
-	IEEE80211_STA_DISABLE_11N	= BIT(6),
-	IEEE80211_STA_CSA_RECEIVED	= BIT(7),
-	IEEE80211_STA_MFP_ENABLED	= BIT(8),
+	IEEE80211_STA_BEACON_POLL	= BIT(0),
+	IEEE80211_STA_CONNECTION_POLL	= BIT(1),
+	IEEE80211_STA_CONTROL_PORT	= BIT(2),
+	IEEE80211_STA_WMM_ENABLED	= BIT(3),
+	IEEE80211_STA_DISABLE_11N	= BIT(4),
+	IEEE80211_STA_CSA_RECEIVED	= BIT(5),
+	IEEE80211_STA_MFP_ENABLED	= BIT(6),
 };
 
 /* flags for MLME request */
@@ -268,10 +272,15 @@ enum ieee80211_sta_request {
 
 struct ieee80211_if_managed {
 	struct timer_list timer;
+	struct timer_list conn_mon_timer;
+	struct timer_list bcn_mon_timer;
 	struct timer_list chswitch_timer;
 	struct work_struct work;
+	struct work_struct monitor_work;
 	struct work_struct chswitch_work;
 	struct work_struct beacon_loss_work;
+
+	unsigned long probe_timeout;
 
 	struct mutex mtx;
 	struct ieee80211_bss *associated;
@@ -288,8 +297,6 @@ struct ieee80211_if_managed {
 	bool powersave; /* powersave requested for this iface */
 
 	unsigned long request;
-
-	unsigned long last_beacon;
 
 	unsigned int flags;
 
@@ -321,6 +328,7 @@ struct ieee80211_if_ibss {
 
 	bool fixed_bssid;
 	bool fixed_channel;
+	bool privacy;
 
 	u8 bssid[ETH_ALEN];
 	u8 ssid[IEEE80211_MAX_SSID_LEN];
@@ -1090,8 +1098,8 @@ int ieee80211_add_pending_skbs(struct ieee80211_local *local,
 
 void ieee80211_send_auth(struct ieee80211_sub_if_data *sdata,
 			 u16 transaction, u16 auth_alg,
-			 u8 *extra, size_t extra_len,
-			 const u8 *bssid, int encrypt);
+			 u8 *extra, size_t extra_len, const u8 *bssid,
+			 const u8 *key, u8 key_len, u8 key_idx);
 int ieee80211_build_preq_ies(struct ieee80211_local *local, u8 *buffer,
 			     const u8 *ie, size_t ie_len);
 void ieee80211_send_probe_req(struct ieee80211_sub_if_data *sdata, u8 *dst,

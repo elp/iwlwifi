@@ -10,10 +10,11 @@
 #include <net/cfg80211.h>
 #include "nl80211.h"
 
-static int cfg80211_mgd_wext_connect(struct cfg80211_registered_device *rdev,
-				     struct wireless_dev *wdev)
+int cfg80211_mgd_wext_connect(struct cfg80211_registered_device *rdev,
+			      struct wireless_dev *wdev)
 {
-	int err;
+	struct cfg80211_cached_keys *ck = NULL;
+	int err, i;
 
 	ASSERT_RDEV_LOCK(rdev);
 	ASSERT_WDEV_LOCK(wdev);
@@ -25,10 +26,25 @@ static int cfg80211_mgd_wext_connect(struct cfg80211_registered_device *rdev,
 	wdev->wext.connect.ie_len = wdev->wext.ie_len;
 	wdev->wext.connect.privacy = wdev->wext.default_key != -1;
 
-	err = 0;
-	if (wdev->wext.connect.ssid_len != 0)
-		err = __cfg80211_connect(rdev, wdev->netdev,
-					 &wdev->wext.connect);
+	if (wdev->wext.keys) {
+		wdev->wext.keys->def = wdev->wext.default_key;
+		wdev->wext.keys->defmgmt = wdev->wext.default_mgmt_key;
+	}
+
+	if (!wdev->wext.connect.ssid_len)
+		return 0;
+
+	if (wdev->wext.keys) {
+		ck = kmemdup(wdev->wext.keys, sizeof(*ck), GFP_KERNEL);
+		if (!ck)
+			return -ENOMEM;
+		for (i = 0; i < 6; i++)
+			ck->params[i].key = ck->data[i];
+	}
+	err = __cfg80211_connect(rdev, wdev->netdev,
+				 &wdev->wext.connect, ck);
+	if (err)
+		kfree(ck);
 
 	return err;
 }
@@ -150,7 +166,7 @@ int cfg80211_mgd_wext_siwessid(struct net_device *dev,
 
 	if (wdev->wext.connect.ssid && len &&
 	    len == wdev->wext.connect.ssid_len &&
-	    memcmp(wdev->wext.connect.ssid, ssid, len))
+	    memcmp(wdev->wext.connect.ssid, ssid, len) == 0)
 		goto out;
 
 	if (wdev->sme_state != CFG80211_SME_IDLE) {
@@ -193,11 +209,7 @@ int cfg80211_mgd_wext_giwessid(struct net_device *dev,
 	data->flags = 0;
 
 	wdev_lock(wdev);
-	if (wdev->ssid_len) {
-		data->flags = 1;
-		data->length = wdev->ssid_len;
-		memcpy(ssid, wdev->ssid, data->length);
-	} else if (wdev->wext.connect.ssid && wdev->wext.connect.ssid_len) {
+	if (wdev->wext.connect.ssid && wdev->wext.connect.ssid_len) {
 		data->flags = 1;
 		data->length = wdev->wext.connect.ssid_len;
 		memcpy(ssid, wdev->wext.connect.ssid, data->length);

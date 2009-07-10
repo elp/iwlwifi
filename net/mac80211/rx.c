@@ -833,28 +833,22 @@ ieee80211_rx_h_sta_process(struct ieee80211_rx_data *rx)
 	if (!sta)
 		return RX_CONTINUE;
 
-	/* Update last_rx only for IBSS packets which are for the current
-	 * BSSID to avoid keeping the current IBSS network alive in cases where
-	 * other STAs are using different BSSID. */
+	/*
+	 * Update last_rx only for IBSS packets which are for the current
+	 * BSSID to avoid keeping the current IBSS network alive in cases
+	 * where other STAs start using different BSSID.
+	 */
 	if (rx->sdata->vif.type == NL80211_IFTYPE_ADHOC) {
 		u8 *bssid = ieee80211_get_bssid(hdr, rx->skb->len,
 						NL80211_IFTYPE_ADHOC);
 		if (compare_ether_addr(bssid, rx->sdata->u.ibss.bssid) == 0)
 			sta->last_rx = jiffies;
-	} else
-	if (!is_multicast_ether_addr(hdr->addr1) ||
-	    rx->sdata->vif.type == NL80211_IFTYPE_STATION) {
-		/* Update last_rx only for unicast frames in order to prevent
-		 * the Probe Request frames (the only broadcast frames from a
-		 * STA in infrastructure mode) from keeping a connection alive.
+	} else if (!is_multicast_ether_addr(hdr->addr1)) {
+		/*
 		 * Mesh beacons will update last_rx when if they are found to
 		 * match the current local configuration when processed.
 		 */
-		if (rx->sdata->vif.type == NL80211_IFTYPE_STATION &&
-		    ieee80211_is_beacon(hdr->frame_control)) {
-			rx->sdata->u.mgd.last_beacon = jiffies;
-		} else
-			sta->last_rx = jiffies;
+		sta->last_rx = jiffies;
 	}
 
 	if (!(rx->flags & IEEE80211_RX_RA_MATCH))
@@ -1485,10 +1479,12 @@ ieee80211_rx_h_mesh_fwding(struct ieee80211_rx_data *rx)
 	unsigned int hdrlen;
 	struct sk_buff *skb = rx->skb, *fwd_skb;
 	struct ieee80211_local *local = rx->local;
+	struct ieee80211_sub_if_data *sdata;
 
 	hdr = (struct ieee80211_hdr *) skb->data;
 	hdrlen = ieee80211_hdrlen(hdr->frame_control);
 	mesh_hdr = (struct ieee80211s_hdr *) (skb->data + hdrlen);
+	sdata = IEEE80211_DEV_TO_SUB_IF(rx->dev);
 
 	if (!ieee80211_is_data(hdr->frame_control))
 		return RX_CONTINUE;
@@ -1498,10 +1494,8 @@ ieee80211_rx_h_mesh_fwding(struct ieee80211_rx_data *rx)
 		return RX_DROP_MONITOR;
 
 	if (mesh_hdr->flags & MESH_FLAGS_AE_A5_A6){
-		struct ieee80211_sub_if_data *sdata;
 		struct mesh_path *mppath;
 
-		sdata = IEEE80211_DEV_TO_SUB_IF(rx->dev);
 		rcu_read_lock();
 		mppath = mpp_path_lookup(mesh_hdr->eaddr2, sdata);
 		if (!mppath) {
@@ -1547,6 +1541,19 @@ ieee80211_rx_h_mesh_fwding(struct ieee80211_rx_data *rx)
 			info->flags |= IEEE80211_TX_INTFL_NEED_TXPROCESSING;
 			fwd_skb->iif = rx->dev->ifindex;
 			ieee80211_select_queue(local, fwd_skb);
+			if (is_multicast_ether_addr(fwd_hdr->addr3))
+				memcpy(fwd_hdr->addr1, fwd_hdr->addr3,
+						ETH_ALEN);
+			else {
+				int err = mesh_nexthop_lookup(fwd_skb, sdata);
+				/* Failed to immediately resolve next hop:
+				 * fwded frame was dropped or will be added
+				 * later to the pending skb queue.  */
+				if (err)
+					return RX_DROP_MONITOR;
+			}
+			IEEE80211_IFSTA_MESH_CTR_INC(&sdata->u.mesh,
+						     fwded_frames);
 			ieee80211_add_pending_skb(local, fwd_skb);
 		}
 	}
