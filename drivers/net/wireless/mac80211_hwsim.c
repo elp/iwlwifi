@@ -789,7 +789,7 @@ static const struct ieee80211_ops mac80211_hwsim_ops =
 static void mac80211_hwsim_free(void)
 {
 	struct list_head tmplist, *i, *tmp;
-	struct mac80211_hwsim_data *data;
+	struct mac80211_hwsim_data *data, *tmpdata;
 
 	INIT_LIST_HEAD(&tmplist);
 
@@ -798,7 +798,7 @@ static void mac80211_hwsim_free(void)
 		list_move(i, &tmplist);
 	spin_unlock_bh(&hwsim_radio_lock);
 
-	list_for_each_entry(data, &tmplist, list) {
+	list_for_each_entry_safe(data, tmpdata, &tmplist, list) {
 		debugfs_remove(data->debugfs_group);
 		debugfs_remove(data->debugfs_ps);
 		debugfs_remove(data->debugfs);
@@ -837,7 +837,6 @@ static void hwsim_send_ps_poll(void *dat, u8 *mac, struct ieee80211_vif *vif)
 {
 	struct mac80211_hwsim_data *data = dat;
 	struct hwsim_vif_priv *vp = (void *)vif->drv_priv;
-	DECLARE_MAC_BUF(buf);
 	struct sk_buff *skb;
 	struct ieee80211_pspoll *pspoll;
 
@@ -867,7 +866,6 @@ static void hwsim_send_nullfunc(struct mac80211_hwsim_data *data, u8 *mac,
 				struct ieee80211_vif *vif, int ps)
 {
 	struct hwsim_vif_priv *vp = (void *)vif->drv_priv;
-	DECLARE_MAC_BUF(buf);
 	struct sk_buff *skb;
 	struct ieee80211_hdr *hdr;
 
@@ -1248,8 +1246,8 @@ static void __exit exit_mac80211_hwsim(void)
 {
 	printk(KERN_DEBUG "mac80211_hwsim: unregister radios\n");
 
-	unregister_netdev(hwsim_mon);
 	mac80211_hwsim_free();
+	unregister_netdev(hwsim_mon);
 }
 
 
