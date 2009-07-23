@@ -3213,11 +3213,5 @@ module_param_named(debug50, iwl_debug_level, uint, 0444);
 MODULE_PARM_DESC(debug50, "50XX debug output mask (deprecated)");
 module_param_named(debug, iwl_debug_level, uint, 0644);
 MODULE_PARM_DESC(debug, "debug output mask");
-/*
- * Do not make support_ps writable because it is only used during module
- * probe time. Remove when issues with power saving support are resolved.
- */
-module_param_named(support_ps, iwl_support_ps, bool, 0444);
-MODULE_PARM_DESC(support_ps, "power saving support (default disabled)");
 #endif
 
