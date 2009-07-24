@@ -517,9 +517,13 @@ static int iwm_mlme_assoc_complete(struct iwm_priv *iwm, u8 *buf,
 
 		iwm_link_on(iwm);
 
+		if (iwm->conf.mode == UMAC_MODE_IBSS)
+			goto ibss;
+
 		cfg80211_connect_result(iwm_to_ndev(iwm),
 					complete->bssid,
-					NULL, 0, NULL, 0,
+					iwm->req_ie, iwm->req_ie_len,
+					iwm->resp_ie, iwm->resp_ie_len,
 					WLAN_STATUS_SUCCESS, GFP_KERNEL);
 		break;
 	case UMAC_ASSOC_COMPLETE_FAILURE:
@@ -529,6 +533,9 @@ static int iwm_mlme_assoc_complete(struct iwm_priv *iwm, u8 *buf,
 
 		iwm_link_off(iwm);
 
+		if (iwm->conf.mode == UMAC_MODE_IBSS)
+			goto ibss;
+
 		cfg80211_connect_result(iwm_to_ndev(iwm), complete->bssid,
 					NULL, 0, NULL, 0,
 					WLAN_STATUS_UNSPECIFIED_FAILURE,
@@ -537,11 +544,10 @@ static int iwm_mlme_assoc_complete(struct iwm_priv *iwm, u8 *buf,
 		break;
 	}
 
-	if (iwm->conf.mode == UMAC_MODE_IBSS) {
-		cfg80211_ibss_joined(iwm_to_ndev(iwm), iwm->bssid, GFP_KERNEL);
-		return 0;
-	}
+	return 0;
 
+ ibss:
+	cfg80211_ibss_joined(iwm_to_ndev(iwm), iwm->bssid, GFP_KERNEL);
 	return 0;
 }
 
@@ -771,36 +777,45 @@ static int iwm_mlme_mgt_frame(struct iwm_priv *iwm, u8 *buf,
 			      unsigned long buf_size, struct iwm_wifi_cmd *cmd)
 {
 	struct iwm_umac_notif_mgt_frame *mgt_frame =
-	(struct iwm_umac_notif_mgt_frame *)buf;
+			(struct iwm_umac_notif_mgt_frame *)buf;
 	struct ieee80211_mgmt *mgt = (struct ieee80211_mgmt *)mgt_frame->frame;
 	u8 *ie;
-	unsigned int event;
-	union iwreq_data wrqu;
 
 	IWM_HEXDUMP(iwm, DBG, MLME, "MGT: ", mgt_frame->frame,
 		    le16_to_cpu(mgt_frame->len));
 
 	if (ieee80211_is_assoc_req(mgt->frame_control)) {
 		ie = mgt->u.assoc_req.variable;;
-		event = IWEVASSOCREQIE;
+		iwm->req_ie_len =
+				le16_to_cpu(mgt_frame->len) - (ie - (u8 *)mgt);
+		kfree(iwm->req_ie);
+		iwm->req_ie = kmemdup(mgt->u.assoc_req.variable,
+				      iwm->req_ie_len, GFP_KERNEL);
 	} else if (ieee80211_is_reassoc_req(mgt->frame_control)) {
 		ie = mgt->u.reassoc_req.variable;;
-		event = IWEVASSOCREQIE;
+		iwm->req_ie_len =
+				le16_to_cpu(mgt_frame->len) - (ie - (u8 *)mgt);
+		kfree(iwm->req_ie);
+		iwm->req_ie = kmemdup(mgt->u.reassoc_req.variable,
+				      iwm->req_ie_len, GFP_KERNEL);
 	} else if (ieee80211_is_assoc_resp(mgt->frame_control)) {
 		ie = mgt->u.assoc_resp.variable;;
-		event = IWEVASSOCRESPIE;
+		iwm->resp_ie_len =
+				le16_to_cpu(mgt_frame->len) - (ie - (u8 *)mgt);
+		kfree(iwm->resp_ie);
+		iwm->resp_ie = kmemdup(mgt->u.assoc_resp.variable,
+				       iwm->resp_ie_len, GFP_KERNEL);
 	} else if (ieee80211_is_reassoc_resp(mgt->frame_control)) {
 		ie = mgt->u.reassoc_resp.variable;;
-		event = IWEVASSOCRESPIE;
+		iwm->resp_ie_len =
+				le16_to_cpu(mgt_frame->len) - (ie - (u8 *)mgt);
+		kfree(iwm->resp_ie);
+		iwm->resp_ie = kmemdup(mgt->u.reassoc_resp.variable,
+				       iwm->resp_ie_len, GFP_KERNEL);
 	} else {
 		IWM_ERR(iwm, "Unsupported management frame");
 		return 0;
 	}
-
-	wrqu.data.length = le16_to_cpu(mgt_frame->len) - (ie - (u8 *)mgt);
-
-	IWM_HEXDUMP(iwm, DBG, MLME, "EVT: ", ie, wrqu.data.length);
-	wireless_send_event(iwm_to_ndev(iwm), event, &wrqu, ie);
 
 	return 0;
 }
