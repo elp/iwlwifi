@@ -26,6 +26,7 @@ struct net_device;
 struct sock;
 struct ctl_table_header;
 struct net_generic;
+struct sock;
 
 struct net {
 	atomic_t		count;		/* To decided when the network
@@ -57,6 +58,7 @@ struct net {
 	spinlock_t		rules_mod_lock;
 
 	struct sock 		*rtnl;			/* rtnetlink socket */
+	struct sock		*genl_sock;
 
 	struct netns_core	core;
 	struct netns_mib	mib;
@@ -105,6 +107,8 @@ static inline struct net *copy_net_ns(unsigned long flags, struct net *net_ns)
 
 
 extern struct list_head net_namespace_list;
+
+extern struct net *get_net_ns_by_pid(pid_t pid);
 
 #ifdef CONFIG_NET_NS
 extern void __put_net(struct net *net);
@@ -207,6 +211,9 @@ static inline struct net *read_pnet(struct net * const *pnet)
 
 #define for_each_net(VAR)				\
 	list_for_each_entry(VAR, &net_namespace_list, list)
+
+#define for_each_net_rcu(VAR)				\
+	list_for_each_entry_rcu(VAR, &net_namespace_list, list)
 
 #ifdef CONFIG_NET_NS
 #define __net_init

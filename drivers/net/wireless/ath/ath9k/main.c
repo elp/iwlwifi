@@ -462,7 +462,7 @@ static void ath_node_attach(struct ath_softc *sc, struct ieee80211_sta *sta)
 
 	if (sc->sc_flags & SC_OP_TXAGGR) {
 		ath_tx_node_init(sc, an);
-		an->maxampdu = 1 << (IEEE80211_HTCAP_MAXRXAMPDU_FACTOR +
+		an->maxampdu = 1 << (IEEE80211_HT_MAX_AMPDU_FACTOR +
 				     sta->ht_cap.ampdu_factor);
 		an->mpdudensity = parse_mpdudensity(sta->ht_cap.ampdu_density);
 		an->last_rssi = ATH_RSSI_DUMMY_MARKER;
@@ -888,8 +888,6 @@ static void ath_key_delete(struct ath_softc *sc, struct ieee80211_key_conf *key)
 static void setup_ht_cap(struct ath_softc *sc,
 			 struct ieee80211_sta_ht_cap *ht_info)
 {
-#define	ATH9K_HT_CAP_MAXRXAMPDU_65536 0x3	/* 2 ^ 16 */
-#define	ATH9K_HT_CAP_MPDUDENSITY_8 0x6		/* 8 usec */
 	u8 tx_streams, rx_streams;
 
 	ht_info->ht_supported = true;
@@ -898,8 +896,8 @@ static void setup_ht_cap(struct ath_softc *sc,
 		       IEEE80211_HT_CAP_SGI_40 |
 		       IEEE80211_HT_CAP_DSSSCCK40;
 
-	ht_info->ampdu_factor = ATH9K_HT_CAP_MAXRXAMPDU_65536;
-	ht_info->ampdu_density = ATH9K_HT_CAP_MPDUDENSITY_8;
+	ht_info->ampdu_factor = IEEE80211_HT_MAX_AMPDU_64K;
+	ht_info->ampdu_density = IEEE80211_HT_MPDU_DENSITY_8;
 
 	/* set up supported mcs set */
 	memset(&ht_info->mcs, 0, sizeof(ht_info->mcs));
@@ -2671,19 +2669,11 @@ static int ath9k_ampdu_action(struct ieee80211_hw *hw,
 	case IEEE80211_AMPDU_RX_STOP:
 		break;
 	case IEEE80211_AMPDU_TX_START:
-		ret = ath_tx_aggr_start(sc, sta, tid, ssn);
-		if (ret < 0)
-			DPRINTF(sc, ATH_DBG_FATAL,
-				"Unable to start TX aggregation\n");
-		else
-			ieee80211_start_tx_ba_cb_irqsafe(hw, sta->addr, tid);
+		ath_tx_aggr_start(sc, sta, tid, ssn);
+		ieee80211_start_tx_ba_cb_irqsafe(hw, sta->addr, tid);
 		break;
 	case IEEE80211_AMPDU_TX_STOP:
-		ret = ath_tx_aggr_stop(sc, sta, tid);
-		if (ret < 0)
-			DPRINTF(sc, ATH_DBG_FATAL,
-				"Unable to stop TX aggregation\n");
-
+		ath_tx_aggr_stop(sc, sta, tid);
 		ieee80211_stop_tx_ba_cb_irqsafe(hw, sta->addr, tid);
 		break;
 	case IEEE80211_AMPDU_TX_OPERATIONAL:
@@ -2761,7 +2751,8 @@ static struct {
 	{ AR_SREV_VERSION_9100,		"9100" },
 	{ AR_SREV_VERSION_9160,		"9160" },
 	{ AR_SREV_VERSION_9280,		"9280" },
-	{ AR_SREV_VERSION_9285,		"9285" }
+	{ AR_SREV_VERSION_9285,		"9285" },
+	{ AR_SREV_VERSION_9287,         "9287" }
 };
 
 static struct {

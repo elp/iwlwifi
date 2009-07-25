@@ -190,12 +190,9 @@ void ath_descdma_cleanup(struct ath_softc *sc, struct ath_descdma *dd,
 #define ATH_AGGR_MIN_QDEPTH        2
 #define ATH_AMPDU_SUBFRAME_DEFAULT 32
 #define ATH_AMPDU_LIMIT_MAX        (64 * 1024 - 1)
-#define ATH_AMPDU_LIMIT_DEFAULT    ATH_AMPDU_LIMIT_MAX
 
 #define IEEE80211_SEQ_SEQ_SHIFT    4
 #define IEEE80211_SEQ_MAX          4096
-#define IEEE80211_MIN_AMPDU_BUF    0x8
-#define IEEE80211_HTCAP_MAXRXAMPDU_FACTOR 13
 #define IEEE80211_WEP_IVLEN        3
 #define IEEE80211_WEP_KIDLEN       1
 #define IEEE80211_WEP_CRCLEN       4
@@ -365,9 +362,9 @@ int ath_tx_start(struct ieee80211_hw *hw, struct sk_buff *skb,
 void ath_tx_tasklet(struct ath_softc *sc);
 void ath_tx_cabq(struct ieee80211_hw *hw, struct sk_buff *skb);
 bool ath_tx_aggr_check(struct ath_softc *sc, struct ath_node *an, u8 tidno);
-int ath_tx_aggr_start(struct ath_softc *sc, struct ieee80211_sta *sta,
-		      u16 tid, u16 *ssn);
-int ath_tx_aggr_stop(struct ath_softc *sc, struct ieee80211_sta *sta, u16 tid);
+void ath_tx_aggr_start(struct ath_softc *sc, struct ieee80211_sta *sta,
+		       u16 tid, u16 *ssn);
+void ath_tx_aggr_stop(struct ath_softc *sc, struct ieee80211_sta *sta, u16 tid);
 void ath_tx_aggr_resume(struct ath_softc *sc, struct ieee80211_sta *sta, u16 tid);
 
 /********/
