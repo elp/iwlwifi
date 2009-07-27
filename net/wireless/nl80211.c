@@ -757,6 +757,8 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 						channel_type);
 		if (result)
 			goto bad_res;
+
+		rdev->channel = chan;
 	}
 
 	changed = 0;
@@ -3385,6 +3387,8 @@ static int nl80211_crypto_settings(struct genl_info *info,
 				   struct cfg80211_crypto_settings *settings,
 				   int cipher_limit)
 {
+	memset(settings, 0, sizeof(*settings));
+
 	settings->control_port = info->attrs[NL80211_ATTR_CONTROL_PORT];
 
 	if (info->attrs[NL80211_ATTR_CIPHER_SUITES_PAIRWISE]) {

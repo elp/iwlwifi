@@ -18,7 +18,6 @@
 #include <linux/if_arp.h>
 #include <linux/rtnetlink.h>
 #include <net/mac80211.h>
-#include <net/iw_handler.h>
 
 #include "ieee80211_i.h"
 #include "driver-ops.h"
@@ -605,8 +604,11 @@ static void ieee80211_scan_state_set_channel(struct ieee80211_local *local,
 	/* advance state machine to next channel/band */
 	local->scan_channel_idx++;
 
-	if (skip)
+	if (skip) {
+		/* if we skip this channel return to the decision state */
+		local->next_scan_state = SCAN_DECISION;
 		return;
+	}
 
 	/*
 	 * Probe delay is used to update the NAV, cf. 11.1.3.2.2

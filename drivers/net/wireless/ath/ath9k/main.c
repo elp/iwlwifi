@@ -17,8 +17,6 @@
 #include <linux/nl80211.h>
 #include "ath9k.h"
 
-#define ATH_PCI_VERSION "0.1"
-
 static char *dev_info = "ath9k";
 
 MODULE_AUTHOR("Atheros Communications");
@@ -499,8 +497,7 @@ static void ath9k_tasklet(unsigned long data)
 	if (status & ATH9K_INT_TX)
 		ath_tx_tasklet(sc);
 
-	if ((status & ATH9K_INT_TSFOOR) &&
-	    (sc->hw->conf.flags & IEEE80211_CONF_PS)) {
+	if ((status & ATH9K_INT_TSFOOR) && sc->ps_enabled) {
 		/*
 		 * TSF sync does not look correct; remain awake to sync with
 		 * the next Beacon.
@@ -2001,7 +1998,7 @@ static int ath9k_tx(struct ieee80211_hw *hw,
 		goto exit;
 	}
 
-	if (sc->hw->conf.flags & IEEE80211_CONF_PS) {
+	if (sc->ps_enabled) {
 		struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
 		/*
 		 * mac80211 does not set PM field for normal data frames, so we
@@ -2289,8 +2286,9 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 				}
 				ath9k_hw_setrxabort(sc->sc_ah, 1);
 			}
-			ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_NETWORK_SLEEP);
+			sc->ps_enabled = true;
 		} else {
+			sc->ps_enabled = false;
 			ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_AWAKE);
 			if (!(ah->caps.hw_caps &
 			      ATH9K_HW_CAP_AUTOSLEEP)) {
