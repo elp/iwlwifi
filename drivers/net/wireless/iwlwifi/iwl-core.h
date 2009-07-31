@@ -85,8 +85,6 @@ struct iwl_cmd;
 
 #define IWL_CMD(x) case x: return #x
 
-extern bool iwl_support_ps;
-
 struct iwl_hcmd_ops {
 	int (*rxon_assoc)(struct iwl_priv *priv);
 	int (*commit_rxon)(struct iwl_priv *priv);

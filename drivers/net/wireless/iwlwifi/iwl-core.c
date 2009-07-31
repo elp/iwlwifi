@@ -62,20 +62,6 @@ MODULE_LICENSE("GPL");
 u32 iwl_debug_level;
 EXPORT_SYMBOL(iwl_debug_level);
 
-/*
- * Temporary variable to indicate if user is requesting
- * power saving support. This is not enabled by default because of issues
- * (see bugs 2051 and 2053 for examples). We make selecting power saving
- * support available as a module parameter to enable testing until the
- * issues are resolved. This will be removed and power saving enabled by
- * default after issues are resolved.
- *
- * FIXME: Remove me
- */
-bool iwl_support_ps;
-EXPORT_SYMBOL(iwl_support_ps);
-
-
 static irqreturn_t iwl_isr(int irq, void *data);
 
 /*
@@ -1585,9 +1571,8 @@ int iwl_setup_mac(struct iwl_priv *priv)
 	hw->flags = IEEE80211_HW_SIGNAL_DBM |
 		    IEEE80211_HW_NOISE_DBM |
 		    IEEE80211_HW_AMPDU_AGGREGATION |
-		    IEEE80211_HW_SPECTRUM_MGMT;
-	if (iwl_support_ps)
-		hw->flags |= IEEE80211_HW_SUPPORTS_PS;
+		    IEEE80211_HW_SPECTRUM_MGMT |
+		    IEEE80211_HW_SUPPORTS_PS;
 	hw->wiphy->interface_modes =
 		BIT(NL80211_IFTYPE_STATION) |
 		BIT(NL80211_IFTYPE_ADHOC);
