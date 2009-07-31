@@ -290,25 +290,22 @@ static void iwl4965_init_alive_start(struct iwl_priv *priv)
 		goto restart;
 	}
 	priv->ucode_type = UCODE_RT;
-	if (test_bit(STATUS_RT_UCODE_ALIVE, &priv->status)) {
-		IWL_WARN(priv, "Runtime uCode already alive? "
-			"Waiting for alive anyway\n");
-		clear_bit(STATUS_RT_UCODE_ALIVE, &priv->status);
-	}
-	ret = wait_event_interruptible_timeout(
-			priv->wait_command_queue,
-			test_bit(STATUS_RT_UCODE_ALIVE, &priv->status),
-			UCODE_ALIVE_TIMEOUT);
-	if (!ret) {
-		/* FIXME: if STATUS_RT_UCODE_ALIVE timeout
-		 * go back to restart the download Init uCode again
-		 * this might cause to trap in the restart loop
-		 */
-		priv->ucode_type = UCODE_NONE;
-		if (!test_bit(STATUS_RT_UCODE_ALIVE, &priv->status)) {
-			IWL_ERR(priv, "Runtime timeout after %dms\n",
-				jiffies_to_msecs(UCODE_ALIVE_TIMEOUT));
-			goto restart;
+	if (!test_bit(STATUS_RT_UCODE_ALIVE, &priv->status)) {
+		ret = wait_event_interruptible_timeout(
+				priv->wait_command_queue,
+				test_bit(STATUS_RT_UCODE_ALIVE, &priv->status),
+				UCODE_ALIVE_TIMEOUT);
+		if (!ret) {
+			/* FIXME: if STATUS_RT_UCODE_ALIVE timeout
+			 * go back to restart the download Init uCode again
+			 * this might cause to trap in the restart loop
+			 */
+			priv->ucode_type = UCODE_NONE;
+			if (!test_bit(STATUS_RT_UCODE_ALIVE, &priv->status)) {
+				IWL_ERR(priv, "Runtime timeout after %dms\n",
+					jiffies_to_msecs(UCODE_ALIVE_TIMEOUT));
+				goto restart;
+			}
 		}
 	}
 	return;
