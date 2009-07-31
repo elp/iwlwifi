@@ -12,7 +12,6 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_if_init_conf conf;
 	struct sta_info *sta;
-	unsigned long flags;
 
 	ieee80211_scan_cancel(local);
 
@@ -55,17 +54,8 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 
 	rcu_read_unlock();
 
-	/* flush again, in case driver queued work */
-	flush_workqueue(local->hw.workqueue);
-
-	/* stop hardware - this must stop RX */
-	if (local->open_count) {
-		ieee80211_led_radio(local, false);
-		drv_stop(local);
-	}
-
 	/* remove STAs */
-	spin_lock_irqsave(&local->sta_lock, flags);
+	spin_lock_bh(&local->sta_lock);
 	list_for_each_entry(sta, &local->sta_list, list) {
 		if (local->ops->sta_notify) {
 			sdata = sta->sdata;
@@ -80,7 +70,7 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 
 		mesh_plink_quiesce(sta);
 	}
-	spin_unlock_irqrestore(&local->sta_lock, flags);
+	spin_unlock_bh(&local->sta_lock);
 
 	/* remove all interfaces */
 	list_for_each_entry(sdata, &local->interfaces, list) {
@@ -105,13 +95,32 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 		if (!netif_running(sdata->dev))
 			continue;
 
+		/* disable beaconing */
+		ieee80211_bss_info_change_notify(sdata,
+			BSS_CHANGED_BEACON_ENABLED);
+
 		conf.vif = &sdata->vif;
 		conf.type = sdata->vif.type;
 		conf.mac_addr = sdata->dev->dev_addr;
 		drv_remove_interface(local, &conf);
 	}
 
+	/* stop hardware - this must stop RX */
+	if (local->open_count) {
+		ieee80211_led_radio(local, false);
+		drv_stop(local);
+	}
+
+	/*
+	 * flush again, in case driver queued work -- it
+	 * shouldn't be doing (or cancel everything in the
+	 * stop callback) that but better safe than sorry.
+	 */
+	flush_workqueue(local->hw.workqueue);
+
 	local->suspended = true;
+	/* need suspended to be visible before quiescing is false */
+	barrier();
 	local->quiescing = false;
 
 	return 0;
