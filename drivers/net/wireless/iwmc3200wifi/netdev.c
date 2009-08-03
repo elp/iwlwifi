@@ -152,10 +152,10 @@ void iwm_if_free(struct iwm_priv *iwm)
 	if (!iwm_to_ndev(iwm))
 		return;
 
-	kfree(iwm->umac_profile);
-	iwm->umac_profile = NULL;
 	free_netdev(iwm_to_ndev(iwm));
 	iwm_priv_deinit(iwm);
+	kfree(iwm->umac_profile);
+	iwm->umac_profile = NULL;
 	iwm_wdev_free(iwm);
 }
 
