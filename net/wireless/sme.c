@@ -13,6 +13,7 @@
 #include <net/cfg80211.h>
 #include <net/rtnetlink.h>
 #include "nl80211.h"
+#include "reg.h"
 
 struct cfg80211_conn {
 	struct cfg80211_connect_params params;
@@ -320,6 +321,7 @@ void __cfg80211_connect_result(struct net_device *dev, const u8 *bssid,
 			       struct cfg80211_bss *bss)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	u8 *country_ie;
 #ifdef CONFIG_WIRELESS_EXT
 	union iwreq_data wrqu;
 #endif
@@ -383,6 +385,7 @@ void __cfg80211_connect_result(struct net_device *dev, const u8 *bssid,
 		wdev->conn = NULL;
 		kfree(wdev->connect_keys);
 		wdev->connect_keys = NULL;
+		wdev->ssid_len = 0;
 		return;
 	}
 
@@ -401,6 +404,20 @@ void __cfg80211_connect_result(struct net_device *dev, const u8 *bssid,
 
 	wdev->sme_state = CFG80211_SME_CONNECTED;
 	cfg80211_upload_connect_keys(wdev);
+
+	country_ie = (u8 *) ieee80211_bss_get_ie(bss, WLAN_EID_COUNTRY);
+
+	if (!country_ie)
+		return;
+
+	/*
+	 * ieee80211_bss_get_ie() ensures we can access:
+	 * - country_ie + 2, the start of the country ie data, and
+	 * - and country_ie[1] which is the IE length
+	 */
+	regulatory_hint_11d(wdev->wiphy,
+			    country_ie + 2,
+			    country_ie[1]);
 }
 
 void cfg80211_connect_result(struct net_device *dev, const u8 *bssid,
@@ -550,6 +567,7 @@ void __cfg80211_disconnected(struct net_device *dev, const u8 *ie,
 
 	wdev->current_bss = NULL;
 	wdev->sme_state = CFG80211_SME_IDLE;
+	wdev->ssid_len = 0;
 
 	if (wdev->conn) {
 		kfree(wdev->conn->ie);
@@ -705,6 +723,7 @@ int __cfg80211_connect(struct cfg80211_registered_device *rdev,
 			wdev->conn = NULL;
 			wdev->sme_state = CFG80211_SME_IDLE;
 			wdev->connect_keys = NULL;
+			wdev->ssid_len = 0;
 		}
 
 		return err;
@@ -769,6 +788,7 @@ int __cfg80211_disconnect(struct cfg80211_registered_device *rdev,
 			wdev->sme_state = CFG80211_SME_IDLE;
 			kfree(wdev->conn);
 			wdev->conn = NULL;
+			wdev->ssid_len = 0;
 			return 0;
 		}
 

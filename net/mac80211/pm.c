@@ -12,6 +12,7 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_if_init_conf conf;
 	struct sta_info *sta;
+	unsigned long flags;
 
 	ieee80211_scan_cancel(local);
 
@@ -25,7 +26,7 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 	/* make quiescing visible to timers everywhere */
 	mb();
 
-	flush_workqueue(local->hw.workqueue);
+	flush_workqueue(local->workqueue);
 
 	/* Don't try to run timers while suspended. */
 	del_timer_sync(&local->sta_cleanup);
@@ -55,7 +56,7 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 	rcu_read_unlock();
 
 	/* remove STAs */
-	spin_lock_bh(&local->sta_lock);
+	spin_lock_irqsave(&local->sta_lock, flags);
 	list_for_each_entry(sta, &local->sta_list, list) {
 		if (local->ops->sta_notify) {
 			sdata = sta->sdata;
@@ -70,7 +71,7 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 
 		mesh_plink_quiesce(sta);
 	}
-	spin_unlock_bh(&local->sta_lock);
+	spin_unlock_irqrestore(&local->sta_lock, flags);
 
 	/* remove all interfaces */
 	list_for_each_entry(sdata, &local->interfaces, list) {
@@ -116,7 +117,7 @@ int __ieee80211_suspend(struct ieee80211_hw *hw)
 	 * shouldn't be doing (or cancel everything in the
 	 * stop callback) that but better safe than sorry.
 	 */
-	flush_workqueue(local->hw.workqueue);
+	flush_workqueue(local->workqueue);
 
 	local->suspended = true;
 	/* need suspended to be visible before quiescing is false */

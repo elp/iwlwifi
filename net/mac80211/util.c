@@ -511,6 +511,46 @@ void ieee80211_iterate_active_interfaces_atomic(
 }
 EXPORT_SYMBOL_GPL(ieee80211_iterate_active_interfaces_atomic);
 
+/*
+ * Nothing should have been stuffed into the workqueue during
+ * the suspend->resume cycle. If this WARN is seen then there
+ * is a bug with either the driver suspend or something in
+ * mac80211 stuffing into the workqueue which we haven't yet
+ * cleared during mac80211's suspend cycle.
+ */
+static bool ieee80211_can_queue_work(struct ieee80211_local *local)
+{
+        if (WARN(local->suspended, "queueing ieee80211 work while "
+		 "going to suspend\n"))
+                return false;
+
+	return true;
+}
+
+void ieee80211_queue_work(struct ieee80211_hw *hw, struct work_struct *work)
+{
+	struct ieee80211_local *local = hw_to_local(hw);
+
+	if (!ieee80211_can_queue_work(local))
+		return;
+
+	queue_work(local->workqueue, work);
+}
+EXPORT_SYMBOL(ieee80211_queue_work);
+
+void ieee80211_queue_delayed_work(struct ieee80211_hw *hw,
+				  struct delayed_work *dwork,
+				  unsigned long delay)
+{
+	struct ieee80211_local *local = hw_to_local(hw);
+
+	if (!ieee80211_can_queue_work(local))
+		return;
+
+	queue_delayed_work(local->workqueue, dwork, delay);
+}
+EXPORT_SYMBOL(ieee80211_queue_delayed_work);
+
 void ieee802_11_parse_elems(u8 *start, size_t len,
 			    struct ieee802_11_elems *elems)
 {
@@ -973,6 +1013,7 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_if_init_conf conf;
 	struct sta_info *sta;
+	unsigned long flags;
 	int res;
 	bool from_suspend = local->suspended;
 
@@ -1003,7 +1044,7 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 
 	/* add STAs back */
 	if (local->ops->sta_notify) {
-		spin_lock_bh(&local->sta_lock);
+		spin_lock_irqsave(&local->sta_lock, flags);
 		list_for_each_entry(sta, &local->sta_list, list) {
 			sdata = sta->sdata;
 			if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
@@ -1014,7 +1055,7 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 			drv_sta_notify(local, &sdata->vif, STA_NOTIFY_ADD,
 				       &sta->sta);
 		}
-		spin_unlock_bh(&local->sta_lock);
+		spin_unlock_irqrestore(&local->sta_lock, flags);
 	}
 
 	/* Clear Suspend state so that ADDBA requests can be processed */
@@ -1104,12 +1145,13 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 
 	add_timer(&local->sta_cleanup);
 
-	spin_lock_bh(&local->sta_lock);
+	spin_lock_irqsave(&local->sta_lock, flags);
 	list_for_each_entry(sta, &local->sta_list, list)
 		mesh_plink_restart(sta);
-	spin_unlock_bh(&local->sta_lock);
+	spin_unlock_irqrestore(&local->sta_lock, flags);
 #else
 	WARN_ON(1);
 #endif
 	return 0;
 }
+
