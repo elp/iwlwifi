@@ -252,6 +252,10 @@ static int ath_rx_prepare(struct sk_buff *skb, struct ath_desc *ds,
 	else if (ds->ds_rxstat.rs_rssi > 127)
 		ds->ds_rxstat.rs_rssi = 127;
 
+	/* Update Beacon RSSI, this is used by ANI. */
+	if (ieee80211_is_beacon(fc))
+		sc->nodestats.ns_avgbrssi = ds->ds_rxstat.rs_rssi;
+
 	rx_status->mactime = ath_extend_tsf(sc, ds->ds_rxstat.rs_tstamp);
 	rx_status->band = hw->conf.channel->band;
 	rx_status->freq = hw->conf.channel->center_freq;
@@ -448,8 +452,7 @@ u32 ath_calcrxfilter(struct ath_softc *sc)
 	else
 		rfilt |= ATH9K_RX_FILTER_BEACON;
 
-	/* If in HOSTAP mode, want to enable reception of PSPOLL frames */
-	if (sc->sc_ah->opmode == NL80211_IFTYPE_AP)
+	if (sc->rx.rxfilter & FIF_PSPOLL)
 		rfilt |= ATH9K_RX_FILTER_PSPOLL;
 
 	if (sc->sec_wiphy) {
@@ -789,7 +792,6 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush)
 				 DMA_FROM_DEVICE);
 
 		skb_put(skb, ds->ds_rxstat.rs_datalen);
-		skb->protocol = cpu_to_be16(ETH_P_CONTROL);
 
 		/* see if any padding is done by the hw and remove it */
 		hdr = (struct ieee80211_hdr *)skb->data;

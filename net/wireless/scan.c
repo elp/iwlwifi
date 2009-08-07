@@ -562,6 +562,7 @@ void cfg80211_unlink_bss(struct wiphy *wiphy, struct cfg80211_bss *pub)
 	spin_lock_bh(&dev->bss_lock);
 
 	list_del(&bss->list);
+	dev->bss_generation++;
 	rb_erase(&bss->rbn, &dev->bss_tree);
 
 	spin_unlock_bh(&dev->bss_lock);
@@ -611,8 +612,8 @@ int cfg80211_wext_siwscan(struct net_device *dev,
 
 	creq->wiphy = wiphy;
 	creq->dev = dev;
-	creq->ssids = (void *)(creq + 1);
-	creq->channels = (void *)(creq->ssids + 1);
+	/* SSIDs come after channels */
+	creq->ssids = (void *)&creq->channels[n_channels];
 	creq->n_channels = n_channels;
 	creq->n_ssids = 1;
 
