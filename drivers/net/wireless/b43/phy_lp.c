@@ -59,9 +59,43 @@ static void b43_lpphy_op_free(struct b43_wldev *dev)
 	dev->phy.lp = NULL;
 }
 
+static void lpphy_adjust_gain_table(struct b43_wldev *dev)
+{
+	struct b43_phy_lp *lpphy = dev->phy.lp;
+	u32 freq = dev->wl->hw->conf.channel->center_freq;
+	u16 temp[3];
+	u16 isolation;
+
+	B43_WARN_ON(dev->phy.rev >= 2);
+
+	if (b43_current_band(dev->wl) == IEEE80211_BAND_2GHZ)
+		isolation = lpphy->tx_isolation_med_band;
+	else if (freq <= 5320)
+		isolation = lpphy->tx_isolation_low_band;
+	else if (freq <= 5700)
+		isolation = lpphy->tx_isolation_med_band;
+	else
+		isolation = lpphy->tx_isolation_hi_band;
+
+	temp[0] = ((isolation - 26) / 12) << 12;
+	temp[1] = temp[0] + 0x1000;
+	temp[2] = temp[0] + 0x2000;
+
+	b43_lptab_write_bulk(dev, B43_LPTAB16(12, 0), 3, temp);
+	b43_lptab_write_bulk(dev, B43_LPTAB16(13, 0), 3, temp);
+}
+
 static void lpphy_table_init(struct b43_wldev *dev)
 {
-	//TODO
+	if (dev->phy.rev < 2)
+		lpphy_rev0_1_table_init(dev);
+	else
+		lpphy_rev2plus_table_init(dev);
+
+	lpphy_init_tx_gain_table(dev);
+
+	if (dev->phy.rev < 2)
+		lpphy_adjust_gain_table(dev);
 }
 
 static void lpphy_baseband_rev0_1_init(struct b43_wldev *dev)
@@ -161,6 +195,56 @@ static void lpphy_baseband_rev0_1_init(struct b43_wldev *dev)
 	}
 }
 
+static void lpphy_save_dig_flt_state(struct b43_wldev *dev)
+{
+	static const u16 addr[] = {
+		B43_PHY_OFDM(0xC1),
+		B43_PHY_OFDM(0xC2),
+		B43_PHY_OFDM(0xC3),
+		B43_PHY_OFDM(0xC4),
+		B43_PHY_OFDM(0xC5),
+		B43_PHY_OFDM(0xC6),
+		B43_PHY_OFDM(0xC7),
+		B43_PHY_OFDM(0xC8),
+		B43_PHY_OFDM(0xCF),
+	};
+
+	static const u16 coefs[] = {
+		0xDE5E, 0xE832, 0xE331, 0x4D26,
+		0x0026, 0x1420, 0x0020, 0xFE08,
+		0x0008,
+	};
+
+	struct b43_phy_lp *lpphy = dev->phy.lp;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(addr); i++) {
+		lpphy->dig_flt_state[i] = b43_phy_read(dev, addr[i]);
+		b43_phy_write(dev, addr[i], coefs[i]);
+	}
+}
+
+static void lpphy_restore_dig_flt_state(struct b43_wldev *dev)
+{
+	static const u16 addr[] = {
+		B43_PHY_OFDM(0xC1),
+		B43_PHY_OFDM(0xC2),
+		B43_PHY_OFDM(0xC3),
+		B43_PHY_OFDM(0xC4),
+		B43_PHY_OFDM(0xC5),
+		B43_PHY_OFDM(0xC6),
+		B43_PHY_OFDM(0xC7),
+		B43_PHY_OFDM(0xC8),
+		B43_PHY_OFDM(0xCF),
+	};
+
+	struct b43_phy_lp *lpphy = dev->phy.lp;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(addr); i++)
+		b43_phy_write(dev, addr[i], lpphy->dig_flt_state[i]);
+}
+
 static void lpphy_baseband_rev2plus_init(struct b43_wldev *dev)
 {
 	struct ssb_bus *bus = dev->dev->bus;
@@ -175,7 +259,7 @@ static void lpphy_baseband_rev2plus_init(struct b43_wldev *dev)
 	b43_phy_write(dev, B43_PHY_OFDM(0xF9), 0);
 	b43_phy_write(dev, B43_LPPHY_TR_LOOKUP_1, 0);
 	b43_phy_set(dev, B43_LPPHY_ADC_COMPENSATION_CTL, 0x10);
-	b43_phy_maskset(dev, B43_LPPHY_OFDMSYNCTHRESH0, 0xFF00, 0x78);
+	b43_phy_maskset(dev, B43_LPPHY_OFDMSYNCTHRESH0, 0xFF00, 0xB4);
 	b43_phy_maskset(dev, B43_LPPHY_DCOFFSETTRANSIENT, 0xF8FF, 0x200);
 	b43_phy_maskset(dev, B43_LPPHY_DCOFFSETTRANSIENT, 0xFF00, 0x7F);
 	b43_phy_maskset(dev, B43_LPPHY_GAINDIRECTMISMATCH, 0xFF0F, 0x40);
@@ -183,7 +267,12 @@ static void lpphy_baseband_rev2plus_init(struct b43_wldev *dev)
 	b43_phy_mask(dev, B43_LPPHY_CRSGAIN_CTL, ~0x4000);
 	b43_phy_mask(dev, B43_LPPHY_CRSGAIN_CTL, ~0x2000);
 	b43_phy_set(dev, B43_PHY_OFDM(0x10A), 0x1);
-	b43_phy_maskset(dev, B43_PHY_OFDM(0x10A), 0xFF01, 0x10);
+	if (bus->boardinfo.rev >= 0x18) {
+		b43_lptab_write(dev, B43_LPTAB32(17, 65), 0xEC);
+		b43_phy_maskset(dev, B43_PHY_OFDM(0x10A), 0xFF01, 0x14);
+	} else {
+		b43_phy_maskset(dev, B43_PHY_OFDM(0x10A), 0xFF01, 0x10);
+	}
 	b43_phy_maskset(dev, B43_PHY_OFDM(0xDF), 0xFF00, 0xF4);
 	b43_phy_maskset(dev, B43_PHY_OFDM(0xDF), 0x00FF, 0xF100);
 	b43_phy_write(dev, B43_LPPHY_CLIPTHRESH, 0x48);
@@ -213,8 +302,10 @@ static void lpphy_baseband_rev2plus_init(struct b43_wldev *dev)
 	b43_phy_maskset(dev, B43_LPPHY_CLIPCTRTHRESH, 0xFFE0, 0x12);
 	b43_phy_maskset(dev, B43_LPPHY_GAINMISMATCH, 0x0FFF, 0x9000);
 
-	b43_lptab_write(dev, B43_LPTAB16(0x08, 0x14), 0);
-	b43_lptab_write(dev, B43_LPTAB16(0x08, 0x12), 0x40);
+	if ((bus->chip_id == 0x4325) && (bus->chip_rev == 1)) {
+		b43_lptab_write(dev, B43_LPTAB16(0x08, 0x14), 0);
+		b43_lptab_write(dev, B43_LPTAB16(0x08, 0x12), 0x40);
+	}
 
 	if (b43_current_band(dev->wl) == IEEE80211_BAND_2GHZ) {
 		b43_phy_set(dev, B43_LPPHY_CRSGAIN_CTL, 0x40);
@@ -234,6 +325,14 @@ static void lpphy_baseband_rev2plus_init(struct b43_wldev *dev)
 	b43_phy_write(dev, B43_LPPHY_AFE_RSSI_CTL_1,
 		      0x2000 | ((u16)lpphy->rssi_gs << 10) |
 		      ((u16)lpphy->rssi_vc << 4) | lpphy->rssi_vf);
+
+	if ((bus->chip_id == 0x4325) && (bus->chip_rev == 0)) {
+		b43_phy_set(dev, B43_LPPHY_AFE_ADC_CTL_0, 0x1C);
+		b43_phy_maskset(dev, B43_LPPHY_AFE_CTL, 0x00FF, 0x8800);
+		b43_phy_maskset(dev, B43_LPPHY_AFE_ADC_CTL_1, 0xFC3C, 0x0400);
+	}
+
+	lpphy_save_dig_flt_state(dev);
 }
 
 static void lpphy_baseband_init(struct b43_wldev *dev)
@@ -346,9 +445,60 @@ static void lpphy_2063_init(struct b43_wldev *dev)
 	b43_radio_write(dev, B2063_PA_SP2, 0x18);
 }
 
+struct lpphy_stx_table_entry {
+	u16 phy_offset;
+	u16 phy_shift;
+	u16 rf_addr;
+	u16 rf_shift;
+	u16 mask;
+};
+
+static const struct lpphy_stx_table_entry lpphy_stx_table[] = {
+	{ .phy_offset = 2, .phy_shift = 6, .rf_addr = 0x3d, .rf_shift = 3, .mask = 0x01, },
+	{ .phy_offset = 1, .phy_shift = 12, .rf_addr = 0x4c, .rf_shift = 1, .mask = 0x01, },
+	{ .phy_offset = 1, .phy_shift = 8, .rf_addr = 0x50, .rf_shift = 0, .mask = 0x7f, },
+	{ .phy_offset = 0, .phy_shift = 8, .rf_addr = 0x44, .rf_shift = 0, .mask = 0xff, },
+	{ .phy_offset = 1, .phy_shift = 0, .rf_addr = 0x4a, .rf_shift = 0, .mask = 0xff, },
+	{ .phy_offset = 0, .phy_shift = 4, .rf_addr = 0x4d, .rf_shift = 0, .mask = 0xff, },
+	{ .phy_offset = 1, .phy_shift = 4, .rf_addr = 0x4e, .rf_shift = 0, .mask = 0xff, },
+	{ .phy_offset = 0, .phy_shift = 12, .rf_addr = 0x4f, .rf_shift = 0, .mask = 0x0f, },
+	{ .phy_offset = 1, .phy_shift = 0, .rf_addr = 0x4f, .rf_shift = 4, .mask = 0x0f, },
+	{ .phy_offset = 3, .phy_shift = 0, .rf_addr = 0x49, .rf_shift = 0, .mask = 0x0f, },
+	{ .phy_offset = 4, .phy_shift = 3, .rf_addr = 0x46, .rf_shift = 4, .mask = 0x07, },
+	{ .phy_offset = 3, .phy_shift = 15, .rf_addr = 0x46, .rf_shift = 0, .mask = 0x01, },
+	{ .phy_offset = 4, .phy_shift = 0, .rf_addr = 0x46, .rf_shift = 1, .mask = 0x07, },
+	{ .phy_offset = 3, .phy_shift = 8, .rf_addr = 0x48, .rf_shift = 4, .mask = 0x07, },
+	{ .phy_offset = 3, .phy_shift = 11, .rf_addr = 0x48, .rf_shift = 0, .mask = 0x0f, },
+	{ .phy_offset = 3, .phy_shift = 4, .rf_addr = 0x49, .rf_shift = 4, .mask = 0x0f, },
+	{ .phy_offset = 2, .phy_shift = 15, .rf_addr = 0x45, .rf_shift = 0, .mask = 0x01, },
+	{ .phy_offset = 5, .phy_shift = 13, .rf_addr = 0x52, .rf_shift = 4, .mask = 0x07, },
+	{ .phy_offset = 6, .phy_shift = 0, .rf_addr = 0x52, .rf_shift = 7, .mask = 0x01, },
+	{ .phy_offset = 5, .phy_shift = 3, .rf_addr = 0x41, .rf_shift = 5, .mask = 0x07, },
+	{ .phy_offset = 5, .phy_shift = 6, .rf_addr = 0x41, .rf_shift = 0, .mask = 0x0f, },
+	{ .phy_offset = 5, .phy_shift = 10, .rf_addr = 0x42, .rf_shift = 5, .mask = 0x07, },
+	{ .phy_offset = 4, .phy_shift = 15, .rf_addr = 0x42, .rf_shift = 0, .mask = 0x01, },
+	{ .phy_offset = 5, .phy_shift = 0, .rf_addr = 0x42, .rf_shift = 1, .mask = 0x07, },
+	{ .phy_offset = 4, .phy_shift = 11, .rf_addr = 0x43, .rf_shift = 4, .mask = 0x0f, },
+	{ .phy_offset = 4, .phy_shift = 7, .rf_addr = 0x43, .rf_shift = 0, .mask = 0x0f, },
+	{ .phy_offset = 4, .phy_shift = 6, .rf_addr = 0x45, .rf_shift = 1, .mask = 0x01, },
+	{ .phy_offset = 2, .phy_shift = 7, .rf_addr = 0x40, .rf_shift = 4, .mask = 0x0f, },
+	{ .phy_offset = 2, .phy_shift = 11, .rf_addr = 0x40, .rf_shift = 0, .mask = 0x0f, },
+};
+
 static void lpphy_sync_stx(struct b43_wldev *dev)
 {
-	//TODO
+	const struct lpphy_stx_table_entry *e;
+	unsigned int i;
+	u16 tmp;
+
+	for (i = 0; i < ARRAY_SIZE(lpphy_stx_table); i++) {
+		e = &lpphy_stx_table[i];
+		tmp = b43_radio_read(dev, e->rf_addr);
+		tmp >>= e->rf_shift;
+		tmp <<= e->phy_shift;
+		b43_phy_maskset(dev, B43_PHY_OFDM(0xF2 + e->phy_offset),
+				~(e->mask << e->phy_shift), tmp);
+	}
 }
 
 static void lpphy_radio_init(struct b43_wldev *dev)
@@ -366,7 +516,9 @@ static void lpphy_radio_init(struct b43_wldev *dev)
 		lpphy_sync_stx(dev);
 		b43_phy_write(dev, B43_PHY_OFDM(0xF0), 0x5F80);
 		b43_phy_write(dev, B43_PHY_OFDM(0xF1), 0);
-		//TODO Do something on the backplane
+		if (dev->dev->bus->chip_id == 0x4325) {
+			// TODO SSB PMU recalibration
+		}
 	}
 }
 
@@ -543,13 +695,13 @@ static void lpphy_tx_pctl_init(struct b43_wldev *dev)
 static int b43_lpphy_op_init(struct b43_wldev *dev)
 {
 	/* TODO: band SPROM */
-	/* TODO: tables init */
 	lpphy_baseband_init(dev);
 	lpphy_radio_init(dev);
 	//TODO calibrate RC
 	//TODO set channel
 	lpphy_tx_pctl_init(dev);
-	//TODO full calib
+	lpphy_calibration(dev);
+	//TODO ACI init
 
 	return 0;
 }
@@ -626,7 +778,6 @@ static enum b43_txpwr_result b43_lpphy_op_recalc_txpower(struct b43_wldev *dev,
 	//TODO
 	return B43_TXPWR_RES_DONE;
 }
-
 
 const struct b43_phy_operations b43_phyops_lp = {
 	.allocate		= b43_lpphy_op_allocate,

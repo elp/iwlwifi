@@ -59,7 +59,7 @@
 #include "reg.h"
 #include "debug.h"
 
-static int ath5k_calinterval = 10; /* Calibrate PHY every 10 secs (TODO: Fixme) */
+static u8 ath5k_calinterval = 10; /* Calibrate PHY every 10 secs (TODO: Fixme) */
 static int modparam_nohwcrypt;
 module_param_named(nohwcrypt, modparam_nohwcrypt, bool, S_IRUGO);
 MODULE_PARM_DESC(nohwcrypt, "Disable hardware encryption.");
@@ -376,7 +376,7 @@ static int 	ath5k_stop_hw(struct ath5k_softc *sc);
 static irqreturn_t ath5k_intr(int irq, void *dev_id);
 static void 	ath5k_tasklet_reset(unsigned long data);
 
-static void 	ath5k_calibrate(unsigned long data);
+static void 	ath5k_tasklet_calibrate(unsigned long data);
 
 /*
  * Module init/exit functions
@@ -799,8 +799,8 @@ ath5k_attach(struct pci_dev *pdev, struct ieee80211_hw *hw)
 	tasklet_init(&sc->rxtq, ath5k_tasklet_rx, (unsigned long)sc);
 	tasklet_init(&sc->txtq, ath5k_tasklet_tx, (unsigned long)sc);
 	tasklet_init(&sc->restq, ath5k_tasklet_reset, (unsigned long)sc);
+	tasklet_init(&sc->calib, ath5k_tasklet_calibrate, (unsigned long)sc);
 	tasklet_init(&sc->beacontq, ath5k_tasklet_beacon, (unsigned long)sc);
-	setup_timer(&sc->calib_tim, ath5k_calibrate, (unsigned long)sc);
 
 	ret = ath5k_eeprom_read_mac(ah, mac);
 	if (ret) {
@@ -2364,7 +2364,7 @@ ath5k_init(struct ath5k_softc *sc)
 	sc->curband = &sc->sbands[sc->curchan->band];
 	sc->imask = AR5K_INT_RXOK | AR5K_INT_RXERR | AR5K_INT_RXEOL |
 		AR5K_INT_RXORN | AR5K_INT_TXDESC | AR5K_INT_TXEOL |
-		AR5K_INT_FATAL | AR5K_INT_GLOBAL;
+		AR5K_INT_FATAL | AR5K_INT_GLOBAL | AR5K_INT_SWI;
 	ret = ath5k_reset(sc, NULL);
 	if (ret)
 		goto done;
@@ -2381,8 +2381,8 @@ ath5k_init(struct ath5k_softc *sc)
 	/* Set ack to be sent at low bit-rates */
 	ath5k_hw_set_ack_bitrate_high(ah, false);
 
-	mod_timer(&sc->calib_tim, round_jiffies(jiffies +
-			msecs_to_jiffies(ath5k_calinterval * 1000)));
+	/* Set PHY calibration inteval */
+	ah->ah_cal_intval = ath5k_calinterval;
 
 	ret = 0;
 done:
@@ -2446,37 +2446,39 @@ ath5k_stop_hw(struct ath5k_softc *sc)
 	ret = ath5k_stop_locked(sc);
 	if (ret == 0 && !test_bit(ATH_STAT_INVALID, sc->status)) {
 		/*
-		 * Set the chip in full sleep mode.  Note that we are
-		 * careful to do this only when bringing the interface
-		 * completely to a stop.  When the chip is in this state
-		 * it must be carefully woken up or references to
-		 * registers in the PCI clock domain may freeze the bus
-		 * (and system).  This varies by chip and is mostly an
-		 * issue with newer parts that go to sleep more quickly.
-		 */
-		if (sc->ah->ah_mac_srev >= 0x78) {
-			/*
-			 * XXX
-			 * don't put newer MAC revisions > 7.8 to sleep because
-			 * of the above mentioned problems
-			 */
-			ATH5K_DBG(sc, ATH5K_DEBUG_RESET, "mac version > 7.8, "
-				"not putting device to sleep\n");
-		} else {
-			ATH5K_DBG(sc, ATH5K_DEBUG_RESET,
-				"putting device to full sleep\n");
-			ath5k_hw_set_power(sc->ah, AR5K_PM_FULL_SLEEP, true, 0);
-		}
+		 * Don't set the card in full sleep mode!
+		 *
+		 * a) When the device is in this state it must be carefully
+		 * woken up or references to registers in the PCI clock
+		 * domain may freeze the bus (and system).  This varies
+		 * by chip and is mostly an issue with newer parts
+		 * (madwifi sources mentioned srev >= 0x78) that go to
+		 * sleep more quickly.
+		 *
+		 * b) On older chips full sleep results a weird behaviour
+		 * during wakeup. I tested various cards with srev < 0x78
+		 * and they don't wake up after module reload, a second
+		 * module reload is needed to bring the card up again.
+		 *
+		 * Until we figure out what's going on don't enable
+		 * full chip reset on any chip (this is what Legacy HAL
+		 * and Sam's HAL do anyway). Instead Perform a full reset
+		 * on the device (same as initial state after attach) and
+		 * leave it idle (keep MAC/BB on warm reset) */
+		ret = ath5k_hw_on_hold(sc->ah);
+
+		ATH5K_DBG(sc, ATH5K_DEBUG_RESET,
+				"putting device to sleep\n");
 	}
 	ath5k_txbuf_free(sc, sc->bbuf);
 
 	mmiowb();
 	mutex_unlock(&sc->lock);
 
-	del_timer_sync(&sc->calib_tim);
 	tasklet_kill(&sc->rxtq);
 	tasklet_kill(&sc->txtq);
 	tasklet_kill(&sc->restq);
+	tasklet_kill(&sc->calib);
 	tasklet_kill(&sc->beacontq);
 
 	ath5k_rfkill_hw_stop(sc->ah);
@@ -2532,6 +2534,9 @@ ath5k_intr(int irq, void *dev_id)
 			if (status & AR5K_INT_BMISS) {
 				/* TODO */
 			}
+			if (status & AR5K_INT_SWI) {
+				tasklet_schedule(&sc->calib);
+			}
 			if (status & AR5K_INT_MIB) {
 				/*
 				 * These stats are also used for ANI i think
@@ -2547,6 +2552,8 @@ ath5k_intr(int irq, void *dev_id)
 
 	if (unlikely(!counter))
 		ATH5K_WARN(sc, "too many interrupts, giving up for now\n");
+
+	ath5k_hw_calibration_poll(ah);
 
 	return IRQ_HANDLED;
 }
@@ -2564,10 +2571,18 @@ ath5k_tasklet_reset(unsigned long data)
  * for temperature/environment changes.
  */
 static void
-ath5k_calibrate(unsigned long data)
+ath5k_tasklet_calibrate(unsigned long data)
 {
 	struct ath5k_softc *sc = (void *)data;
 	struct ath5k_hw *ah = sc->ah;
+
+	/* Only full calibration for now */
+	if (ah->ah_swi_mask != AR5K_SWI_FULL_CALIBRATION)
+		return;
+
+	/* Stop queues so that calibration
+	 * doesn't interfere with tx */
+	ieee80211_stop_queues(sc->hw);
 
 	ATH5K_DBG(sc, ATH5K_DEBUG_CALIBRATE, "channel %u/%x\n",
 		ieee80211_frequency_to_channel(sc->curchan->center_freq),
@@ -2586,8 +2601,11 @@ ath5k_calibrate(unsigned long data)
 			ieee80211_frequency_to_channel(
 				sc->curchan->center_freq));
 
-	mod_timer(&sc->calib_tim, round_jiffies(jiffies +
-			msecs_to_jiffies(ath5k_calinterval * 1000)));
+	ah->ah_swi_mask = 0;
+
+	/* Wake queues */
+	ieee80211_wake_queues(sc->hw);
+
 }
 
 
