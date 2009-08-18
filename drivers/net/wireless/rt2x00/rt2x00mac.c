@@ -379,7 +379,7 @@ EXPORT_SYMBOL_GPL(rt2x00mac_config);
 void rt2x00mac_configure_filter(struct ieee80211_hw *hw,
 				unsigned int changed_flags,
 				unsigned int *total_flags,
-				int mc_count, struct dev_addr_list *mc_list)
+				u64 multicast)
 {
 	struct rt2x00_dev *rt2x00dev = hw->priv;
 
@@ -704,8 +704,8 @@ EXPORT_SYMBOL_GPL(rt2x00mac_conf_tx);
 void rt2x00mac_rfkill_poll(struct ieee80211_hw *hw)
 {
 	struct rt2x00_dev *rt2x00dev = hw->priv;
-	bool blocked = !!rt2x00dev->ops->lib->rfkill_poll(rt2x00dev);
+	bool active = !!rt2x00dev->ops->lib->rfkill_poll(rt2x00dev);
 
-	wiphy_rfkill_set_hw_state(hw->wiphy, blocked);
+	wiphy_rfkill_set_hw_state(hw->wiphy, !active);
 }
 EXPORT_SYMBOL_GPL(rt2x00mac_rfkill_poll);

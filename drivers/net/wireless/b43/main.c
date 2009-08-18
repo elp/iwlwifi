@@ -691,9 +691,9 @@ static void b43_synchronize_irq(struct b43_wldev *dev)
 }
 
 /* DummyTransmission function, as documented on
- * http://bcm-specs.sipsolutions.net/DummyTransmission
+ * http://bcm-v4.sipsolutions.net/802.11/DummyTransmission
  */
-void b43_dummy_transmission(struct b43_wldev *dev)
+void b43_dummy_transmission(struct b43_wldev *dev, bool ofdm, bool pa_on)
 {
 	struct b43_wl *wl = dev->wl;
 	struct b43_phy *phy = &dev->phy;
@@ -707,19 +707,12 @@ void b43_dummy_transmission(struct b43_wldev *dev)
 		0x00000000,
 	};
 
-	switch (phy->type) {
-	case B43_PHYTYPE_A:
+	if (ofdm) {
 		max_loop = 0x1E;
 		buffer[0] = 0x000201CC;
-		break;
-	case B43_PHYTYPE_B:
-	case B43_PHYTYPE_G:
+	} else {
 		max_loop = 0xFA;
 		buffer[0] = 0x000B846E;
-		break;
-	default:
-		B43_WARN_ON(1);
-		return;
 	}
 
 	spin_lock_irq(&wl->irq_lock);
@@ -728,20 +721,35 @@ void b43_dummy_transmission(struct b43_wldev *dev)
 	for (i = 0; i < 5; i++)
 		b43_ram_write(dev, i * 4, buffer[i]);
 
-	/* Commit writes */
-	b43_read32(dev, B43_MMIO_MACCTL);
-
 	b43_write16(dev, 0x0568, 0x0000);
-	b43_write16(dev, 0x07C0, 0x0000);
-	value = ((phy->type == B43_PHYTYPE_A) ? 1 : 0);
+	if (dev->dev->id.revision < 11)
+		b43_write16(dev, 0x07C0, 0x0000);
+	else
+		b43_write16(dev, 0x07C0, 0x0100);
+	value = (ofdm ? 0x41 : 0x40);
 	b43_write16(dev, 0x050C, value);
+	if ((phy->type == B43_PHYTYPE_N) || (phy->type == B43_PHYTYPE_LP))
+		b43_write16(dev, 0x0514, 0x1A02);
 	b43_write16(dev, 0x0508, 0x0000);
 	b43_write16(dev, 0x050A, 0x0000);
 	b43_write16(dev, 0x054C, 0x0000);
 	b43_write16(dev, 0x056A, 0x0014);
 	b43_write16(dev, 0x0568, 0x0826);
 	b43_write16(dev, 0x0500, 0x0000);
-	b43_write16(dev, 0x0502, 0x0030);
+	if (!pa_on && (phy->type == B43_PHYTYPE_N)) {
+		//SPEC TODO
+	}
+
+	switch (phy->type) {
+	case B43_PHYTYPE_N:
+		b43_write16(dev, 0x0502, 0x00D0);
+		break;
+	case B43_PHYTYPE_LP:
+		b43_write16(dev, 0x0502, 0x0050);
+		break;
+	default:
+		b43_write16(dev, 0x0502, 0x0030);
+	}
 
 	if (phy->radio_ver == 0x2050 && phy->radio_rev <= 0x5)
 		b43_radio_write16(dev, 0x0051, 0x0017);
@@ -1947,8 +1955,12 @@ static int b43_try_request_fw(struct b43_request_fw_context *ctx)
 		filename = "ucode5";
 	else if ((rev >= 11) && (rev <= 12))
 		filename = "ucode11";
-	else if (rev >= 13)
+	else if (rev == 13)
 		filename = "ucode13";
+	else if (rev == 14)
+		filename = "ucode14";
+	else if (rev >= 15)
+		filename = "ucode15";
 	else
 		goto err_no_ucode;
 	err = b43_do_request_fw(ctx, filename, &fw->ucode);
@@ -1996,6 +2008,16 @@ static int b43_try_request_fw(struct b43_request_fw_context *ctx)
 		else
 			goto err_no_initvals;
 		break;
+	case B43_PHYTYPE_LP:
+		if (rev == 13)
+			filename = "lp0initvals13";
+		else if (rev == 14)
+			filename = "lp0initvals14";
+		else if (rev >= 15)
+			filename = "lp0initvals15";
+		else
+			goto err_no_initvals;
+		break;
 	default:
 		goto err_no_initvals;
 	}
@@ -2027,6 +2049,16 @@ static int b43_try_request_fw(struct b43_request_fw_context *ctx)
 	case B43_PHYTYPE_N:
 		if ((rev >= 11) && (rev <= 12))
 			filename = "n0bsinitvals11";
+		else
+			goto err_no_initvals;
+		break;
+	case B43_PHYTYPE_LP:
+		if (rev == 13)
+			filename = "lp0bsinitvals13";
+		else if (rev == 14)
+			filename = "lp0bsinitvals14";
+		else if (rev >= 15)
+			filename = "lp0bsinitvals15";
 		else
 			goto err_no_initvals;
 		break;
@@ -2557,6 +2589,7 @@ static void b43_rate_memory_init(struct b43_wldev *dev)
 	case B43_PHYTYPE_A:
 	case B43_PHYTYPE_G:
 	case B43_PHYTYPE_N:
+	case B43_PHYTYPE_LP:
 		b43_rate_memory_write(dev, B43_OFDM_RATE_6MB, 1);
 		b43_rate_memory_write(dev, B43_OFDM_RATE_12MB, 1);
 		b43_rate_memory_write(dev, B43_OFDM_RATE_18MB, 1);
@@ -3646,7 +3679,7 @@ out_unlock:
 
 static void b43_op_configure_filter(struct ieee80211_hw *hw,
 				    unsigned int changed, unsigned int *fflags,
-				    int mc_count, struct dev_addr_list *mc_list)
+				    u64 multicast)
 {
 	struct b43_wl *wl = hw_to_b43_wl(hw);
 	struct b43_wldev *dev = wl->current_dev;
@@ -3785,7 +3818,7 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 #endif
 #ifdef CONFIG_B43_PHY_LP
 	case B43_PHYTYPE_LP:
-		if (phy_rev > 1)
+		if (phy_rev > 2)
 			unsupported = 1;
 		break;
 #endif
@@ -3842,7 +3875,7 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 			unsupported = 1;
 		break;
 	case B43_PHYTYPE_LP:
-		if (radio_ver != 0x2062)
+		if (radio_ver != 0x2062 && radio_ver != 0x2063)
 			unsupported = 1;
 		break;
 	default:
@@ -4480,9 +4513,12 @@ static int b43_wireless_core_attach(struct b43_wldev *dev)
 		case B43_PHYTYPE_A:
 			have_5ghz_phy = 1;
 			break;
+		case B43_PHYTYPE_LP: //FIXME not always!
+#if 0 //FIXME enabling 5GHz causes a NULL pointer dereference
+			have_5ghz_phy = 1;
+#endif
 		case B43_PHYTYPE_G:
 		case B43_PHYTYPE_N:
-		case B43_PHYTYPE_LP:
 			have_2ghz_phy = 1;
 			break;
 		default:
@@ -4497,7 +4533,8 @@ static int b43_wireless_core_attach(struct b43_wldev *dev)
 	}
 	if (1 /* disable A-PHY */) {
 		/* FIXME: For now we disable the A-PHY on multi-PHY devices. */
-		if (dev->phy.type != B43_PHYTYPE_N) {
+		if (dev->phy.type != B43_PHYTYPE_N &&
+		    dev->phy.type != B43_PHYTYPE_LP) {
 			have_2ghz_phy = 1;
 			have_5ghz_phy = 0;
 		}
