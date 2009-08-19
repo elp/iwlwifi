@@ -118,20 +118,11 @@ void rt2x00lib_toggle_rx(struct rt2x00_dev *rt2x00dev, enum dev_state state)
 		rt2x00link_start_tuner(rt2x00dev);
 }
 
-static void rt2x00lib_packetfilter_scheduled(struct work_struct *work)
-{
-	struct rt2x00_dev *rt2x00dev =
-	    container_of(work, struct rt2x00_dev, filter_work);
-
-	rt2x00dev->ops->lib->config_filter(rt2x00dev, rt2x00dev->packet_filter);
-}
-
 static void rt2x00lib_intf_scheduled_iter(void *data, u8 *mac,
 					  struct ieee80211_vif *vif)
 {
 	struct rt2x00_dev *rt2x00dev = data;
 	struct rt2x00_intf *intf = vif_to_intf(vif);
-	struct ieee80211_bss_conf conf;
 	int delayed_flags;
 
 	/*
@@ -141,7 +132,6 @@ static void rt2x00lib_intf_scheduled_iter(void *data, u8 *mac,
 	 */
 	spin_lock(&intf->lock);
 
-	memcpy(&conf, &vif->bss_conf, sizeof(conf));
 	delayed_flags = intf->delayed_flags;
 	intf->delayed_flags = 0;
 
@@ -158,12 +148,6 @@ static void rt2x00lib_intf_scheduled_iter(void *data, u8 *mac,
 
 	if (delayed_flags & DELAYED_UPDATE_BEACON)
 		rt2x00queue_update_beacon(rt2x00dev, vif, true);
-
-	if (delayed_flags & DELAYED_CONFIG_ERP)
-		rt2x00lib_config_erp(rt2x00dev, intf, &conf);
-
-	if (delayed_flags & DELAYED_LED_ASSOC)
-		rt2x00leds_led_assoc(rt2x00dev, !!rt2x00dev->intf_associated);
 }
 
 static void rt2x00lib_intf_scheduled(struct work_struct *work)
@@ -859,7 +843,6 @@ int rt2x00lib_probe_dev(struct rt2x00_dev *rt2x00dev)
 	 * Initialize configuration work.
 	 */
 	INIT_WORK(&rt2x00dev->intf_work, rt2x00lib_intf_scheduled);
-	INIT_WORK(&rt2x00dev->filter_work, rt2x00lib_packetfilter_scheduled);
 
 	/*
 	 * Allocate queue array.
@@ -907,7 +890,6 @@ void rt2x00lib_remove_dev(struct rt2x00_dev *rt2x00dev)
 	/*
 	 * Stop all work.
 	 */
-	cancel_work_sync(&rt2x00dev->filter_work);
 	cancel_work_sync(&rt2x00dev->intf_work);
 
 	/*
