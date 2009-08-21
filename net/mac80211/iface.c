@@ -277,11 +277,6 @@ static int ieee80211_open(struct net_device *dev)
 		}
 	}
 
-	if (local->open_count == 0) {
-		tasklet_enable(&local->tx_pending_tasklet);
-		tasklet_enable(&local->tasklet);
-	}
-
 	/*
 	 * set_multicast_list will be invoked by the networking core
 	 * which will check whether any increments here were done in
@@ -552,14 +547,8 @@ static int ieee80211_stop(struct net_device *dev)
 	ieee80211_recalc_ps(local, -1);
 
 	if (local->open_count == 0) {
-		drv_stop(local);
-
-		ieee80211_led_radio(local, false);
-
-		flush_workqueue(local->workqueue);
-
-		tasklet_disable(&local->tx_pending_tasklet);
-		tasklet_disable(&local->tasklet);
+		ieee80211_clear_tx_pending(local);
+		ieee80211_stop_device(local);
 
 		/* no reconfiguring after stop! */
 		hw_reconf_flags = 0;

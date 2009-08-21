@@ -715,12 +715,10 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 		skb_queue_head_init(&local->pending[i]);
 	tasklet_init(&local->tx_pending_tasklet, ieee80211_tx_pending,
 		     (unsigned long)local);
-	tasklet_disable(&local->tx_pending_tasklet);
 
 	tasklet_init(&local->tasklet,
 		     ieee80211_tasklet_handler,
 		     (unsigned long) local);
-	tasklet_disable(&local->tasklet);
 
 	skb_queue_head_init(&local->skb_queue);
 	skb_queue_head_init(&local->skb_queue_unreliable);
@@ -930,7 +928,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
  fail_workqueue:
 	wiphy_unregister(local->hw.wiphy);
  fail_wiphy_register:
-	kfree(local->int_scan_req->channels);
+	kfree(local->int_scan_req);
 	return result;
 }
 EXPORT_SYMBOL(ieee80211_register_hw);
