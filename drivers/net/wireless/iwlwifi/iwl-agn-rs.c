@@ -169,8 +169,6 @@ struct iwl_lq_sta {
 
 	/* used to be in sta_info */
 	int last_txrate_idx;
-	/* last tx rate_n_flags */
-	u32 last_rate_n_flags;
 };
 
 static void rs_rate_scale_perform(struct iwl_priv *priv,
@@ -952,7 +950,6 @@ static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
 	 * else look up the rate that was, finally, successful.
 	 */
 	tx_rate = le32_to_cpu(table->rs_table[index].rate_n_flags);
-	lq_sta->last_rate_n_flags = tx_rate;
 	rs_get_tbl_info_from_mcs(tx_rate, priv->band, &tbl_type, &rs_index);
 
 	/* Update frame history window with "success" if Tx got ACKed ... */
@@ -2490,6 +2487,7 @@ static void rs_get_rate(void *priv_r, struct ieee80211_sta *sta, void *priv_sta,
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct iwl_lq_sta *lq_sta = priv_sta;
+	struct iwl_scale_tbl_info *cur_rs_table;
 	int rate_idx;
 
 	IWL_DEBUG_RATE_LIMIT(priv, "rate scale calculate new rate for skb\n");
@@ -2529,24 +2527,23 @@ static void rs_get_rate(void *priv_r, struct ieee80211_sta *sta, void *priv_sta,
 		}
 	}
 
-	if (lq_sta->last_rate_n_flags & RATE_MCS_HT_MSK) {
+	cur_rs_table = &(lq_sta->lq_info[lq_sta->active_tbl]);
+	if (is_Ht(cur_rs_table->lq_type)) {
 		rate_idx -= IWL_FIRST_OFDM_RATE;
 		/* 6M and 9M shared same MCS index */
 		rate_idx = (rate_idx > 0) ? (rate_idx - 1) : 0;
-		if (rs_extract_rate(lq_sta->last_rate_n_flags) >=
-		    IWL_RATE_MIMO3_6M_PLCP)
+		if (is_mimo3(cur_rs_table->lq_type))
 			rate_idx = rate_idx + (2 * MCS_INDEX_PER_STREAM);
-		else if (rs_extract_rate(lq_sta->last_rate_n_flags) >=
-			 IWL_RATE_MIMO2_6M_PLCP)
+		else if (is_mimo2(cur_rs_table->lq_type))
 			rate_idx = rate_idx + MCS_INDEX_PER_STREAM;
 		info->control.rates[0].flags = IEEE80211_TX_RC_MCS;
-		if (lq_sta->last_rate_n_flags & RATE_MCS_SGI_MSK)
+		if (cur_rs_table->is_SGI)
 			info->control.rates[0].flags |= IEEE80211_TX_RC_SHORT_GI;
-		if (lq_sta->last_rate_n_flags & RATE_MCS_DUP_MSK)
+		if (cur_rs_table->is_dup)
 			info->control.rates[0].flags |= IEEE80211_TX_RC_DUP_DATA;
-		if (lq_sta->last_rate_n_flags & RATE_MCS_HT40_MSK)
+		if (cur_rs_table->is_ht40)
 			info->control.rates[0].flags |= IEEE80211_TX_RC_40_MHZ_WIDTH;
-		if (lq_sta->last_rate_n_flags & RATE_MCS_GF_MSK)
+		if (lq_sta->is_green)
 			info->control.rates[0].flags |= IEEE80211_TX_RC_GREEN_FIELD;
 	} else {
 		/* Check for invalid rates */
@@ -2928,8 +2925,6 @@ static ssize_t rs_sta_dbgfs_scale_table_read(struct file *file,
 		   desc += sprintf(buff+desc, " %s %s\n", (tbl->is_SGI) ? "SGI" : "",
 		   (lq_sta->is_green) ? "GF enabled" : "");
 	}
-	desc += sprintf(buff+desc, "last tx rate=0x%X\n",
-		lq_sta->last_rate_n_flags);
 	desc += sprintf(buff+desc, "general:"
 		"flags=0x%X mimo-d=%d s-ant0x%x d-ant=0x%x\n",
 		lq_sta->lq.general_params.flags,
