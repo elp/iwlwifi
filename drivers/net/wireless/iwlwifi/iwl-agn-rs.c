@@ -818,7 +818,7 @@ static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
 {
 	int status;
 	u8 retries;
-	int rs_index, mac_index, index = 0;
+	int rs_index, index = 0;
 	struct iwl_lq_sta *lq_sta = priv_sta;
 	struct iwl_link_quality_cmd *table;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
@@ -826,7 +826,6 @@ static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct iwl_rate_scale_data *window = NULL;
 	struct iwl_rate_scale_data *search_win = NULL;
-	enum mac80211_rate_control_flags mac_flags;
 	u32 tx_rate;
 	struct iwl_scale_tbl_info tbl_type;
 	struct iwl_scale_tbl_info *curr_tbl, *search_tbl;
@@ -876,24 +875,16 @@ static void rs_tx_status(void *priv_r, struct ieee80211_supported_band *sband,
 	rs_get_tbl_info_from_mcs(tx_rate, priv->band, &tbl_type, &rs_index);
 	if (priv->band == IEEE80211_BAND_5GHZ)
 		rs_index -= IWL_FIRST_OFDM_RATE;
-	mac_flags = info->status.rates[0].flags;
-	mac_index = info->status.rates[0].idx;
-	/* For HT packets, map MCS to PLCP */
-	if (tx_rate & RATE_MCS_HT_MSK) {
-		mac_index &= RATE_MCS_CODE_MSK;	/* Remove # of streams */
-		if (mac_index >= (IWL_RATE_9M_INDEX - IWL_FIRST_OFDM_RATE))
-			mac_index++;
-	}
 
-	if ((mac_index < 0) ||
-	    (tbl_type.is_SGI != !!(mac_flags & IEEE80211_TX_RC_SHORT_GI)) ||
-	    (tbl_type.is_ht40 != !!(mac_flags & IEEE80211_TX_RC_40_MHZ_WIDTH)) ||
-	    (tbl_type.is_dup != !!(mac_flags & IEEE80211_TX_RC_DUP_DATA)) ||
+	if ((info->status.rates[0].idx < 0) ||
+	    (tbl_type.is_SGI != !!(info->status.rates[0].flags & IEEE80211_TX_RC_SHORT_GI)) ||
+	    (tbl_type.is_ht40 != !!(info->status.rates[0].flags & IEEE80211_TX_RC_40_MHZ_WIDTH)) ||
+	    (tbl_type.is_dup != !!(info->status.rates[0].flags & IEEE80211_TX_RC_DUP_DATA)) ||
 	    (tbl_type.ant_type != info->antenna_sel_tx) ||
-	    (!!(tx_rate & RATE_MCS_HT_MSK) != !!(mac_flags & IEEE80211_TX_RC_MCS)) ||
-	    (!!(tx_rate & RATE_MCS_GF_MSK) != !!(mac_flags & IEEE80211_TX_RC_GREEN_FIELD)) ||
-	    (rs_index != mac_index)) {
-		IWL_DEBUG_RATE(priv, "initial rate %d does not match %d (0x%x)\n", mac_index, rs_index, tx_rate);
+	    (!!(tx_rate & RATE_MCS_HT_MSK) != !!(info->status.rates[0].flags & IEEE80211_TX_RC_MCS)) ||
+	    (!!(tx_rate & RATE_MCS_GF_MSK) != !!(info->status.rates[0].flags & IEEE80211_TX_RC_GREEN_FIELD)) ||
+	    rs_index != info->status.rates[0].idx) {
+		IWL_DEBUG_RATE(priv, "initial rate does not match 0x%x\n", tx_rate);
 		/* the last LQ command could failed so the LQ in ucode not
 		 * the same in driver sync up
 		 */

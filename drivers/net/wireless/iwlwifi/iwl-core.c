@@ -96,6 +96,7 @@ EXPORT_SYMBOL(iwl_rates);
 void iwl_hwrate_to_tx_control(struct iwl_priv *priv, u32 rate_n_flags,
 				  struct ieee80211_tx_info *info)
 {
+	int rate_index;
 	struct ieee80211_tx_rate *r = &info->control.rates[0];
 
 	info->antenna_sel_tx =
@@ -110,7 +111,10 @@ void iwl_hwrate_to_tx_control(struct iwl_priv *priv, u32 rate_n_flags,
 		r->flags |= IEEE80211_TX_RC_DUP_DATA;
 	if (rate_n_flags & RATE_MCS_SGI_MSK)
 		r->flags |= IEEE80211_TX_RC_SHORT_GI;
-	r->idx = iwl_hwrate_to_mac80211_idx(rate_n_flags, info->band);
+	rate_index = iwl_hwrate_to_mac80211_idx(rate_n_flags);
+	if (info->band == IEEE80211_BAND_5GHZ)
+		rate_index -= IWL_FIRST_OFDM_RATE;
+	r->idx = rate_index;
 }
 EXPORT_SYMBOL(iwl_hwrate_to_tx_control);
 
@@ -145,10 +149,9 @@ int iwl_hwrate_to_plcp_idx(u32 rate_n_flags)
 }
 EXPORT_SYMBOL(iwl_hwrate_to_plcp_idx);
 
-int iwl_hwrate_to_mac80211_idx(u32 rate_n_flags, enum ieee80211_band band)
+int iwl_hwrate_to_mac80211_idx(u32 rate_n_flags)
 {
 	int idx = 0;
-	int band_offset = 0;
 
 	/* HT rate format: mac80211 wants an MCS number, which is just LSB */
 	if (rate_n_flags & RATE_MCS_HT_MSK) {
@@ -156,11 +159,9 @@ int iwl_hwrate_to_mac80211_idx(u32 rate_n_flags, enum ieee80211_band band)
 		return idx;
 	/* Legacy rate format, search for match in table */
 	} else {
-		if (band == IEEE80211_BAND_5GHZ)
-			band_offset = IWL_FIRST_OFDM_RATE;
-		for (idx = band_offset; idx < ARRAY_SIZE(iwl_rates); idx++)
+		for (idx = 0; idx < ARRAY_SIZE(iwl_rates); idx++)
 			if (iwl_rates[idx].plcp == (rate_n_flags & 0xFF))
-				return idx - band_offset;
+				return idx;
 	}
 
 	return -1;
