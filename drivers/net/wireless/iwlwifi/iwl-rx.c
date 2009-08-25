@@ -969,7 +969,7 @@ void iwl_rx_reply_rx(struct iwl_priv *priv,
 	rx_status.band = (phy_res->phy_flags & RX_RES_PHY_FLAGS_BAND_24_MSK) ?
 				IEEE80211_BAND_2GHZ : IEEE80211_BAND_5GHZ;
 	rx_status.rate_idx =
-		iwl_hwrate_to_mac80211_idx(le32_to_cpu(phy_res->rate_n_flags));
+		iwl_hwrate_to_plcp_idx(le32_to_cpu(phy_res->rate_n_flags));
 	if (rx_status.band == IEEE80211_BAND_5GHZ)
 		rx_status.rate_idx -= IWL_FIRST_OFDM_RATE;
 

@@ -111,7 +111,7 @@ void iwl_hwrate_to_tx_control(struct iwl_priv *priv, u32 rate_n_flags,
 		r->flags |= IEEE80211_TX_RC_DUP_DATA;
 	if (rate_n_flags & RATE_MCS_SGI_MSK)
 		r->flags |= IEEE80211_TX_RC_SHORT_GI;
-	rate_index = iwl_hwrate_to_mac80211_idx(rate_n_flags);
+	rate_index = iwl_hwrate_to_plcp_idx(rate_n_flags);
 	if (info->band == IEEE80211_BAND_5GHZ)
 		rate_index -= IWL_FIRST_OFDM_RATE;
 	r->idx = rate_index;
@@ -148,24 +148,6 @@ int iwl_hwrate_to_plcp_idx(u32 rate_n_flags)
 	return -1;
 }
 EXPORT_SYMBOL(iwl_hwrate_to_plcp_idx);
-
-int iwl_hwrate_to_mac80211_idx(u32 rate_n_flags)
-{
-	int idx = 0;
-
-	/* HT rate format: mac80211 wants an MCS number, which is just LSB */
-	if (rate_n_flags & RATE_MCS_HT_MSK) {
-		idx = (rate_n_flags & 0xff);
-		return idx;
-	/* Legacy rate format, search for match in table */
-	} else {
-		for (idx = 0; idx < ARRAY_SIZE(iwl_rates); idx++)
-			if (iwl_rates[idx].plcp == (rate_n_flags & 0xFF))
-				return idx;
-	}
-
-	return -1;
-}
 
 u8 iwl_toggle_tx_ant(struct iwl_priv *priv, u8 ant)
 {
