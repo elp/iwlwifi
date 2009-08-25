@@ -97,6 +97,7 @@ void iwl_hwrate_to_tx_control(struct iwl_priv *priv, u32 rate_n_flags,
 				  struct ieee80211_tx_info *info)
 {
 	struct ieee80211_tx_rate *r = &info->control.rates[0];
+	r->flags = 0;
 
 	info->antenna_sel_tx =
 		((rate_n_flags & RATE_MCS_ANT_ABC_MSK) >> RATE_MCS_ANT_POS);
