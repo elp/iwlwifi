@@ -1,7 +1,6 @@
 /* Copyright (C) 2006, Red Hat, Inc. */
 
 #include <linux/types.h>
-#include <linux/kernel.h>
 #include <linux/etherdevice.h>
 #include <linux/ieee80211.h>
 #include <linux/if_arp.h>
