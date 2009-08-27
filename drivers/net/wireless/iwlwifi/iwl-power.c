@@ -292,8 +292,9 @@ int iwl_power_update_mode(struct iwl_priv *priv, bool force)
 	else
 		dtimper = 1;
 
-	/* TT power setting overwrites everything */
-	if (tt->state >= IWL_TI_1)
+	if (priv->hw->conf.flags & IEEE80211_CONF_IDLE)
+		iwl_static_sleep_cmd(priv, &cmd, IWL_POWER_INDEX_5, 20);
+	else if (tt->state >= IWL_TI_1)
 		iwl_static_sleep_cmd(priv, &cmd, tt->tt_power_mode, dtimper);
 	else if (!enabled)
 		iwl_power_sleep_cam_cmd(priv, &cmd);
