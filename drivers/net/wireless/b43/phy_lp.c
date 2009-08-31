@@ -1496,7 +1496,8 @@ static u16 b43_lpphy_op_read(struct b43_wldev *dev, u16 reg)
 
 static void b43_lpphy_op_write(struct b43_wldev *dev, u16 reg, u16 value)
 {
-	b43_write32(dev, B43_MMIO_PHY_CONTROL, ((u32)value << 16) | reg);
+	b43_write16(dev, B43_MMIO_PHY_CONTROL, reg);
+	b43_write16(dev, B43_MMIO_PHY_DATA, value);
 }
 
 static void b43_lpphy_op_maskset(struct b43_wldev *dev, u16 reg, u16 mask,
@@ -2204,7 +2205,14 @@ static int b43_lpphy_op_init(struct b43_wldev *dev)
 
 static void b43_lpphy_op_set_rx_antenna(struct b43_wldev *dev, int antenna)
 {
-	//TODO
+	if (dev->phy.rev >= 2)
+		return; // rev2+ doesn't support antenna diversity
+
+	if (B43_WARN_ON(antenna > B43_ANTENNA_AUTO1))
+		return;
+
+	b43_phy_maskset(dev, B43_LPPHY_CRSGAIN_CTL, 0xFFFD, antenna & 0x2);
+	b43_phy_maskset(dev, B43_LPPHY_CRSGAIN_CTL, 0xFFFE, antenna & 0x1);
 }
 
 static void b43_lpphy_op_adjust_txpower(struct b43_wldev *dev)
