@@ -2830,8 +2830,7 @@ int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 	}
 
 	if (!priv->cfg->broken_powersave &&
-	    changed & (IEEE80211_CONF_CHANGE_PS |
-			IEEE80211_CONF_CHANGE_IDLE)) {
+	    changed & IEEE80211_CONF_CHANGE_PS) {
 		ret = iwl_power_update_mode(priv, false);
 		if (ret)
 			IWL_DEBUG_MAC80211(priv, "Error setting sleep level\n");
