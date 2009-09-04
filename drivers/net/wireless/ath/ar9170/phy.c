@@ -396,6 +396,136 @@ static struct ar9170_phy_init ar5416_phy_init[] = {
 	{ 0x1c9384, 0xf3307ff0, 0xf3307ff0, 0xf3307ff0, 0xf3307ff0, }
 };
 
+/*
+ * look up a certain register in ar5416_phy_init[] and return the init. value
+ * for the band and bandwidth given. Return 0 if register address not found.
+ */
+static u32 ar9170_get_default_phy_reg_val(u32 reg, bool is_2ghz, bool is_40mhz)
+{
+	unsigned int i;
+	for (i = 0; i < ARRAY_SIZE(ar5416_phy_init); i++) {
+		if (ar5416_phy_init[i].reg != reg)
+			continue;
+
+		if (is_2ghz) {
+			if (is_40mhz)
+				return ar5416_phy_init[i]._2ghz_40;
+			else
+				return ar5416_phy_init[i]._2ghz_20;
+		} else {
+			if (is_40mhz)
+				return ar5416_phy_init[i]._5ghz_40;
+			else
+				return ar5416_phy_init[i]._5ghz_20;
+		}
+	}
+	return 0;
+}
+
+/*
+ * initialize some phy regs from eeprom values in modal_header[]
+ * acc. to band and bandwith
+ */
+static int ar9170_init_phy_from_eeprom(struct ar9170 *ar,
+				bool is_2ghz, bool is_40mhz)
+{
+	static const u8 xpd2pd[16] = {
+		0x2, 0x2, 0x2, 0x1, 0x2, 0x2, 0x6, 0x2,
+		0x2, 0x3, 0x7, 0x2, 0xB, 0x2, 0x2, 0x2
+	};
+	u32 defval, newval;
+	/* pointer to the modal_header acc. to band */
+	struct ar9170_eeprom_modal *m = &ar->eeprom.modal_header[is_2ghz];
+
+	ar9170_regwrite_begin(ar);
+
+	/* ant common control (index 0) */
+	newval = le32_to_cpu(m->antCtrlCommon);
+	ar9170_regwrite(0x1c5964, newval);
+
+	/* ant control chain 0 (index 1) */
+	newval = le32_to_cpu(m->antCtrlChain[0]);
+	ar9170_regwrite(0x1c5960, newval);
+
+	/* ant control chain 2 (index 2) */
+	newval = le32_to_cpu(m->antCtrlChain[1]);
+	ar9170_regwrite(0x1c7960, newval);
+
+	/* SwSettle (index 3) */
+	if (!is_40mhz) {
+		defval = ar9170_get_default_phy_reg_val(0x1c5844,
+							is_2ghz, is_40mhz);
+		newval = (defval & ~0x3f80) |
+			((m->switchSettling & 0x7f) << 7);
+		ar9170_regwrite(0x1c5844, newval);
+	}
+
+	/* adcDesired, pdaDesired (index 4) */
+	defval = ar9170_get_default_phy_reg_val(0x1c5850, is_2ghz, is_40mhz);
+	newval = (defval & ~0xffff) | ((u8)m->pgaDesiredSize << 8) |
+		((u8)m->adcDesiredSize);
+	ar9170_regwrite(0x1c5850, newval);
+
+	/* TxEndToXpaOff, TxFrameToXpaOn (index 5) */
+	defval = ar9170_get_default_phy_reg_val(0x1c5834, is_2ghz, is_40mhz);
+	newval = (m->txEndToXpaOff << 24) | (m->txEndToXpaOff << 16) |
+		(m->txFrameToXpaOn << 8) | m->txFrameToXpaOn;
+	ar9170_regwrite(0x1c5834, newval);
+
+	/* TxEndToRxOn (index 6) */
+	defval = ar9170_get_default_phy_reg_val(0x1c5828, is_2ghz, is_40mhz);
+	newval = (defval & ~0xff0000) | (m->txEndToRxOn << 16);
+	ar9170_regwrite(0x1c5828, newval);
+
+	/* thresh62 (index 7) */
+	defval = ar9170_get_default_phy_reg_val(0x1c8864, is_2ghz, is_40mhz);
+	newval = (defval & ~0x7f000) | (m->thresh62 << 12);
+	ar9170_regwrite(0x1c8864, newval);
+
+	/* tx/rx attenuation chain 0 (index 8) */
+	defval = ar9170_get_default_phy_reg_val(0x1c5848, is_2ghz, is_40mhz);
+	newval = (defval & ~0x3f000) | ((m->txRxAttenCh[0] & 0x3f) << 12);
+	ar9170_regwrite(0x1c5848, newval);
+
+	/* tx/rx attenuation chain 2 (index 9) */
+	defval = ar9170_get_default_phy_reg_val(0x1c7848, is_2ghz, is_40mhz);
+	newval = (defval & ~0x3f000) | ((m->txRxAttenCh[1] & 0x3f) << 12);
+	ar9170_regwrite(0x1c7848, newval);
+
+	/* tx/rx margin chain 0 (index 10) */
+	defval = ar9170_get_default_phy_reg_val(0x1c620c, is_2ghz, is_40mhz);
+	newval = (defval & ~0xfc0000) | ((m->rxTxMarginCh[0] & 0x3f) << 18);
+	/* bsw margin chain 0 for 5GHz only */
+	if (!is_2ghz)
+		newval = (newval & ~0x3c00) | ((m->bswMargin[0] & 0xf) << 10);
+	ar9170_regwrite(0x1c620c, newval);
+
+	/* tx/rx margin chain 2 (index 11) */
+	defval = ar9170_get_default_phy_reg_val(0x1c820c, is_2ghz, is_40mhz);
+	newval = (defval & ~0xfc0000) | ((m->rxTxMarginCh[1] & 0x3f) << 18);
+	ar9170_regwrite(0x1c820c, newval);
+
+	/* iqCall, iqCallq chain 0 (index 12) */
+	defval = ar9170_get_default_phy_reg_val(0x1c5920, is_2ghz, is_40mhz);
+	newval = (defval & ~0x7ff) | (((u8)m->iqCalICh[0] & 0x3f) << 5) |
+		((u8)m->iqCalQCh[0] & 0x1f);
+	ar9170_regwrite(0x1c5920, newval);
+
+	/* iqCall, iqCallq chain 2 (index 13) */
+	defval = ar9170_get_default_phy_reg_val(0x1c7920, is_2ghz, is_40mhz);
+	newval = (defval & ~0x7ff) | (((u8)m->iqCalICh[1] & 0x3f) << 5) |
+		((u8)m->iqCalQCh[1] & 0x1f);
+	ar9170_regwrite(0x1c7920, newval);
+
+	/* xpd gain mask (index 14) */
+	defval = ar9170_get_default_phy_reg_val(0x1c6258, is_2ghz, is_40mhz);
+	newval = (defval & ~0xf0000) | (xpd2pd[m->xpdGain & 0xf] << 16);
+	ar9170_regwrite(0x1c6258, newval);
+	ar9170_regwrite_finish();
+
+	return ar9170_regwrite_result();
+}
+
 int ar9170_init_phy(struct ar9170 *ar, enum ieee80211_band band)
 {
 	int i, err;
@@ -426,7 +556,10 @@ int ar9170_init_phy(struct ar9170 *ar, enum ieee80211_band band)
 	if (err)
 		return err;
 
-	/* XXX: use EEPROM data here! */
+	/* TODO: (heavy clip) regulatory domain power level fine-tuning. */
+	err = ar9170_init_phy_from_eeprom(ar, is_2ghz, is_40mhz);
+	if (err)
+		return err;
 
 	err = ar9170_init_power_cal(ar);
 	if (err)
@@ -987,6 +1120,124 @@ static u8 ar9170_interpolate_u8(u8 x, u8 x1, u8 y1, u8 x2, u8 y2)
 #undef SHIFT
 }
 
+static u8 ar9170_interpolate_val(u8 x, u8 *x_array, u8 *y_array)
+{
+	int i;
+
+	for (i = 0; i < 3; i++)
+		if (x <= x_array[i + 1])
+			break;
+
+	return ar9170_interpolate_u8(x,
+				     x_array[i],
+				     y_array[i],
+				     x_array[i + 1],
+				     y_array[i + 1]);
+}
+
+static int ar9170_set_freq_cal_data(struct ar9170 *ar,
+				    struct ieee80211_channel *channel)
+{
+	u8 *cal_freq_pier;
+	u8 vpds[2][AR5416_PD_GAIN_ICEPTS];
+	u8 pwrs[2][AR5416_PD_GAIN_ICEPTS];
+	int chain, idx, i;
+	u8 f;
+
+	switch (channel->band) {
+	case IEEE80211_BAND_2GHZ:
+		f = channel->center_freq - 2300;
+		cal_freq_pier = ar->eeprom.cal_freq_pier_2G;
+		i = AR5416_NUM_2G_CAL_PIERS - 1;
+		break;
+
+	case IEEE80211_BAND_5GHZ:
+		f = (channel->center_freq - 4800) / 5;
+		cal_freq_pier = ar->eeprom.cal_freq_pier_5G;
+		i = AR5416_NUM_5G_CAL_PIERS - 1;
+		break;
+
+	default:
+		return -EINVAL;
+		break;
+	}
+
+	for (; i >= 0; i--) {
+		if (cal_freq_pier[i] != 0xff)
+			break;
+	}
+	if (i < 0)
+		return -EINVAL;
+
+	idx = ar9170_find_freq_idx(i, cal_freq_pier, f);
+
+	ar9170_regwrite_begin(ar);
+
+	for (chain = 0; chain < AR5416_MAX_CHAINS; chain++) {
+		for (i = 0; i < AR5416_PD_GAIN_ICEPTS; i++) {
+			struct ar9170_calibration_data_per_freq *cal_pier_data;
+			int j;
+
+			switch (channel->band) {
+			case IEEE80211_BAND_2GHZ:
+				cal_pier_data = &ar->eeprom.
+					cal_pier_data_2G[chain][idx];
+				break;
+
+			case IEEE80211_BAND_5GHZ:
+				cal_pier_data = &ar->eeprom.
+					cal_pier_data_5G[chain][idx];
+				break;
+
+			default:
+				return -EINVAL;
+			}
+
+			for (j = 0; j < 2; j++) {
+				vpds[j][i] = ar9170_interpolate_u8(f,
+					cal_freq_pier[idx],
+					cal_pier_data->vpd_pdg[j][i],
+					cal_freq_pier[idx + 1],
+					cal_pier_data[1].vpd_pdg[j][i]);
+
+				pwrs[j][i] = ar9170_interpolate_u8(f,
+					cal_freq_pier[idx],
+					cal_pier_data->pwr_pdg[j][i],
+					cal_freq_pier[idx + 1],
+					cal_pier_data[1].pwr_pdg[j][i]) / 2;
+			}
+		}
+
+		for (i = 0; i < 76; i++) {
+			u32 phy_data;
+			u8 tmp;
+
+			if (i < 25) {
+				tmp = ar9170_interpolate_val(i, &pwrs[0][0],
+							     &vpds[0][0]);
+			} else {
+				tmp = ar9170_interpolate_val(i - 12,
+							     &pwrs[1][0],
+							     &vpds[1][0]);
+			}
+
+			phy_data |= tmp << ((i & 3) << 3);
+			if ((i & 3) == 3) {
+				ar9170_regwrite(0x1c6280 + chain * 0x1000 +
+						(i & ~3), phy_data);
+				phy_data = 0;
+			}
+		}
+
+		for (i = 19; i < 32; i++)
+			ar9170_regwrite(0x1c6280 + chain * 0x1000 + (i << 2),
+					0x0);
+	}
+
+	ar9170_regwrite_finish();
+	return ar9170_regwrite_result();
+}
+
 static int ar9170_set_power_cal(struct ar9170 *ar, u32 freq, enum ar9170_bw bw)
 {
 	struct ar9170_calibration_target_power_legacy *ctpl;
@@ -1204,6 +1455,10 @@ int ar9170_set_channel(struct ar9170 *ar, struct ieee80211_channel *channel,
 		tmp |= 0x100;
 
 	err = ar9170_write_reg(ar, 0x1c5804, tmp);
+	if (err)
+		return err;
+
+	err = ar9170_set_freq_cal_data(ar, channel);
 	if (err)
 		return err;
 
