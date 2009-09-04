@@ -255,7 +255,6 @@ struct iwl_cfg {
 	const u16 max_ll_items;
 	const bool shadow_ram_support;
 	const bool ht_greenfield_support;
-	bool broken_powersave;
 	u16 led_compensation;
 };
 
