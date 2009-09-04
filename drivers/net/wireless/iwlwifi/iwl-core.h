@@ -256,6 +256,7 @@ struct iwl_cfg {
 	const bool shadow_ram_support;
 	const bool ht_greenfield_support;
 	u16 led_compensation;
+	const bool broken_powersave;
 };
 
 /***************************
