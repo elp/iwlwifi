@@ -214,6 +214,7 @@ struct iwl_mod_params {
  * @led_compensation: compensate on the led on/off time per HW according
  *	to the deviation to achieve the desired led frequency.
  *	The detail algorithm is described in iwl-led.c
+ * @use_rts_for_ht: use rts/cts protection for HT traffic
  *
  * We enable the driver to be backward compatible wrt API version. The
  * driver specifies which APIs it supports (with @ucode_api_max being the
@@ -257,6 +258,7 @@ struct iwl_cfg {
 	const bool ht_greenfield_support;
 	u16 led_compensation;
 	const bool broken_powersave;
+	bool use_rts_for_ht;
 };
 
 /***************************
