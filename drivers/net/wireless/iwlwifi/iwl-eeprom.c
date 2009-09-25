@@ -215,25 +215,10 @@ static const struct iwl_txpwr_section enhinfo[] = {
 
 int iwlcore_eeprom_verify_signature(struct iwl_priv *priv)
 {
-	u32 gp = iwl_read32(priv, CSR_EEPROM_GP) & CSR_EEPROM_GP_VALID_MSK;
-
-	IWL_DEBUG_INFO(priv, "EEPROM signature=0x%08x\n", gp);
-	if (gp == CSR_EEPROM_GP_BAD_SIGNATURE_BOTH_EEP_AND_OTP) {
-		IWL_ERR(priv, "EEPROM/OTP not found, EEPROM_GP=0x%08x\n", gp);
+	u32 gp = iwl_read32(priv, CSR_EEPROM_GP);
+	if ((gp & CSR_EEPROM_GP_VALID_MSK) == CSR_EEPROM_GP_BAD_SIGNATURE) {
+		IWL_ERR(priv, "EEPROM not found, EEPROM_GP=0x%08x\n", gp);
 		return -ENOENT;
-	} else if (priv->nvm_device_type == NVM_DEVICE_TYPE_OTP) {
-		if (gp != CSR_EEPROM_GP_BAD_SIG_EEP_GOOD_SIG_OTP) {
-			IWL_DEBUG_INFO(priv, "switch to EEPROM\n");
-			if (gp == CSR_EEPROM_GP_GOOD_SIG_EEP_LESS_THAN_4K ||
-			    gp == CSR_EEPROM_GP_GOOD_SIG_EEP_MORE_THAN_4K) {
-				priv->nvm_device_type = NVM_DEVICE_TYPE_EEPROM;
-				iwl_clear_bit(priv, CSR_OTP_GP_REG,
-					      CSR_OTP_GP_REG_DEVICE_SELECT);
-			} else {
-				IWL_ERR(priv, "EEPROM not found 0x%08x\n", gp);
-				return -ENOENT;
-			}
-		}
 	}
 	return 0;
 }
