@@ -606,7 +606,6 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
 			    int type, u32 pid, u32 seq, u32 change,
 			    unsigned int flags)
 {
-	struct netdev_queue *txq;
 	struct ifinfomsg *ifm;
 	struct nlmsghdr *nlh;
 	const struct net_device_stats *stats;
@@ -637,9 +636,8 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
 	if (dev->master)
 		NLA_PUT_U32(skb, IFLA_MASTER, dev->master->ifindex);
 
-	txq = netdev_get_tx_queue(dev, 0);
-	if (txq->qdisc_sleeping)
-		NLA_PUT_STRING(skb, IFLA_QDISC, txq->qdisc_sleeping->ops->id);
+	if (dev->qdisc)
+		NLA_PUT_STRING(skb, IFLA_QDISC, dev->qdisc->ops->id);
 
 	if (dev->ifalias)
 		NLA_PUT_STRING(skb, IFLA_IFALIAS, dev->ifalias);
@@ -974,12 +972,20 @@ struct net_device *rtnl_create_link(struct net *net, char *ifname,
 {
 	int err;
 	struct net_device *dev;
+	unsigned int num_queues = 1;
+	unsigned int real_num_queues = 1;
 
+	if (ops->get_tx_queues) {
+		err = ops->get_tx_queues(net, tb, &num_queues, &real_num_queues);
+		if (err)
+			goto err;
+	}
 	err = -ENOMEM;
-	dev = alloc_netdev(ops->priv_size, ifname, ops->setup);
+	dev = alloc_netdev_mq(ops->priv_size, ifname, ops->setup, num_queues);
 	if (!dev)
 		goto err;
 
+	dev->real_num_tx_queues = real_num_queues;
 	if (strchr(dev->name, '%')) {
 		err = dev_alloc_name(dev, dev->name);
 		if (err < 0)

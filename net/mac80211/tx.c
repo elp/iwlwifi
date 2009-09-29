@@ -1483,8 +1483,8 @@ static void ieee80211_xmit(struct ieee80211_sub_if_data *sdata,
 	dev_put(sdata->dev);
 }
 
-int ieee80211_monitor_start_xmit(struct sk_buff *skb,
-				 struct net_device *dev)
+netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
+					 struct net_device *dev)
 {
 	struct ieee80211_local *local = wdev_priv(dev->ieee80211_ptr);
 	struct ieee80211_channel *chan = local->hw.conf.channel;
@@ -1568,8 +1568,8 @@ fail:
  * encapsulated packet will then be passed to master interface, wlan#.11, for
  * transmission (through low-level driver).
  */
-int ieee80211_subif_start_xmit(struct sk_buff *skb,
-			       struct net_device *dev)
+netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
+				    struct net_device *dev)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = sdata->local;
@@ -1586,7 +1586,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 	u32 sta_flags = 0;
 
 	if (unlikely(skb->len < ETH_HLEN)) {
-		ret = 0;
+		ret = NETDEV_TX_OK;
 		goto fail;
 	}
 
@@ -1622,7 +1622,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 		if (!sdata->u.mesh.mshcfg.dot11MeshTTL) {
 			/* Do not send frames with mesh_ttl == 0 */
 			sdata->u.mesh.mshstats.dropped_frames_ttl++;
-			ret = 0;
+			ret = NETDEV_TX_OK;
 			goto fail;
 		}
 
@@ -1689,7 +1689,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 		hdrlen = 24;
 		break;
 	default:
-		ret = 0;
+		ret = NETDEV_TX_OK;
 		goto fail;
 	}
 
@@ -1731,7 +1731,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 
 		I802_DEBUG_INC(local->tx_handlers_drop_unauth_port);
 
-		ret = 0;
+		ret = NETDEV_TX_OK;
 		goto fail;
 	}
 
@@ -1825,7 +1825,7 @@ int ieee80211_subif_start_xmit(struct sk_buff *skb,
 	return NETDEV_TX_OK;
 
  fail:
-	if (!ret)
+	if (ret == NETDEV_TX_OK)
 		dev_kfree_skb(skb);
 
 	return ret;
