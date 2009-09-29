@@ -18,25 +18,10 @@
 
 #include "ath9k.h"
 
-static unsigned int ath9k_debug = DBG_DEFAULT;
+static unsigned int ath9k_debug = ATH_DBG_DEFAULT;
 module_param_named(debug, ath9k_debug, uint, 0);
 
 static struct dentry *ath9k_debugfs_root;
-
-void DPRINTF(struct ath_softc *sc, int dbg_mask, const char *fmt, ...)
-{
-	if (!sc)
-		return;
-
-	if (sc->debug.debug_mask & dbg_mask) {
-		va_list args;
-
-		va_start(args, fmt);
-		printk(KERN_DEBUG "ath9k: ");
-		vprintk(fmt, args);
-		va_end(args);
-	}
-}
 
 static int ath9k_debugfs_open(struct inode *inode, struct file *file)
 {
@@ -48,10 +33,11 @@ static ssize_t read_file_debug(struct file *file, char __user *user_buf,
 			     size_t count, loff_t *ppos)
 {
 	struct ath_softc *sc = file->private_data;
+	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
 	char buf[32];
 	unsigned int len;
 
-	len = snprintf(buf, sizeof(buf), "0x%08x\n", sc->debug.debug_mask);
+	len = snprintf(buf, sizeof(buf), "0x%08x\n", common->debug_mask);
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
@@ -59,6 +45,7 @@ static ssize_t write_file_debug(struct file *file, const char __user *user_buf,
 			     size_t count, loff_t *ppos)
 {
 	struct ath_softc *sc = file->private_data;
+	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
 	unsigned long mask;
 	char buf[32];
 	ssize_t len;
@@ -71,7 +58,7 @@ static ssize_t write_file_debug(struct file *file, const char __user *user_buf,
 	if (strict_strtoul(buf, 0, &mask))
 		return -EINVAL;
 
-	sc->debug.debug_mask = mask;
+	common->debug_mask = mask;
 	return count;
 }
 
@@ -568,9 +555,12 @@ static const struct file_operations fops_xmit = {
 	.owner = THIS_MODULE
 };
 
-int ath9k_init_debug(struct ath_softc *sc)
+int ath9k_init_debug(struct ath_hw *ah)
 {
-	sc->debug.debug_mask = ath9k_debug;
+	struct ath_softc *sc = ah->ah_sc;
+	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+
+	common->debug_mask = ath9k_debug;
 
 	if (!ath9k_debugfs_root)
 		return -ENOENT;
@@ -619,12 +609,14 @@ int ath9k_init_debug(struct ath_softc *sc)
 
 	return 0;
 err:
-	ath9k_exit_debug(sc);
+	ath9k_exit_debug(ah);
 	return -ENOMEM;
 }
 
-void ath9k_exit_debug(struct ath_softc *sc)
+void ath9k_exit_debug(struct ath_hw *ah)
 {
+	struct ath_softc *sc = ah->ah_sc;
+
 	debugfs_remove(sc->debug.debugfs_xmit);
 	debugfs_remove(sc->debug.debugfs_wiphy);
 	debugfs_remove(sc->debug.debugfs_rcstat);
