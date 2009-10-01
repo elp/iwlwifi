@@ -33,13 +33,18 @@
 #include "../debug.h"
 
 #define ATHEROS_VENDOR_ID	0x168c
+
 #define AR5416_DEVID_PCI	0x0023
 #define AR5416_DEVID_PCIE	0x0024
 #define AR9160_DEVID_PCI	0x0027
 #define AR9280_DEVID_PCI	0x0029
 #define AR9280_DEVID_PCIE	0x002a
 #define AR9285_DEVID_PCIE	0x002b
+
 #define AR5416_AR9100_DEVID	0x000b
+
+#define AR9271_USB             0x9271
+
 #define	AR_SUBVENDOR_ID_NOG	0x0e11
 #define AR_SUBVENDOR_ID_NEW_A	0x7065
 #define AR5416_MAGIC		0x19641014
@@ -102,7 +107,7 @@
 #define AR_GPIO_BIT(_gpio)          (1 << (_gpio))
 
 #define BASE_ACTIVATE_DELAY         100
-#define RTC_PLL_SETTLE_DELAY        1000
+#define RTC_PLL_SETTLE_DELAY        100
 #define COEF_SCALE_S                24
 #define HT40_CHANNEL_CENTER_SHIFT   10
 
@@ -445,7 +450,6 @@ struct ath_gen_timer_table {
 
 struct ath_hw {
 	struct ieee80211_hw *hw;
-	struct ath_softc *ah_sc;
 	struct ath_common common;
 	struct ath9k_hw_version hw_version;
 	struct ath9k_ops_config config;
@@ -592,6 +596,8 @@ struct ath_hw {
 	struct ar5416IniArray iniModesAdditional;
 	struct ar5416IniArray iniModesRxGain;
 	struct ar5416IniArray iniModesTxGain;
+	struct ar5416IniArray iniCckfirNormal;
+	struct ar5416IniArray iniCckfirJapan2484;
 
 	u32 intr_gen_timer_trigger;
 	u32 intr_gen_timer_thresh;

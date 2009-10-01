@@ -33,8 +33,7 @@ static struct pci_device_id ath_pci_id_table[] __devinitdata = {
 /* return bus cachesize in 4B word units */
 static void ath_pci_read_cachesize(struct ath_common *common, int *csz)
 {
-	struct ath_hw *ah = (struct ath_hw *) common->ah;
-	struct ath_softc *sc = ah->ah_sc;
+	struct ath_softc *sc = (struct ath_softc *) common->priv;
 	u8 u8tmp;
 
 	pci_read_config_byte(to_pci_dev(sc->dev), PCI_CACHE_LINE_SIZE, &u8tmp);
@@ -52,8 +51,7 @@ static void ath_pci_read_cachesize(struct ath_common *common, int *csz)
 
 static void ath_pci_cleanup(struct ath_common *common)
 {
-	struct ath_hw *ah = (struct ath_hw *) common->ah;
-	struct ath_softc *sc = ah->ah_sc;
+	struct ath_softc *sc = (struct ath_softc *) common->priv;
 	struct pci_dev *pdev = to_pci_dev(sc->dev);
 
 	pci_iounmap(pdev, sc->mem);
@@ -65,7 +63,7 @@ static bool ath_pci_eeprom_read(struct ath_common *common, u32 off, u16 *data)
 {
 	struct ath_hw *ah = (struct ath_hw *) common->ah;
 
-	(void)REG_READ(ah, AR5416_EEPROM_OFFSET + (off << AR5416_EEPROM_S));
+	common->ops->read(ah, AR5416_EEPROM_OFFSET + (off << AR5416_EEPROM_S));
 
 	if (!ath9k_hw_wait(ah,
 			   AR_EEPROM_STATUS_DATA,
@@ -75,7 +73,7 @@ static bool ath_pci_eeprom_read(struct ath_common *common, u32 off, u16 *data)
 		return false;
 	}
 
-	*data = MS(REG_READ(ah, AR_EEPROM_STATUS_DATA),
+	*data = MS(common->ops->read(ah, AR_EEPROM_STATUS_DATA),
 		   AR_EEPROM_STATUS_DATA_VAL);
 
 	return true;
@@ -86,8 +84,7 @@ static bool ath_pci_eeprom_read(struct ath_common *common, u32 off, u16 *data)
  */
 static void ath_pci_bt_coex_prep(struct ath_common *common)
 {
-	struct ath_hw *ah = (struct ath_hw *) common->ah;
-	struct ath_softc *sc = ah->ah_sc;
+	struct ath_softc *sc = (struct ath_softc *) common->priv;
 	struct pci_dev *pdev = to_pci_dev(sc->dev);
 	u8 aspm;
 
