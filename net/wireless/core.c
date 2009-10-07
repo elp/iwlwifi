@@ -21,6 +21,7 @@
 #include "sysfs.h"
 #include "debugfs.h"
 #include "wext-compat.h"
+#include "ethtool.h"
 
 /* name for sysfs, %d is appended */
 #define PHY_NAME "phy"
@@ -669,7 +670,7 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 		wdev->netdev = dev;
 		wdev->sme_state = CFG80211_SME_IDLE;
 		mutex_unlock(&rdev->devlist_mtx);
-#ifdef CONFIG_WIRELESS_EXT
+#ifdef CONFIG_CFG80211_WEXT
 		wdev->wext.default_key = -1;
 		wdev->wext.default_mgmt_key = -1;
 		wdev->wext.connect.auth_type = NL80211_AUTHTYPE_AUTOMATIC;
@@ -683,6 +684,8 @@ static int cfg80211_netdev_notifier_call(struct notifier_block * nb,
 				wdev->wext.ps = false;
 			}
 #endif
+		if (!dev->ethtool_ops)
+			dev->ethtool_ops = &cfg80211_ethtool_ops;
 		break;
 	case NETDEV_GOING_DOWN:
 		switch (wdev->iftype) {
