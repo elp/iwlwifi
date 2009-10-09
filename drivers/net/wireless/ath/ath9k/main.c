@@ -29,6 +29,10 @@ static int modparam_nohwcrypt;
 module_param_named(nohwcrypt, modparam_nohwcrypt, int, 0444);
 MODULE_PARM_DESC(nohwcrypt, "Disable hardware encryption");
 
+static unsigned int ath9k_debug = ATH_DBG_DEFAULT;
+module_param_named(debug, ath9k_debug, uint, 0);
+MODULE_PARM_DESC(ath9k_debug, "Debugging mask");
+
 /* We use the hw_value as an index into our private channel structure */
 
 #define CHAN2G(_freq, _idx)  { \
@@ -1309,19 +1313,18 @@ static void ath_start_rfkill_poll(struct ath_softc *sc)
 		wiphy_rfkill_start_polling(sc->hw->wiphy);
 }
 
-void ath_cleanup(struct ath_softc *sc)
+static void ath9k_uninit_hw(struct ath_softc *sc)
 {
 	struct ath_hw *ah = sc->sc_ah;
-	struct ath_common *common = ath9k_hw_common(ah);
 
-	ath_detach(sc);
-	free_irq(sc->irq, sc);
-	ath_bus_cleanup(common);
-	kfree(sc->sec_wiphy);
-	ieee80211_free_hw(sc->hw);
+	BUG_ON(!ah);
+
+	ath9k_exit_debug(ah);
+	ath9k_hw_detach(ah);
+	sc->sc_ah = NULL;
 }
 
-void ath_detach(struct ath_softc *sc)
+static void ath_clean_core(struct ath_softc *sc)
 {
 	struct ieee80211_hw *hw = sc->hw;
 	struct ath_hw *ah = sc->sc_ah;
@@ -1360,10 +1363,26 @@ void ath_detach(struct ath_softc *sc)
 	if ((sc->btcoex.no_stomp_timer) &&
 	    ah->btcoex_hw.scheme == ATH_BTCOEX_CFG_3WIRE)
 		ath_gen_timer_free(ah, sc->btcoex.no_stomp_timer);
+}
 
-	ath9k_hw_detach(ah);
-	ath9k_exit_debug(ah);
-	sc->sc_ah = NULL;
+void ath_detach(struct ath_softc *sc)
+{
+	ath_clean_core(sc);
+	ath9k_uninit_hw(sc);
+}
+
+void ath_cleanup(struct ath_softc *sc)
+{
+	struct ath_hw *ah = sc->sc_ah;
+	struct ath_common *common = ath9k_hw_common(ah);
+
+	ath_clean_core(sc);
+	free_irq(sc->irq, sc);
+	ath_bus_cleanup(common);
+	kfree(sc->sec_wiphy);
+	ieee80211_free_hw(sc->hw);
+
+	ath9k_uninit_hw(sc);
 }
 
 static int ath9k_reg_notifier(struct wiphy *wiphy,
@@ -1622,10 +1641,8 @@ static int ath_init_softc(u16 devid, struct ath_softc *sc, u16 subsysid,
 		     (unsigned long)sc);
 
 	ah = kzalloc(sizeof(struct ath_hw), GFP_KERNEL);
-	if (!ah) {
-		r = -ENOMEM;
-		goto bad_no_ah;
-	}
+	if (!ah)
+		return -ENOMEM;
 
 	ah->hw_version.devid = devid;
 	ah->hw_version.subsysid = subsysid;
@@ -1637,6 +1654,7 @@ static int ath_init_softc(u16 devid, struct ath_softc *sc, u16 subsysid,
 	common->ah = ah;
 	common->hw = sc->hw;
 	common->priv = sc;
+	common->debug_mask = ath9k_debug;
 
 	/*
 	 * Cache line size is used to size and align various
@@ -1646,15 +1664,18 @@ static int ath_init_softc(u16 devid, struct ath_softc *sc, u16 subsysid,
 	/* XXX assert csz is non-zero */
 	common->cachelsz = csz << 2;	/* convert to bytes */
 
-	if (ath9k_init_debug(ah) < 0)
-		dev_err(sc->dev, "Unable to create debugfs files\n");
-
 	r = ath9k_hw_init(ah);
 	if (r) {
 		ath_print(common, ATH_DBG_FATAL,
 			  "Unable to initialize hardware; "
 			  "initialization status: %d\n", r);
-		goto bad;
+		goto bad_free_hw;
+	}
+
+	if (ath9k_init_debug(ah) < 0) {
+		ath_print(common, ATH_DBG_FATAL,
+			  "Unable to create debugfs files\n");
+		goto bad_free_hw;
 	}
 
 	/* Get the hardware key cache size. */
@@ -1688,7 +1709,7 @@ static int ath_init_softc(u16 devid, struct ath_softc *sc, u16 subsysid,
 	 * priority.  Note that the hal handles reseting
 	 * these queues at the needed time.
 	 */
-	sc->beacon.beaconq = ath_beaconq_setup(ah);
+	sc->beacon.beaconq = ath9k_hw_beaconq_setup(ah);
 	if (sc->beacon.beaconq == -1) {
 		ath_print(common, ATH_DBG_FATAL,
 			  "Unable to setup a beacon xmit queue\n");
@@ -1843,12 +1864,9 @@ bad2:
 	for (i = 0; i < ATH9K_NUM_TX_QUEUES; i++)
 		if (ATH_TXQ_SETUP(sc, i))
 			ath_tx_cleanupq(sc, &sc->tx.txq[i]);
-bad:
-	ath9k_hw_detach(ah);
-bad_no_ah:
-	ath9k_exit_debug(sc->sc_ah);
-	sc->sc_ah = NULL;
 
+bad_free_hw:
+	ath9k_uninit_hw(sc);
 	return r;
 }
 
@@ -1961,9 +1979,7 @@ error_attach:
 		if (ATH_TXQ_SETUP(sc, i))
 			ath_tx_cleanupq(sc, &sc->tx.txq[i]);
 
-	ath9k_hw_detach(ah);
-	ath9k_exit_debug(ah);
-	sc->sc_ah = NULL;
+	ath9k_uninit_hw(sc);
 
 	return error;
 }

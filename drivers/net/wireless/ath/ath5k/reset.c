@@ -1178,7 +1178,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum nl80211_iftype op_mode,
 			   get_unaligned_le32(common->macaddr),
 			   AR5K_STA_ID0);
 	ath5k_hw_reg_write(ah,
-			   staid1_flags | get_unaligned_le16(common->macaddr),
+			   staid1_flags | get_unaligned_le16(common->macaddr + 4),
 			   AR5K_STA_ID1);
 
 
@@ -1187,8 +1187,7 @@ int ath5k_hw_reset(struct ath5k_hw *ah, enum nl80211_iftype op_mode,
 	 */
 
 	/* Restore bssid and bssid mask */
-	/* XXX: add ah->aid once mac80211 gives this to us */
-	ath5k_hw_set_associd(ah, common->curbssid, 0);
+	ath5k_hw_set_associd(ah);
 
 	/* Set PCU config */
 	ath5k_hw_set_opmode(ah);
