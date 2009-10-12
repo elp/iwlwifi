@@ -97,20 +97,34 @@ enum {
 	} while (0)
 
 #define WL1271_DEFAULT_RX_CONFIG (CFG_UNI_FILTER_EN |	\
-				  CFG_BSSID_FILTER_EN)
+				  CFG_BSSID_FILTER_EN | \
+				  CFG_MC_FILTER_EN)
 
 #define WL1271_DEFAULT_RX_FILTER (CFG_RX_RCTS_ACK | CFG_RX_PRSP_EN |  \
 				  CFG_RX_MGMT_EN | CFG_RX_DATA_EN |   \
 				  CFG_RX_CTL_EN | CFG_RX_BCN_EN |     \
 				  CFG_RX_AUTH_EN | CFG_RX_ASSOC_EN)
 
+#define WL1271_DEFAULT_BASIC_RATE_SET (ACX_RATE_MASK_ALL)
+
 #define WL1271_FW_NAME "wl1271-fw.bin"
 #define WL1271_NVS_NAME "wl1271-nvs.bin"
 
-#define WL1271_BUSY_WORD_LEN 8
+/*
+ * FIXME: for the wl1271, a busy word count of 1 here will result in a more
+ * optimal SPI interface. There is some SPI bug however, causing RXS time outs
+ * with this mode occasionally on boot, so lets have two for now.
+ */
+#define WL1271_BUSY_WORD_CNT 2
+#define WL1271_BUSY_WORD_LEN (WL1271_BUSY_WORD_CNT * sizeof(u32))
 
 #define WL1271_ELP_HW_STATE_ASLEEP 0
 #define WL1271_ELP_HW_STATE_IRQ    1
+
+#define WL1271_DEFAULT_BEACON_INT  100
+#define WL1271_DEFAULT_DTIM_PERIOD 1
+
+#define ACX_TX_DESCRIPTORS         32
 
 enum wl1271_state {
 	WL1271_STATE_OFF,
@@ -332,10 +346,17 @@ struct wl1271 {
 	bool tx_queue_stopped;
 
 	struct work_struct tx_work;
+
 	struct work_struct filter_work;
+	struct wl1271_filter_params *filter_params;
 
 	/* Pending TX frames */
-	struct sk_buff *tx_frames[16];
+	struct sk_buff *tx_frames[ACX_TX_DESCRIPTORS];
+
+	/* Security sequence number counters */
+	u8 tx_security_last_seq;
+	u16 tx_security_seq_16;
+	u32 tx_security_seq_32;
 
 	/* FW Rx counter */
 	u32 rx_counter;
@@ -358,6 +379,16 @@ struct wl1271 {
 	/* Our association ID */
 	u16 aid;
 
+	/* Beacon parameters */
+	u16 beacon_int;
+	u8 dtim_period;
+
+	/* currently configured rate set */
+	u32 basic_rate_set;
+
+	/* The current band */
+	enum ieee80211_band band;
+
 	/* Default key (for WEP) */
 	u32 default_key;
 
@@ -368,6 +399,7 @@ struct wl1271 {
 	bool elp;
 
 	struct completion *elp_compl;
+	struct delayed_work elp_work;
 
 	/* we can be in psm, but not in elp, we have to differentiate */
 	bool psm;
@@ -383,11 +415,13 @@ struct wl1271 {
 
 	u32 buffer_32;
 	u32 buffer_cmd;
-	u8 buffer_busyword[WL1271_BUSY_WORD_LEN];
+	u32 buffer_busyword[WL1271_BUSY_WORD_CNT];
 	struct wl1271_rx_descriptor *rx_descriptor;
 
 	struct wl1271_fw_status *fw_status;
 	struct wl1271_tx_hw_res_if *tx_res_if;
+
+	struct ieee80211_vif *vif;
 };
 
 int wl1271_plt_start(struct wl1271 *wl);

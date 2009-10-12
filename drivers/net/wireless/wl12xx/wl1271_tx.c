@@ -33,8 +33,7 @@
 static int wl1271_tx_id(struct wl1271 *wl, struct sk_buff *skb)
 {
 	int i;
-
-	for (i = 0; i < FW_TX_CMPLT_BLOCK_SIZE; i++)
+	for (i = 0; i < ACX_TX_DESCRIPTORS; i++)
 		if (wl->tx_frames[i] == NULL) {
 			wl->tx_frames[i] = skb;
 			return i;
@@ -58,7 +57,7 @@ static int wl1271_tx_allocate(struct wl1271 *wl, struct sk_buff *skb, u32 extra)
 	/* approximate the number of blocks required for this packet
 	   in the firmware */
 	/* FIXME: try to figure out what is done here and make it cleaner */
-	total_blocks = (skb->len) >> TX_HW_BLOCK_SHIFT_DIV;
+	total_blocks = (total_len) >> TX_HW_BLOCK_SHIFT_DIV;
 	excluded = (total_blocks << 2) + (skb->len & 0xff) + 34;
 	total_blocks += (excluded > 252) ? 2 : 1;
 	total_blocks += TX_HW_BLOCK_SPARE;
@@ -91,6 +90,14 @@ static int wl1271_tx_fill_hdr(struct wl1271 *wl, struct sk_buff *skb,
 	int pad;
 
 	desc = (struct wl1271_tx_hw_descr *) skb->data;
+
+	/* relocate space for security header */
+	if (extra) {
+		void *framestart = skb->data + sizeof(*desc);
+		u16 fc = *(u16 *)(framestart + extra);
+		int hdrlen = ieee80211_hdrlen(fc);
+		memmove(framestart, framestart + extra, hdrlen);
+	}
 
 	/* configure packet life time */
 	desc->start_time = jiffies_to_usecs(jiffies) - wl->time_offset;
@@ -254,14 +261,13 @@ out:
 static void wl1271_tx_complete_packet(struct wl1271 *wl,
 				      struct wl1271_tx_hw_res_descr *result)
 {
-
 	struct ieee80211_tx_info *info;
 	struct sk_buff *skb;
-	u32 header_len;
+	u16 seq;
 	int id = result->id;
 
 	/* check for id legality */
-	if (id >= TX_HW_RESULT_QUEUE_LEN || wl->tx_frames[id] == NULL) {
+	if (id >= ACX_TX_DESCRIPTORS || wl->tx_frames[id] == NULL) {
 		wl1271_warning("TX result illegal id: %d", id);
 		return;
 	}
@@ -284,21 +290,31 @@ static void wl1271_tx_complete_packet(struct wl1271 *wl,
 	/* info->status.retry_count = result->ack_failures; */
 	wl->stats.retry_count += result->ack_failures;
 
-	/* get header len */
+	/* update security sequence number */
+	seq = wl->tx_security_seq_16 +
+		(result->lsb_security_sequence_number -
+		 wl->tx_security_last_seq);
+	wl->tx_security_last_seq = result->lsb_security_sequence_number;
+
+	if (seq < wl->tx_security_seq_16)
+		wl->tx_security_seq_32++;
+	wl->tx_security_seq_16 = seq;
+
+	/* remove private header from packet */
+	skb_pull(skb, sizeof(struct wl1271_tx_hw_descr));
+
+	/* remove TKIP header space if present */
 	if (info->control.hw_key &&
-	    info->control.hw_key->alg == ALG_TKIP)
-		header_len = WL1271_TKIP_IV_SPACE +
-			sizeof(struct wl1271_tx_hw_descr);
-	else
-		header_len = sizeof(struct wl1271_tx_hw_descr);
+	    info->control.hw_key->alg == ALG_TKIP) {
+		int hdrlen = ieee80211_get_hdrlen_from_skb(skb);
+		memmove(skb->data + WL1271_TKIP_IV_SPACE, skb->data, hdrlen);
+		skb_pull(skb, WL1271_TKIP_IV_SPACE);
+	}
 
 	wl1271_debug(DEBUG_TX, "tx status id %u skb 0x%p failures %u rate 0x%x"
 		     " status 0x%x",
 		     result->id, skb, result->ack_failures,
 		     result->rate_class_index, result->status);
-
-	/* remove private header from packet */
-	skb_pull(skb, header_len);
 
 	/* return the packet to the stack */
 	ieee80211_tx_status(wl->hw, skb);
@@ -364,7 +380,7 @@ void wl1271_tx_flush(struct wl1271 *wl)
 		ieee80211_tx_status(wl->hw, skb);
 	}
 
-	for (i = 0; i < FW_TX_CMPLT_BLOCK_SIZE; i++)
+	for (i = 0; i < ACX_TX_DESCRIPTORS; i++)
 		if (wl->tx_frames[i] != NULL) {
 			skb = wl->tx_frames[i];
 			info = IEEE80211_SKB_CB(skb);

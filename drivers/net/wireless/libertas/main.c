@@ -1089,6 +1089,8 @@ static void auto_deepsleep_timer_fn(unsigned long data)
 			ret = lbs_prepare_and_send_command(priv,
 					CMD_802_11_DEEP_SLEEP, 0,
 					0, 0, NULL);
+			if (ret)
+				lbs_pr_err("Enter Deep Sleep command failed\n");
 		}
 	}
 	mod_timer(&priv->auto_deepsleep_timer , jiffies +
@@ -1276,7 +1278,6 @@ struct lbs_private *lbs_add_card(void *card, struct device *dmdev)
 		goto err_adapter;
 	}
 
-	dev->netdev_ops = &lbs_netdev_ops;
 	dev->ieee80211_ptr = wdev;
 	dev->ml_priv = priv;
 	SET_NETDEV_DEV(dev, dmdev);
