@@ -61,8 +61,9 @@
 					    WL1271_ACX_INTR_HW_AVAILABLE  | \
 					    WL1271_ACX_INTR_DATA)
 
-#define WL1271_INTR_MASK                   (WL1271_ACX_INTR_EVENT_A |	\
-					    WL1271_ACX_INTR_EVENT_B | \
+#define WL1271_INTR_MASK                   (WL1271_ACX_INTR_EVENT_A      | \
+					    WL1271_ACX_INTR_EVENT_B      | \
+					    WL1271_ACX_INTR_HW_AVAILABLE | \
 					    WL1271_ACX_INTR_DATA)
 
 /* Target's information element */
@@ -313,34 +314,12 @@ struct acx_dot11_grp_addr_tbl {
 	u8 mac_table[ADDRESS_GROUP_MAX_LEN];
 } __attribute__ ((packed));
 
-#define  RX_TIMEOUT_PS_POLL_MIN    0
-#define  RX_TIMEOUT_PS_POLL_MAX    (200000)
-#define  RX_TIMEOUT_PS_POLL_DEF    (15)
-#define  RX_TIMEOUT_UPSD_MIN       0
-#define  RX_TIMEOUT_UPSD_MAX       (200000)
-#define  RX_TIMEOUT_UPSD_DEF       (15)
-
 struct acx_rx_timeout {
 	struct acx_header header;
 
-	/*
-	 * The longest time the STA will wait to receive
-	 * traffic from the AP after a PS-poll has been
-	 * transmitted.
-	 */
 	u16 ps_poll_timeout;
-
-	/*
-	 * The longest time the STA will wait to receive
-	 * traffic from the AP after a frame has been sent
-	 * from an UPSD enabled queue.
-	 */
 	u16 upsd_timeout;
 } __attribute__ ((packed));
-
-#define RTS_THRESHOLD_MIN              0
-#define RTS_THRESHOLD_MAX              4096
-#define RTS_THRESHOLD_DEF              2347
 
 struct acx_rts_threshold {
 	struct acx_header header;
@@ -398,11 +377,6 @@ struct acx_beacon_filter_option {
 			   (BEACON_FILTER_TABLE_MAX_VENDOR_SPECIFIC_IE_NUM * \
 			    BEACON_FILTER_TABLE_EXTRA_VENDOR_SPECIFIC_IE_SIZE))
 
-#define BEACON_RULE_PASS_ON_CHANGE                     BIT(0)
-#define BEACON_RULE_PASS_ON_APPEARANCE                 BIT(1)
-
-#define BEACON_FILTER_IE_ID_CHANNEL_SWITCH_ANN         (37)
-
 struct acx_beacon_filter_ie_table {
 	struct acx_header header;
 
@@ -410,9 +384,6 @@ struct acx_beacon_filter_ie_table {
 	u8 table[BEACON_FILTER_TABLE_MAX_SIZE];
 	u8 pad[3];
 } __attribute__ ((packed));
-
-#define SYNCH_FAIL_DEFAULT_THRESHOLD    5     /* number of beacons */
-#define NO_BEACON_DEFAULT_TIMEOUT       (100) /* TU */
 
 struct acx_conn_monit_params {
        struct acx_header header;
@@ -443,6 +414,25 @@ struct acx_bt_wlan_coex {
 	u8 enable;
 	u8 pad[3];
 } __attribute__ ((packed));
+
+struct acx_smart_reflex_state {
+	struct acx_header header;
+
+	u8 enable;
+	u8 padding[3];
+};
+
+struct smart_reflex_err_table {
+	u8 len;
+	s8 upper_limit;
+	s8 values[14];
+};
+
+struct acx_smart_reflex_config_params {
+	struct acx_header header;
+
+	struct smart_reflex_err_table error_table[3];
+};
 
 #define PTA_ANTENNA_TYPE_DEF		  (0)
 #define PTA_BT_HP_MAXTIME_DEF		  (2000)
@@ -476,130 +466,19 @@ struct acx_bt_wlan_coex {
 struct acx_bt_wlan_coex_param {
 	struct acx_header header;
 
-	/*
-	 * The minimum rate of a received WLAN packet in the STA,
-	 * during protective mode, of which a new BT-HP request
-	 * during this Rx will always be respected and gain the antenna.
-	 */
-	u32 min_rate;
-
-	/* Max time the BT HP will be respected. */
-	u16 bt_hp_max_time;
-
-	/* Max time the WLAN HP will be respected. */
-	u16 wlan_hp_max_time;
-
-	/*
-	 * The time between the last BT activity
-	 * and the moment when the sense mode returns
-	 * to SENSE_INACTIVE.
-	 */
-	u16 sense_disable_timer;
-
-	/* Time before the next BT HP instance */
-	u16 rx_time_bt_hp;
-	u16 tx_time_bt_hp;
-
-	/* range: 10-20000    default: 1500 */
-	u16 rx_time_bt_hp_fast;
-	u16 tx_time_bt_hp_fast;
-
-	/* range: 2000-65535  default: 8700 */
-	u16 wlan_cycle_fast;
-
-	/* range: 0 - 15000 (Msec) default: 1000 */
-	u16 bt_anti_starvation_period;
-
-	/* range 400-10000(Usec) default: 3000 */
-	u16 next_bt_lp_packet;
-
-	/* Deafult: worst case for BT DH5 traffic */
-	u16 wake_up_beacon;
-
-	/* range: 0-50000(Usec) default: 1050 */
-	u16 hp_dm_max_guard_time;
-
-	/*
-	 * This is to prevent both BT & WLAN antenna
-	 * starvation.
-	 * Range: 100-50000(Usec) default:2550
-	 */
-	u16 next_wlan_packet;
-
-	/* 0 -> shared antenna */
-	u8 antenna_type;
-
-	/*
-	 * 0 -> TI legacy
-	 * 1 -> Palau
-	 */
-	u8 signal_type;
-
-	/*
-	 * BT AFH status
-	 * 0 -> no AFH
-	 * 1 -> from dedicated GPIO
-	 * 2 -> AFH on (from host)
-	 */
-	u8 afh_leverage_on;
-
-	/*
-	 * The number of cycles during which no
-	 * TX will be sent after 1 cycle of RX
-	 * transaction in protective mode
-	 */
-	u8 quiet_cycle_num;
-
-	/*
-	 * The maximum number of CTSs that will
-	 * be sent for receiving RX packet in
-	 * protective mode
-	 */
-	u8 max_cts;
-
-	/*
-	 * The number of WLAN packets
-	 * transferred in common mode before
-	 * switching to BT.
-	 */
-	u8 wlan_packets_num;
-
-	/*
-	 * The number of BT packets
-	 * transferred in common mode before
-	 * switching to WLAN.
-	 */
-	u8 bt_packets_num;
-
-	/* range: 1-255  default: 5 */
-	u8 missed_rx_avalanche;
-
-	/* range: 0-1    default: 1 */
-	u8 wlan_elp_hp;
-
-	/* range: 0 - 15  default: 4 */
-	u8 bt_anti_starvation_cycles;
-
-	u8 ack_mode_dual_ant;
-
-	/*
-	 * Allow PA_SD assertion/de-assertion
-	 * during enabled BT activity.
-	 */
-	u8 pa_sd_enable;
-
-	/*
-	 * Enable/Disable PTA in auto mode:
-	 * Support Both Active & P.S modes
-	 */
-	u8 pta_auto_mode_enable;
-
-	/* range: 0 - 20  default: 1 */
-	u8 bt_hp_respected_num;
+	u32 per_threshold;
+	u32 max_scan_compensation_time;
+	u16 nfs_sample_interval;
+	u8 load_ratio;
+	u8 auto_ps_mode;
+	u8 probe_req_compensation;
+	u8 scan_window_compensation;
+	u8 antenna_config;
+	u8 beacon_miss_threshold;
+	u32 rate_adaptation_threshold;
+	s8 rate_adaptation_snr;
+	u8 padding[3];
 } __attribute__ ((packed));
-
-#define CCA_THRSH_ENABLE_ENERGY_D       0x140A
-#define CCA_THRSH_DISABLE_ENERGY_D      0xFFEF
 
 struct acx_energy_detection {
 	struct acx_header header;
@@ -609,11 +488,6 @@ struct acx_energy_detection {
 	u8 tx_energy_detection;
 	u8 pad;
 } __attribute__ ((packed));
-
-#define BCN_RX_TIMEOUT_DEF_VALUE        10000
-#define BROADCAST_RX_TIMEOUT_DEF_VALUE  20000
-#define RX_BROADCAST_IN_PS_DEF_VALUE    1
-#define CONSECUTIVE_PS_POLL_FAILURE_DEF 4
 
 struct acx_beacon_broadcast {
 	struct acx_header header;
@@ -670,6 +544,10 @@ struct acx_event_mask {
 #define SCAN_TRIGGERED		BIT(2)
 #define SCAN_PRIORITY_HIGH	BIT(3)
 
+/* When set, disable HW encryption */
+#define DF_ENCRYPTION_DISABLE      0x01
+#define DF_SNIFF_MODE_ENABLE       0x80
+
 struct acx_feature_config {
 	struct acx_header header;
 
@@ -683,14 +561,6 @@ struct acx_current_tx_power {
 	u8  current_tx_power;
 	u8  padding[3];
 } __attribute__ ((packed));
-
-enum acx_wake_up_event {
-	WAKE_UP_EVENT_BEACON_BITMAP	= 0x01, /* Wake on every Beacon*/
-	WAKE_UP_EVENT_DTIM_BITMAP	= 0x02,	/* Wake on every DTIM*/
-	WAKE_UP_EVENT_N_DTIM_BITMAP	= 0x04, /* Wake on every Nth DTIM */
-	WAKE_UP_EVENT_N_BEACONS_BITMAP	= 0x08, /* Wake on every Nth Beacon */
-	WAKE_UP_EVENT_BITS_MASK		= 0x0F
-};
 
 struct acx_wake_up_condition {
 	struct acx_header header;
@@ -959,11 +829,6 @@ struct acx_statistics {
 	struct acx_rxpipe_statistics rxpipe;
 } __attribute__ ((packed));
 
-#define ACX_MAX_RATE_CLASSES       8
-#define ACX_RATE_MASK_UNSPECIFIED  0
-#define ACX_RATE_MASK_ALL          0x1eff
-#define ACX_RATE_RETRY_LIMIT       10
-
 struct acx_rate_class {
 	u32 enabled_rates;
 	u8 short_retry_limit;
@@ -976,10 +841,8 @@ struct acx_rate_policy {
 	struct acx_header header;
 
 	u32 rate_class_cnt;
-	struct acx_rate_class rate_class[ACX_MAX_RATE_CLASSES];
+	struct acx_rate_class rate_class[CONF_TX_MAX_RATE_CLASSES];
 } __attribute__ ((packed));
-
-#define WL1271_ACX_AC_COUNT 4
 
 struct acx_ac_cfg {
 	struct acx_header header;
@@ -990,31 +853,6 @@ struct acx_ac_cfg {
 	u8 reserved;
 	u16 tx_op_limit;
 } __attribute__ ((packed));
-
-enum wl1271_acx_ac {
-	WL1271_ACX_AC_BE = 0,
-	WL1271_ACX_AC_BK = 1,
-	WL1271_ACX_AC_VI = 2,
-	WL1271_ACX_AC_VO = 3,
-	WL1271_ACX_AC_CTS2SELF = 4,
-	WL1271_ACX_AC_ANY_TID = 0x1F,
-	WL1271_ACX_AC_INVALID = 0xFF,
-};
-
-enum wl1271_acx_ps_scheme {
-	WL1271_ACX_PS_SCHEME_LEGACY = 0,
-	WL1271_ACX_PS_SCHEME_UPSD_TRIGGER = 1,
-	WL1271_ACX_PS_SCHEME_LEGACY_PSPOLL = 2,
-	WL1271_ACX_PS_SCHEME_SAPSD = 3,
-};
-
-enum wl1271_acx_ack_policy {
-	WL1271_ACX_ACK_POLICY_LEGACY = 0,
-	WL1271_ACX_ACK_POLICY_NO_ACK = 1,
-	WL1271_ACX_ACK_POLICY_BLOCK = 2,
-};
-
-#define WL1271_ACX_TID_COUNT 7
 
 struct acx_tid_config {
 	struct acx_header header;
@@ -1032,9 +870,6 @@ struct acx_frag_threshold {
 	u16 frag_threshold;
 	u8 padding[2];
 } __attribute__ ((packed));
-
-#define WL1271_ACX_TX_COMPL_TIMEOUT   5
-#define WL1271_ACX_TX_COMPL_THRESHOLD 5
 
 struct acx_tx_config_options {
 	struct acx_header header;
@@ -1101,22 +936,6 @@ struct wl1271_acx_mem_map {
 	void *tx_ctrl;
 } __attribute__ ((packed));
 
-enum wl1271_acx_rx_queue_type {
-	RX_QUEUE_TYPE_RX_LOW_PRIORITY,    /* All except the high priority */
-	RX_QUEUE_TYPE_RX_HIGH_PRIORITY,   /* Management and voice packets */
-	RX_QUEUE_TYPE_NUM,
-	RX_QUEUE_TYPE_MAX = USHORT_MAX
-};
-
-#define WL1271_RX_INTR_THRESHOLD_DEF  0       /* no pacing, send interrupt on
-					       * every event */
-#define WL1271_RX_INTR_THRESHOLD_MIN  0
-#define WL1271_RX_INTR_THRESHOLD_MAX  15
-
-#define WL1271_RX_INTR_TIMEOUT_DEF    5
-#define WL1271_RX_INTR_TIMEOUT_MIN    1
-#define WL1271_RX_INTR_TIMEOUT_MAX    100
-
 struct wl1271_acx_rx_config_opt {
 	struct acx_header header;
 
@@ -1126,6 +945,30 @@ struct wl1271_acx_rx_config_opt {
 	u8 queue_type;
 	u8 reserved;
 } __attribute__ ((packed));
+
+
+struct wl1271_acx_bet_enable {
+	struct acx_header header;
+
+	u8 enable;
+	u8 max_consecutive;
+	u8 padding[2];
+} __attribute__ ((packed));
+
+#define ACX_IPV4_VERSION 4
+#define ACX_IPV6_VERSION 6
+#define ACX_IPV4_ADDR_SIZE 4
+struct wl1271_acx_arp_filter {
+	struct acx_header header;
+	u8 version;         /* ACX_IPV4_VERSION, ACX_IPV6_VERSION */
+	u8 enable;          /* 1 to enable ARP filtering, 0 to disable */
+	u8 padding[2];
+	u8 address[16];     /* The configured device IP address - all ARP
+			       requests directed to this IP address will pass
+			       through. For IPv4, the first four bytes are
+			       used. */
+} __attribute__((packed));
+
 
 enum {
 	ACX_WAKE_UP_CONDITIONS      = 0x0002,
@@ -1183,6 +1026,9 @@ enum {
 	ACX_PEER_HT_CAP             = 0x0057,
 	ACX_HT_BSS_OPERATION        = 0x0058,
 	ACX_COEX_ACTIVITY           = 0x0059,
+	ACX_SET_SMART_REFLEX_DEBUG  = 0x005A,
+	ACX_SET_SMART_REFLEX_STATE  = 0x005B,
+	ACX_SET_SMART_REFLEX_PARAMS = 0x005F,
 	DOT11_RX_MSDU_LIFE_TIME     = 0x1004,
 	DOT11_CUR_TX_PWR            = 0x100D,
 	DOT11_RX_DOT11_MODE         = 0x1012,
@@ -1195,15 +1041,14 @@ enum {
 };
 
 
-int wl1271_acx_wake_up_conditions(struct wl1271 *wl, u8 wake_up_event,
-				  u8 listen_interval);
+int wl1271_acx_wake_up_conditions(struct wl1271 *wl);
 int wl1271_acx_sleep_auth(struct wl1271 *wl, u8 sleep_auth);
 int wl1271_acx_fw_version(struct wl1271 *wl, char *buf, size_t len);
 int wl1271_acx_tx_power(struct wl1271 *wl, int power);
 int wl1271_acx_feature_cfg(struct wl1271 *wl);
 int wl1271_acx_mem_map(struct wl1271 *wl,
 		       struct acx_header *mem_map, size_t len);
-int wl1271_acx_rx_msdu_life_time(struct wl1271 *wl, u32 life_time);
+int wl1271_acx_rx_msdu_life_time(struct wl1271 *wl);
 int wl1271_acx_rx_config(struct wl1271 *wl, u32 config, u32 filter);
 int wl1271_acx_pd_threshold(struct wl1271 *wl);
 int wl1271_acx_slot(struct wl1271 *wl, enum acx_slot_type slot_time);
@@ -1222,7 +1067,7 @@ int wl1271_acx_aid(struct wl1271 *wl, u16 aid);
 int wl1271_acx_event_mbox_mask(struct wl1271 *wl, u32 event_mask);
 int wl1271_acx_set_preamble(struct wl1271 *wl, enum acx_preamble_type preamble);
 int wl1271_acx_cts_protect(struct wl1271 *wl,
-			    enum acx_ctsprotect_type ctsprotect);
+			   enum acx_ctsprotect_type ctsprotect);
 int wl1271_acx_statistics(struct wl1271 *wl, struct acx_statistics *stats);
 int wl1271_acx_rate_policies(struct wl1271 *wl, u32 enabled_rates);
 int wl1271_acx_ac_cfg(struct wl1271 *wl);
@@ -1232,5 +1077,9 @@ int wl1271_acx_tx_config_options(struct wl1271 *wl);
 int wl1271_acx_mem_cfg(struct wl1271 *wl);
 int wl1271_acx_init_mem_config(struct wl1271 *wl);
 int wl1271_acx_init_rx_interrupt(struct wl1271 *wl);
+int wl1271_acx_smart_reflex(struct wl1271 *wl);
+int wl1271_acx_bet_enable(struct wl1271 *wl, bool enable);
+int wl1271_acx_arp_ip_filter(struct wl1271 *wl, bool enable, u8 *address,
+			     u8 version);
 
 #endif /* __WL1271_ACX_H__ */

@@ -458,9 +458,15 @@ static void ieee80211_send_deauth_disassoc(struct ieee80211_sub_if_data *sdata,
 	mgmt->u.deauth.reason_code = cpu_to_le16(reason);
 
 	if (stype == IEEE80211_STYPE_DEAUTH)
-		cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len, cookie);
+		if (cookie)
+			__cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len);
+		else
+			cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len);
 	else
-		cfg80211_send_disassoc(sdata->dev, (u8 *)mgmt, skb->len, cookie);
+		if (cookie)
+			__cfg80211_send_disassoc(sdata->dev, (u8 *)mgmt, skb->len);
+		else
+			cfg80211_send_disassoc(sdata->dev, (u8 *)mgmt, skb->len);
 	ieee80211_tx_skb(sdata, skb, ifmgd->flags & IEEE80211_STA_MFP_ENABLED);
 }
 
@@ -1459,7 +1465,7 @@ ieee80211_rx_mgmt_assoc_resp(struct ieee80211_sub_if_data *sdata,
 		       sdata->dev->name, status_code);
 		list_del(&wk->list);
 		kfree(wk);
-		return RX_MGMT_CFG80211_ASSOC;
+		return RX_MGMT_CFG80211_DEAUTH;
 	}
 
 	if ((aid & (BIT(15) | BIT(14))) != (BIT(15) | BIT(14)))
@@ -1959,12 +1965,10 @@ static void ieee80211_sta_rx_queued_mgmt(struct ieee80211_sub_if_data *sdata,
 			/* no action */
 			break;
 		case RX_MGMT_CFG80211_DEAUTH:
-			cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len,
-					     NULL);
+			cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len);
 			break;
 		case RX_MGMT_CFG80211_DISASSOC:
-			cfg80211_send_disassoc(sdata->dev, (u8 *)mgmt, skb->len,
-					       NULL);
+			cfg80211_send_disassoc(sdata->dev, (u8 *)mgmt, skb->len);
 			break;
 		default:
 			WARN(1, "unexpected: %d", rma);
@@ -2019,7 +2023,7 @@ static void ieee80211_sta_rx_queued_mgmt(struct ieee80211_sub_if_data *sdata,
 		cfg80211_send_rx_assoc(sdata->dev, (u8 *) mgmt, skb->len);
 		break;
 	case RX_MGMT_CFG80211_DEAUTH:
-		cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len, NULL);
+		cfg80211_send_deauth(sdata->dev, (u8 *)mgmt, skb->len);
 		break;
 	default:
 		WARN(1, "unexpected: %d", rma);

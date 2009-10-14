@@ -32,6 +32,8 @@
 #include <linux/bitops.h>
 #include <net/mac80211.h>
 
+#include "wl1271_conf.h"
+
 #define DRIVER_NAME "wl1271"
 #define DRIVER_PREFIX DRIVER_NAME ": "
 
@@ -105,17 +107,24 @@ enum {
 				  CFG_RX_CTL_EN | CFG_RX_BCN_EN |     \
 				  CFG_RX_AUTH_EN | CFG_RX_ASSOC_EN)
 
-#define WL1271_DEFAULT_BASIC_RATE_SET (ACX_RATE_MASK_ALL)
+#define WL1271_DEFAULT_BASIC_RATE_SET (CONF_TX_RATE_MASK_ALL)
 
 #define WL1271_FW_NAME "wl1271-fw.bin"
 #define WL1271_NVS_NAME "wl1271-nvs.bin"
 
 /*
+ * Enable/disable 802.11a support for WL1273
+ */
+#undef WL1271_80211A_ENABLED
+
+/*
  * FIXME: for the wl1271, a busy word count of 1 here will result in a more
  * optimal SPI interface. There is some SPI bug however, causing RXS time outs
- * with this mode occasionally on boot, so lets have two for now.
+ * with this mode occasionally on boot, so lets have three for now. A value of
+ * three should make sure, that the chipset will always be ready, though this
+ * will impact throughput and latencies slightly.
  */
-#define WL1271_BUSY_WORD_CNT 2
+#define WL1271_BUSY_WORD_CNT 3
 #define WL1271_BUSY_WORD_LEN (WL1271_BUSY_WORD_CNT * sizeof(u32))
 
 #define WL1271_ELP_HW_STATE_ASLEEP 0
@@ -148,6 +157,8 @@ struct wl1271_partition {
 struct wl1271_partition_set {
 	struct wl1271_partition mem;
 	struct wl1271_partition reg;
+	struct wl1271_partition mem2;
+	struct wl1271_partition mem3;
 };
 
 struct wl1271;
@@ -288,6 +299,15 @@ struct wl1271_rx_mem_pool_addr {
 	u32 addr_extra;
 };
 
+struct wl1271_scan {
+	u8 state;
+	u8 ssid[IW_ESSID_MAX_SIZE+1];
+	size_t ssid_len;
+	u8 active;
+	u8 high_prio;
+	u8 probe_requests;
+};
+
 struct wl1271 {
 	struct ieee80211_hw *hw;
 	bool mac80211_registered;
@@ -302,10 +322,7 @@ struct wl1271 {
 	enum wl1271_state state;
 	struct mutex mutex;
 
-	int physical_mem_addr;
-	int physical_reg_addr;
-	int virtual_mem_addr;
-	int virtual_reg_addr;
+	struct wl1271_partition_set part;
 
 	struct wl1271_chip chip;
 
@@ -322,7 +339,6 @@ struct wl1271 {
 	u8 bss_type;
 	u8 ssid[IW_ESSID_MAX_SIZE + 1];
 	u8 ssid_len;
-	u8 listen_int;
 	int channel;
 
 	struct wl1271_acx_mem_map *target_mem_map;
@@ -346,9 +362,6 @@ struct wl1271 {
 	bool tx_queue_stopped;
 
 	struct work_struct tx_work;
-
-	struct work_struct filter_work;
-	struct wl1271_filter_params *filter_params;
 
 	/* Pending TX frames */
 	struct sk_buff *tx_frames[ACX_TX_DESCRIPTORS];
@@ -375,13 +388,10 @@ struct wl1271 {
 
 	/* Are we currently scanning */
 	bool scanning;
+	struct wl1271_scan scan;
 
 	/* Our association ID */
 	u16 aid;
-
-	/* Beacon parameters */
-	u16 beacon_int;
-	u8 dtim_period;
 
 	/* currently configured rate set */
 	u32 basic_rate_set;
@@ -416,12 +426,19 @@ struct wl1271 {
 	u32 buffer_32;
 	u32 buffer_cmd;
 	u32 buffer_busyword[WL1271_BUSY_WORD_CNT];
-	struct wl1271_rx_descriptor *rx_descriptor;
 
 	struct wl1271_fw_status *fw_status;
 	struct wl1271_tx_hw_res_if *tx_res_if;
 
 	struct ieee80211_vif *vif;
+
+	/* Used for a workaround to send disconnect before rejoining */
+	bool joined;
+
+	/* Current chipset configuration */
+	struct conf_drv_settings conf;
+
+	struct list_head list;
 };
 
 int wl1271_plt_start(struct wl1271 *wl);
@@ -437,5 +454,14 @@ int wl1271_plt_stop(struct wl1271 *wl);
 
 /* WL1271 needs a 200ms sleep after power on */
 #define WL1271_POWER_ON_SLEEP 200 /* in miliseconds */
+
+static inline bool wl1271_11a_enabled(void)
+{
+#ifdef WL1271_80211A_ENABLED
+	return true;
+#else
+	return false;
+#endif
+}
 
 #endif

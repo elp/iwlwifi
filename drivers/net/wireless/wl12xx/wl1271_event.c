@@ -31,19 +31,40 @@
 static int wl1271_event_scan_complete(struct wl1271 *wl,
 				      struct event_mailbox *mbox)
 {
+	int size = sizeof(struct wl12xx_probe_req_template);
 	wl1271_debug(DEBUG_EVENT, "status: 0x%x",
 		     mbox->scheduled_scan_status);
 
 	if (wl->scanning) {
-		int size = sizeof(struct wl12xx_probe_req_template);
-		wl1271_cmd_template_set(wl, CMD_TEMPL_CFG_PROBE_REQ_2_4, NULL,
-					size);
-		mutex_unlock(&wl->mutex);
-		ieee80211_scan_completed(wl->hw, false);
-		mutex_lock(&wl->mutex);
-		wl->scanning = false;
-	}
+		if (wl->scan.state == WL1271_SCAN_BAND_DUAL) {
+			wl1271_cmd_template_set(wl, CMD_TEMPL_CFG_PROBE_REQ_2_4,
+						NULL, size);
+			/* 2.4 GHz band scanned, scan 5 GHz band, pretend
+			 * to the wl1271_cmd_scan function that we are not
+			 * scanning as it checks that.
+			 */
+			wl->scanning = false;
+			wl1271_cmd_scan(wl, wl->scan.ssid, wl->scan.ssid_len,
+						wl->scan.active,
+						wl->scan.high_prio,
+						WL1271_SCAN_BAND_5_GHZ,
+						wl->scan.probe_requests);
+		} else {
+			if (wl->scan.state == WL1271_SCAN_BAND_2_4_GHZ)
+				wl1271_cmd_template_set(wl,
+						CMD_TEMPL_CFG_PROBE_REQ_2_4,
+						NULL, size);
+			else
+				wl1271_cmd_template_set(wl,
+						CMD_TEMPL_CFG_PROBE_REQ_5,
+						NULL, size);
 
+			mutex_unlock(&wl->mutex);
+			ieee80211_scan_completed(wl->hw, false);
+			mutex_lock(&wl->mutex);
+			wl->scanning = false;
+		}
+	}
 	return 0;
 }
 
@@ -98,14 +119,14 @@ int wl1271_event_unmask(struct wl1271 *wl)
 
 void wl1271_event_mbox_config(struct wl1271 *wl)
 {
-	wl->mbox_ptr[0] = wl1271_reg_read32(wl, REG_EVENT_MAILBOX_PTR);
+	wl->mbox_ptr[0] = wl1271_spi_read32(wl, REG_EVENT_MAILBOX_PTR);
 	wl->mbox_ptr[1] = wl->mbox_ptr[0] + sizeof(struct event_mailbox);
 
 	wl1271_debug(DEBUG_EVENT, "MBOX ptrs: 0x%x 0x%x",
 		     wl->mbox_ptr[0], wl->mbox_ptr[1]);
 }
 
-int wl1271_event_handle(struct wl1271 *wl, u8 mbox_num)
+int wl1271_event_handle(struct wl1271 *wl, u8 mbox_num, bool do_ack)
 {
 	struct event_mailbox mbox;
 	int ret;
@@ -116,8 +137,8 @@ int wl1271_event_handle(struct wl1271 *wl, u8 mbox_num)
 		return -EINVAL;
 
 	/* first we read the mbox descriptor */
-	wl1271_spi_mem_read(wl, wl->mbox_ptr[mbox_num], &mbox,
-			    sizeof(struct event_mailbox));
+	wl1271_spi_read(wl, wl->mbox_ptr[mbox_num], &mbox,
+			sizeof(struct event_mailbox), false);
 
 	/* process the descriptor */
 	ret = wl1271_event_process(wl, &mbox);
@@ -125,7 +146,9 @@ int wl1271_event_handle(struct wl1271 *wl, u8 mbox_num)
 		return ret;
 
 	/* then we let the firmware know it can go on...*/
-	wl1271_reg_write32(wl, ACX_REG_INTERRUPT_TRIG, INTR_TRIG_EVENT_ACK);
+	if (do_ack)
+		wl1271_spi_write32(wl, ACX_REG_INTERRUPT_TRIG,
+				   INTR_TRIG_EVENT_ACK);
 
 	return 0;
 }

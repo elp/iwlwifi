@@ -39,16 +39,11 @@ void wl1271_elp_work(struct work_struct *work)
 
 	mutex_lock(&wl->mutex);
 
-	/*
-	 * FIXME: below, by means of the "true", ELP has been disabled for now
-	 * to work around a firmware bug. To be enabled upon receiving a new
-	 * firmware version.
-	 */
-	if (true || wl->elp || !wl->psm)
+	if (wl->elp || !wl->psm)
 		goto out;
 
 	wl1271_debug(DEBUG_PSM, "chip to elp");
-	wl1271_write32(wl, HW_ACCESS_ELP_CTRL_REG_ADDR, ELPCTRL_SLEEP);
+	wl1271_raw_write32(wl, HW_ACCESS_ELP_CTRL_REG_ADDR, ELPCTRL_SLEEP);
 	wl->elp = true;
 
 out:
@@ -91,7 +86,7 @@ int wl1271_ps_elp_wakeup(struct wl1271 *wl, bool chip_awake)
 		wl->elp_compl = &compl;
 	spin_unlock_irqrestore(&wl->wl_lock, flags);
 
-	wl1271_write32(wl, HW_ACCESS_ELP_CTRL_REG_ADDR, ELPCTRL_WAKE_UP);
+	wl1271_raw_write32(wl, HW_ACCESS_ELP_CTRL_REG_ADDR, ELPCTRL_WAKE_UP);
 
 	if (!pending) {
 		ret = wait_for_completion_timeout(
@@ -135,6 +130,11 @@ int wl1271_ps_set_mode(struct wl1271 *wl, enum wl1271_cmd_ps_mode mode)
 		if (ret < 0)
 			return ret;
 
+		/* enable beacon early termination */
+		ret = wl1271_acx_bet_enable(wl, true);
+		if (ret < 0)
+			return ret;
+
 		ret = wl1271_cmd_ps_mode(wl, STATION_POWER_SAVE_MODE);
 		if (ret < 0)
 			return ret;
@@ -149,6 +149,11 @@ int wl1271_ps_set_mode(struct wl1271 *wl, enum wl1271_cmd_ps_mode mode)
 	default:
 		wl1271_debug(DEBUG_PSM, "leaving psm");
 		ret = wl1271_ps_elp_wakeup(wl, false);
+		if (ret < 0)
+			return ret;
+
+		/* disable beacon early termination */
+		ret = wl1271_acx_bet_enable(wl, false);
 		if (ret < 0)
 			return ret;
 

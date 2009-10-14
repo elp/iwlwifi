@@ -39,17 +39,19 @@ int wl1271_cmd_ps_mode(struct wl1271 *wl, u8 ps_mode);
 int wl1271_cmd_read_memory(struct wl1271 *wl, u32 addr, void *answer,
 			   size_t len);
 int wl1271_cmd_scan(struct wl1271 *wl, u8 *ssid, size_t len,
-		    u8 active_scan, u8 high_prio, u8 num_channels,
+		    u8 active_scan, u8 high_prio, u8 band,
 		    u8 probe_requests);
 int wl1271_cmd_template_set(struct wl1271 *wl, u16 template_id,
 			    void *buf, size_t buf_len);
 int wl1271_cmd_build_null_data(struct wl1271 *wl);
 int wl1271_cmd_build_ps_poll(struct wl1271 *wl, u16 aid);
-int wl1271_cmd_build_probe_req(struct wl1271 *wl, u8 *ssid, size_t ssid_len);
+int wl1271_cmd_build_probe_req(struct wl1271 *wl, u8 *ssid, size_t ssid_len,
+			       u8 band);
 int wl1271_cmd_set_default_wep_key(struct wl1271 *wl, u8 id);
 int wl1271_cmd_set_key(struct wl1271 *wl, u16 action, u8 id, u8 key_type,
 		       u8 key_size, const u8 *key, const u8 *addr,
 		       u32 tx_seq_32, u16 tx_seq_16);
+int wl1271_cmd_disconnect(struct wl1271 *wl);
 
 enum wl1271_commands {
 	CMD_INTERROGATE     = 1,    /*use this to read information elements*/
@@ -196,6 +198,7 @@ enum {
 
 #define WL1271_JOIN_CMD_CTRL_TX_FLUSH     0x80 /* Firmware flushes all Tx */
 #define WL1271_JOIN_CMD_TX_SESSION_OFFSET 1
+#define WL1271_JOIN_CMD_BSS_TYPE_5GHZ 0x10
 
 struct wl1271_cmd_join {
 	struct wl1271_cmd_header header;
@@ -287,11 +290,6 @@ struct wl1271_cmd_ps_params {
 #define NUM_ACCESS_CATEGORIES_COPY 4
 #define MAX_KEY_SIZE 32
 
-/* When set, disable HW encryption */
-#define DF_ENCRYPTION_DISABLE      0x01
-/* When set, disable HW decryption */
-#define DF_SNIFF_MODE_ENABLE       0x80
-
 enum wl1271_cmd_key_action {
 	KEY_ADD_OR_REPLACE = 1,
 	KEY_REMOVE         = 2,
@@ -347,6 +345,9 @@ struct wl1271_cmd_set_keys {
 #define WL1271_SCAN_OPT_PRIORITY_HIGH  4
 #define WL1271_SCAN_CHAN_MIN_DURATION  30000  /* TU */
 #define WL1271_SCAN_CHAN_MAX_DURATION  60000  /* TU */
+#define WL1271_SCAN_BAND_2_4_GHZ 0
+#define WL1271_SCAN_BAND_5_GHZ 1
+#define WL1271_SCAN_BAND_DUAL 2
 
 struct basic_scan_params {
 	u32 rx_config_options;
@@ -459,6 +460,32 @@ struct wl1271_cmd_cal_p2g {
 
 	u8  sub_band_mask;
 	u8  padding2;
+} __attribute__ ((packed));
+
+
+/*
+ * There are three types of disconnections:
+ *
+ * DISCONNECT_IMMEDIATE: the fw doesn't send any frames
+ * DISCONNECT_DEAUTH:    the fw generates a DEAUTH request with the reason
+ *                       we have passed
+ * DISCONNECT_DISASSOC:  the fw generates a DESASSOC request with the reason
+ *                       we have passed
+ */
+enum wl1271_disconnect_type {
+	DISCONNECT_IMMEDIATE,
+	DISCONNECT_DEAUTH,
+	DISCONNECT_DISASSOC
+};
+
+struct wl1271_cmd_disconnect {
+	u32 rx_config_options;
+	u32 rx_filter_options;
+
+	u16 reason;
+	u8  type;
+
+	u8  padding;
 } __attribute__ ((packed));
 
 #endif /* __WL1271_CMD_H__ */
