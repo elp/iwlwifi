@@ -139,6 +139,7 @@ void iwl_tt_exit_ct_kill(struct iwl_priv *priv);
 void iwl_tt_handler(struct iwl_priv *priv);
 void iwl_tt_initialize(struct iwl_priv *priv);
 void iwl_tt_exit(struct iwl_priv *priv);
+void iwl_power_cmd_initialize(struct iwl_priv *priv);
 void iwl_power_initialize(struct iwl_priv *priv);
 
 extern bool no_sleep_autoadjust;

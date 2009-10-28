@@ -2661,6 +2661,14 @@ static int __iwl3945_up(struct iwl_priv *priv)
 	if (test_bit(STATUS_RF_KILL_HW, &priv->status))
 		return 0;
 
+	/*
+	 * Reset saved/prior power-saving command, to force a power command
+	 * to get sent to device after any restart, e.g. after uCode error.
+	 * Power command might not otherwise get sent, if it matched the
+	 * last power command sent before the uCode error.
+	 */
+	iwl_power_cmd_initialize(priv);
+
 	for (i = 0; i < MAX_HW_RESTARTS; i++) {
 
 		iwl_clear_stations_table(priv);

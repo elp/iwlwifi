@@ -957,6 +957,14 @@ void iwl_tt_exit(struct iwl_priv *priv)
 EXPORT_SYMBOL(iwl_tt_exit);
 
 /* initialize to default */
+void iwl_power_cmd_initialize(struct iwl_priv *priv)
+{
+	memset(&priv->power_data.sleep_cmd, 0,
+		sizeof(priv->power_data.sleep_cmd));
+}
+EXPORT_SYMBOL(iwl_power_cmd_initialize);
+
+/* initialize to default */
 void iwl_power_initialize(struct iwl_priv *priv)
 {
 	u16 lctl = iwl_pcie_link_ctl(priv);
@@ -965,7 +973,6 @@ void iwl_power_initialize(struct iwl_priv *priv)
 
 	priv->power_data.debug_sleep_level_override = -1;
 
-	memset(&priv->power_data.sleep_cmd, 0,
-		sizeof(priv->power_data.sleep_cmd));
+	iwl_power_cmd_initialize(priv);
 }
 EXPORT_SYMBOL(iwl_power_initialize);
