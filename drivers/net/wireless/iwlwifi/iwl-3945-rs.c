@@ -399,7 +399,7 @@ static void *rs_alloc_sta(void *iwl_priv, struct ieee80211_sta *sta, gfp_t gfp)
 {
 	struct iwl3945_rs_sta *rs_sta;
 	struct iwl3945_sta_priv *psta = (void *) sta->drv_priv;
-	struct iwl_priv *priv = iwl_priv;
+	struct iwl_priv *priv __maybe_unused = iwl_priv;
 
 	IWL_DEBUG_RATE(priv, "enter\n");
 
