@@ -1274,7 +1274,8 @@ static void ath9k_hw_override_ini(struct ath_hw *ah,
 		 * AR9271 1.1
 		 */
 		if (AR_SREV_9271_10(ah)) {
-			val = REG_READ(ah, AR_PHY_SPECTRAL_SCAN) | AR_PHY_SPECTRAL_SCAN_ENABLE;
+			val = REG_READ(ah, AR_PHY_SPECTRAL_SCAN) |
+			      AR_PHY_SPECTRAL_SCAN_ENABLE;
 			REG_WRITE(ah, AR_PHY_SPECTRAL_SCAN, val);
 		}
 		else if (AR_SREV_9271_11(ah))
@@ -4350,3 +4351,89 @@ void ath_gen_timer_isr(struct ath_hw *ah)
 	}
 }
 EXPORT_SYMBOL(ath_gen_timer_isr);
+
+static struct {
+	u32 version;
+	const char * name;
+} ath_mac_bb_names[] = {
+	/* Devices with external radios */
+	{ AR_SREV_VERSION_5416_PCI,	"5416" },
+	{ AR_SREV_VERSION_5416_PCIE,	"5418" },
+	{ AR_SREV_VERSION_9100,		"9100" },
+	{ AR_SREV_VERSION_9160,		"9160" },
+	/* Single-chip solutions */
+	{ AR_SREV_VERSION_9280,		"9280" },
+	{ AR_SREV_VERSION_9285,		"9285" },
+	{ AR_SREV_VERSION_9287,         "9287" },
+	{ AR_SREV_VERSION_9271,         "9271" },
+};
+
+/* For devices with external radios */
+static struct {
+	u16 version;
+	const char * name;
+} ath_rf_names[] = {
+	{ 0,				"5133" },
+	{ AR_RAD5133_SREV_MAJOR,	"5133" },
+	{ AR_RAD5122_SREV_MAJOR,	"5122" },
+	{ AR_RAD2133_SREV_MAJOR,	"2133" },
+	{ AR_RAD2122_SREV_MAJOR,	"2122" }
+};
+
+/*
+ * Return the MAC/BB name. "????" is returned if the MAC/BB is unknown.
+ */
+static const char *ath9k_hw_mac_bb_name(u32 mac_bb_version)
+{
+	int i;
+
+	for (i=0; i<ARRAY_SIZE(ath_mac_bb_names); i++) {
+		if (ath_mac_bb_names[i].version == mac_bb_version) {
+			return ath_mac_bb_names[i].name;
+		}
+	}
+
+	return "????";
+}
+
+/*
+ * Return the RF name. "????" is returned if the RF is unknown.
+ * Used for devices with external radios.
+ */
+static const char *ath9k_hw_rf_name(u16 rf_version)
+{
+	int i;
+
+	for (i=0; i<ARRAY_SIZE(ath_rf_names); i++) {
+		if (ath_rf_names[i].version == rf_version) {
+			return ath_rf_names[i].name;
+		}
+	}
+
+	return "????";
+}
+
+void ath9k_hw_name(struct ath_hw *ah, char *hw_name, size_t len)
+{
+	int used;
+
+	/* chipsets >= AR9280 are single-chip */
+	if (AR_SREV_9280_10_OR_LATER(ah)) {
+		used = snprintf(hw_name, len,
+			       "Atheros AR%s Rev:%x",
+			       ath9k_hw_mac_bb_name(ah->hw_version.macVersion),
+			       ah->hw_version.macRev);
+	}
+	else {
+		used = snprintf(hw_name, len,
+			       "Atheros AR%s MAC/BB Rev:%x AR%s RF Rev:%x",
+			       ath9k_hw_mac_bb_name(ah->hw_version.macVersion),
+			       ah->hw_version.macRev,
+			       ath9k_hw_rf_name((ah->hw_version.analog5GhzRev &
+						AR_RADIO_SREV_MAJOR)),
+			       ah->hw_version.phyRev);
+	}
+
+	hw_name[used] = '\0';
+}
+EXPORT_SYMBOL(ath9k_hw_name);

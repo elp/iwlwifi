@@ -39,11 +39,8 @@ static u8 ieee80211_sta_manage_reorder_buf(struct ieee80211_hw *hw,
  * only useful for monitoring.
  */
 static struct sk_buff *remove_monitor_info(struct ieee80211_local *local,
-					   struct sk_buff *skb,
-					   int rtap_len)
+					   struct sk_buff *skb)
 {
-	skb_pull(skb, rtap_len);
-
 	if (local->hw.flags & IEEE80211_HW_RX_INCLUDES_FCS) {
 		if (likely(skb->len > FCS_LEN))
 			skb_trim(skb, skb->len - FCS_LEN);
@@ -59,15 +56,14 @@ static struct sk_buff *remove_monitor_info(struct ieee80211_local *local,
 }
 
 static inline int should_drop_frame(struct sk_buff *skb,
-				    int present_fcs_len,
-				    int radiotap_len)
+				    int present_fcs_len)
 {
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 
 	if (status->flag & (RX_FLAG_FAILED_FCS_CRC | RX_FLAG_FAILED_PLCP_CRC))
 		return 1;
-	if (unlikely(skb->len < 16 + present_fcs_len + radiotap_len))
+	if (unlikely(skb->len < 16 + present_fcs_len))
 		return 1;
 	if (ieee80211_is_ctl(hdr->frame_control) &&
 	    !ieee80211_is_pspoll(hdr->frame_control) &&
@@ -95,10 +91,6 @@ ieee80211_rx_radiotap_len(struct ieee80211_local *local,
 	if (len & 1) /* padding for RX_FLAGS if necessary */
 		len++;
 
-	/* make sure radiotap starts at a naturally aligned address */
-	if (len % 8)
-		len = roundup(len, 8);
-
 	return len;
 }
 
@@ -116,6 +108,7 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
 	struct ieee80211_radiotap_header *rthdr;
 	unsigned char *pos;
+	u16 rx_flags = 0;
 
 	rthdr = (struct ieee80211_radiotap_header *)skb_push(skb, rtap_len);
 	memset(rthdr, 0, rtap_len);
@@ -134,7 +127,7 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 
 	/* IEEE80211_RADIOTAP_TSFT */
 	if (status->flag & RX_FLAG_TSFT) {
-		*(__le64 *)pos = cpu_to_le64(status->mactime);
+		put_unaligned_le64(status->mactime, pos);
 		rthdr->it_present |=
 			cpu_to_le32(1 << IEEE80211_RADIOTAP_TSFT);
 		pos += 8;
@@ -166,17 +159,17 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 	pos++;
 
 	/* IEEE80211_RADIOTAP_CHANNEL */
-	*(__le16 *)pos = cpu_to_le16(status->freq);
+	put_unaligned_le16(status->freq, pos);
 	pos += 2;
 	if (status->band == IEEE80211_BAND_5GHZ)
-		*(__le16 *)pos = cpu_to_le16(IEEE80211_CHAN_OFDM |
-					     IEEE80211_CHAN_5GHZ);
+		put_unaligned_le16(IEEE80211_CHAN_OFDM | IEEE80211_CHAN_5GHZ,
+				   pos);
 	else if (rate->flags & IEEE80211_RATE_ERP_G)
-		*(__le16 *)pos = cpu_to_le16(IEEE80211_CHAN_OFDM |
-					     IEEE80211_CHAN_2GHZ);
+		put_unaligned_le16(IEEE80211_CHAN_OFDM | IEEE80211_CHAN_2GHZ,
+				   pos);
 	else
-		*(__le16 *)pos = cpu_to_le16(IEEE80211_CHAN_CCK |
-					     IEEE80211_CHAN_2GHZ);
+		put_unaligned_le16(IEEE80211_CHAN_CCK | IEEE80211_CHAN_2GHZ,
+				   pos);
 	pos += 2;
 
 	/* IEEE80211_RADIOTAP_DBM_ANTSIGNAL */
@@ -205,10 +198,11 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 
 	/* IEEE80211_RADIOTAP_RX_FLAGS */
 	/* ensure 2 byte alignment for the 2 byte field as required */
-	if ((pos - (unsigned char *)rthdr) & 1)
+	if ((pos - (u8 *)rthdr) & 1)
 		pos++;
 	if (status->flag & RX_FLAG_FAILED_PLCP_CRC)
-		*(__le16 *)pos |= cpu_to_le16(IEEE80211_RADIOTAP_F_RX_BADPLCP);
+		rx_flags |= IEEE80211_RADIOTAP_F_RX_BADPLCP;
+	put_unaligned_le16(rx_flags, pos);
 	pos += 2;
 }
 
@@ -227,7 +221,6 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 	struct sk_buff *skb, *skb2;
 	struct net_device *prev_dev = NULL;
 	int present_fcs_len = 0;
-	int rtap_len = 0;
 
 	/*
 	 * First, we may need to make a copy of the skb because
@@ -237,25 +230,23 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 	 * We don't need to, of course, if we aren't going to return
 	 * the SKB because it has a bad FCS/PLCP checksum.
 	 */
-	if (status->flag & RX_FLAG_RADIOTAP)
-		rtap_len = ieee80211_get_radiotap_len(origskb->data);
-	else
-		/* room for the radiotap header based on driver features */
-		needed_headroom = ieee80211_rx_radiotap_len(local, status);
+
+	/* room for the radiotap header based on driver features */
+	needed_headroom = ieee80211_rx_radiotap_len(local, status);
 
 	if (local->hw.flags & IEEE80211_HW_RX_INCLUDES_FCS)
 		present_fcs_len = FCS_LEN;
 
 	if (!local->monitors) {
-		if (should_drop_frame(origskb, present_fcs_len, rtap_len)) {
+		if (should_drop_frame(origskb, present_fcs_len)) {
 			dev_kfree_skb(origskb);
 			return NULL;
 		}
 
-		return remove_monitor_info(local, origskb, rtap_len);
+		return remove_monitor_info(local, origskb);
 	}
 
-	if (should_drop_frame(origskb, present_fcs_len, rtap_len)) {
+	if (should_drop_frame(origskb, present_fcs_len)) {
 		/* only need to expand headroom if necessary */
 		skb = origskb;
 		origskb = NULL;
@@ -279,16 +270,14 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 		 */
 		skb = skb_copy_expand(origskb, needed_headroom, 0, GFP_ATOMIC);
 
-		origskb = remove_monitor_info(local, origskb, rtap_len);
+		origskb = remove_monitor_info(local, origskb);
 
 		if (!skb)
 			return origskb;
 	}
 
-	/* if necessary, prepend radiotap information */
-	if (!(status->flag & RX_FLAG_RADIOTAP))
-		ieee80211_add_rx_radiotap_header(local, skb, rate,
-						 needed_headroom);
+	/* prepend radiotap information */
+	ieee80211_add_rx_radiotap_header(local, skb, rate, needed_headroom);
 
 	skb_reset_mac_header(skb);
 	skb->ip_summed = CHECKSUM_UNNECESSARY;
