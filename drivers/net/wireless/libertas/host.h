@@ -6,7 +6,8 @@
 #ifndef _LBS_HOST_H_
 #define _LBS_HOST_H_
 
-#include "11d.h"
+#include "types.h"
+#include "defs.h"
 
 #define DEFAULT_AD_HOC_CHANNEL                  6
 
@@ -388,19 +389,6 @@ struct lbs_offset_value {
 	u32 value;
 } __attribute__ ((packed));
 
-/* Define general data structure */
-/* cmd_DS_GEN */
-struct cmd_ds_gen {
-	__le16 command;
-	__le16 size;
-	__le16 seqnum;
-	__le16 result;
-	void *cmdresp[0];
-} __attribute__ ((packed));
-
-#define S_DS_GEN sizeof(struct cmd_ds_gen)
-
-
 /*
  * Define data structure for CMD_GET_HW_SPEC
  * This structure defines the response for the GET_HW_SPEC command
@@ -718,7 +706,7 @@ struct cmd_ds_802_11_rate_adapt_rateset {
 struct cmd_ds_802_11_ad_hoc_start {
 	struct cmd_header hdr;
 
-	u8 ssid[IW_ESSID_MAX_SIZE];
+	u8 ssid[IEEE80211_MAX_SSID_LEN];
 	u8 bsstype;
 	__le16 beaconperiod;
 	u8 dtimperiod;   /* Reserved on v9 and later */
@@ -741,7 +729,7 @@ struct cmd_ds_802_11_ad_hoc_result {
 
 struct adhoc_bssdesc {
 	u8 bssid[ETH_ALEN];
-	u8 ssid[IW_ESSID_MAX_SIZE];
+	u8 ssid[IEEE80211_MAX_SSID_LEN];
 	u8 type;
 	__le16 beaconperiod;
 	u8 dtimperiod;
@@ -961,16 +949,12 @@ struct cmd_ds_command {
 		struct cmd_ds_bbp_reg_access bbpreg;
 		struct cmd_ds_rf_reg_access rfreg;
 
-		struct cmd_ds_802_11d_domain_info domaininfo;
-		struct cmd_ds_802_11d_domain_info domaininforesp;
-
 		struct cmd_ds_802_11_tpc_cfg tpccfg;
 		struct cmd_ds_802_11_afc afc;
 		struct cmd_ds_802_11_led_ctrl ledgpio;
 
 		struct cmd_ds_bt_access bt;
 		struct cmd_ds_fwt_access fwt;
-		struct cmd_ds_get_tsf gettsf;
 		struct cmd_ds_802_11_beacon_control bcn_ctrl;
 	} params;
 } __attribute__ ((packed));
