@@ -789,7 +789,7 @@ static void ap_sta_ps_start(struct sta_info *sta)
 #endif /* CONFIG_MAC80211_VERBOSE_PS_DEBUG */
 }
 
-static int ap_sta_ps_end(struct sta_info *sta)
+static void ap_sta_ps_end(struct sta_info *sta)
 {
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
 	struct ieee80211_local *local = sdata->local;
@@ -819,8 +819,6 @@ static int ap_sta_ps_end(struct sta_info *sta)
 	       "since STA not sleeping anymore\n", sdata->dev->name,
 	       sta->sta.addr, sta->sta.aid, sent - buffered, buffered);
 #endif /* CONFIG_MAC80211_VERBOSE_PS_DEBUG */
-
-	return sent;
 }
 
 static ieee80211_rx_result debug_noinline
@@ -859,7 +857,6 @@ ieee80211_rx_h_sta_process(struct ieee80211_rx_data *rx)
 	sta->rx_fragments++;
 	sta->rx_bytes += rx->skb->len;
 	sta->last_signal = rx->status->signal;
-	sta->last_qual = rx->status->qual;
 	sta->last_noise = rx->status->noise;
 
 	/*
@@ -880,19 +877,24 @@ ieee80211_rx_h_sta_process(struct ieee80211_rx_data *rx)
 			 */
 			if (ieee80211_is_data(hdr->frame_control) &&
 			    !ieee80211_has_pm(hdr->frame_control))
-				rx->sent_ps_buffered += ap_sta_ps_end(sta);
+				ap_sta_ps_end(sta);
 		} else {
 			if (ieee80211_has_pm(hdr->frame_control))
 				ap_sta_ps_start(sta);
 		}
 	}
 
-	/* Drop data::nullfunc frames silently, since they are used only to
-	 * control station power saving mode. */
-	if (ieee80211_is_nullfunc(hdr->frame_control)) {
+	/*
+	 * Drop (qos-)data::nullfunc frames silently, since they
+	 * are used only to control station power saving mode.
+	 */
+	if (ieee80211_is_nullfunc(hdr->frame_control) ||
+	    ieee80211_is_qos_nullfunc(hdr->frame_control)) {
 		I802_DEBUG_INC(rx->local->rx_handlers_drop_nullfunc);
-		/* Update counter and free packet here to avoid counting this
-		 * as a dropped packed. */
+		/*
+		 * Update counter and free packet here to avoid
+		 * counting this as a dropped packed.
+		 */
 		sta->rx_packets++;
 		dev_kfree_skb(rx->skb);
 		return RX_QUEUED;
@@ -1143,7 +1145,7 @@ ieee80211_rx_h_ps_poll(struct ieee80211_rx_data *rx)
 		if (no_pending_pkts)
 			sta_info_clear_tim_bit(rx->sta);
 #ifdef CONFIG_MAC80211_VERBOSE_PS_DEBUG
-	} else if (!rx->sent_ps_buffered) {
+	} else {
 		/*
 		 * FIXME: This can be the result of a race condition between
 		 *	  us expiring a frame and the station polling for it.
