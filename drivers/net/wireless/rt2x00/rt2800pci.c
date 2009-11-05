@@ -56,8 +56,10 @@ MODULE_PARM_DESC(nohwcrypt, "Disable hardware encryption.");
 
 /*
  * Register access.
+ * All access to the CSR registers will go through the methods
+ * rt2x00pci_register_read and rt2x00pci_register_write.
  * BBP and RF register require indirect register access,
- * and use the CSR registers PHY_CSR3 and PHY_CSR4 to achieve this.
+ * and use the CSR registers BBPCSR and RFCSR to achieve this.
  * These indirect registers work with busy bits,
  * and we will try maximal REGISTER_BUSY_COUNT times to access
  * the register while taking a REGISTER_BUSY_DELAY us delay
@@ -2195,7 +2197,7 @@ static void rt2800pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 	rt2x00_set_field32(&word, TXWI_W1_BW_WIN_SIZE, txdesc->ba_size);
 	rt2x00_set_field32(&word, TXWI_W1_WIRELESS_CLI_ID,
 			   test_bit(ENTRY_TXD_ENCRYPT, &txdesc->flags) ?
-			       (skbdesc->entry->entry_idx + 1) : 0xff);
+			   txdesc->key_idx : 0xff);
 	rt2x00_set_field32(&word, TXWI_W1_MPDU_TOTAL_BYTE_COUNT,
 			   skb->len - txdesc->l2pad);
 	rt2x00_set_field32(&word, TXWI_W1_PACKETID,
@@ -2204,8 +2206,8 @@ static void rt2800pci_write_tx_desc(struct rt2x00_dev *rt2x00dev,
 
 	/*
 	 * Always write 0 to IV/EIV fields, hardware will insert the IV
-	 * from the IVEIV register when ENTRY_TXD_ENCRYPT_IV is set to 0.
-	 * When ENTRY_TXD_ENCRYPT_IV is set to 1 it will use the IV data
+	 * from the IVEIV register when TXD_W3_WIV is set to 0.
+	 * When TXD_W3_WIV is set to 1 it will use the IV data
 	 * from the descriptor. The TXWI_W1_WIRELESS_CLI_ID indicates which
 	 * crypto entry in the registers should be used to encrypt the frame.
 	 */
