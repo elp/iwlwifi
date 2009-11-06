@@ -765,8 +765,7 @@ static int iwl_mod_ht40_chan_info(struct iwl_priv *priv,
  *     find the highest tx power from all chains for the channel
  */
 static s8 iwl_get_max_txpower_avg(struct iwl_priv *priv,
-		struct iwl_eeprom_enhanced_txpwr *enhanced_txpower,
-		int element, s8 *max_txpower_in_half_dbm)
+		struct iwl_eeprom_enhanced_txpwr *enhanced_txpower, int element)
 {
 	s8 max_txpower_avg = 0; /* (dBm) */
 
@@ -798,14 +797,10 @@ static s8 iwl_get_max_txpower_avg(struct iwl_priv *priv,
 	    (enhanced_txpower[element].mimo3_max > max_txpower_avg))
 		max_txpower_avg = enhanced_txpower[element].mimo3_max;
 
-	/*
-	 * max. tx power in EEPROM is in 1/2 dBm format
-	 * convert from 1/2 dBm to dBm (round-up convert)
-	 * but we also do not want to loss 1/2 dBm resolution which
-	 * will impact performance
+	/* max. tx power in EEPROM is in 1/2 dBm format
+	 * convert from 1/2 dBm to dBm
 	 */
-	*max_txpower_in_half_dbm = max_txpower_avg;
-	return (max_txpower_avg & 0x01) + (max_txpower_avg >> 1);
+	return max_txpower_avg >> 1;
 }
 
 /**
@@ -814,7 +809,7 @@ static s8 iwl_get_max_txpower_avg(struct iwl_priv *priv,
  */
 static s8 iwl_update_common_txpower(struct iwl_priv *priv,
 		struct iwl_eeprom_enhanced_txpwr *enhanced_txpower,
-		int section, int element, s8 *max_txpower_in_half_dbm)
+		int section, int element)
 {
 	struct iwl_channel_info *ch_info;
 	int ch;
@@ -828,22 +823,20 @@ static s8 iwl_update_common_txpower(struct iwl_priv *priv,
 	if (element == EEPROM_TXPOWER_COMMON_HT40_INDEX)
 		is_ht40 = true;
 	max_txpower_avg =
-		iwl_get_max_txpower_avg(priv, enhanced_txpower,
-					element, max_txpower_in_half_dbm);
-
+		iwl_get_max_txpower_avg(priv, enhanced_txpower, element);
 	ch_info = priv->channel_info;
 
 	for (ch = 0; ch < priv->channel_count; ch++) {
 		/* find matching band and update tx power if needed */
 		if ((ch_info->band == enhinfo[section].band) &&
-		    (ch_info->max_power_avg < max_txpower_avg) &&
-		    (!is_ht40)) {
+		    (ch_info->max_power_avg < max_txpower_avg) && (!is_ht40)) {
 			/* Update regulatory-based run-time data */
 			ch_info->max_power_avg = ch_info->curr_txpow =
-				max_txpower_avg;
+			    max_txpower_avg;
 			ch_info->scan_power = max_txpower_avg;
 		}
 		if ((ch_info->band == enhinfo[section].band) && is_ht40 &&
+		    ch_info->ht40_max_power_avg &&
 		    (ch_info->ht40_max_power_avg < max_txpower_avg)) {
 			/* Update regulatory-based run-time data */
 			ch_info->ht40_max_power_avg = max_txpower_avg;
@@ -859,7 +852,7 @@ static s8 iwl_update_common_txpower(struct iwl_priv *priv,
  */
 static s8 iwl_update_channel_txpower(struct iwl_priv *priv,
 		struct iwl_eeprom_enhanced_txpwr *enhanced_txpower,
-		int section, int element, s8 *max_txpower_in_half_dbm)
+		int section, int element)
 {
 	struct iwl_channel_info *ch_info;
 	int ch;
@@ -868,8 +861,7 @@ static s8 iwl_update_channel_txpower(struct iwl_priv *priv,
 
 	channel = enhinfo[section].iwl_eeprom_section_channel[element];
 	max_txpower_avg =
-		iwl_get_max_txpower_avg(priv, enhanced_txpower,
-					element, max_txpower_in_half_dbm);
+		iwl_get_max_txpower_avg(priv, enhanced_txpower, element);
 
 	ch_info = priv->channel_info;
 	for (ch = 0; ch < priv->channel_count; ch++) {
@@ -883,6 +875,7 @@ static s8 iwl_update_channel_txpower(struct iwl_priv *priv,
 				ch_info->scan_power = max_txpower_avg;
 			}
 			if ((enhinfo[section].is_ht40) &&
+			    (ch_info->ht40_max_power_avg) &&
 			    (ch_info->ht40_max_power_avg < max_txpower_avg)) {
 				/* Update regulatory-based run-time data */
 				ch_info->ht40_max_power_avg = max_txpower_avg;
@@ -904,7 +897,6 @@ void iwlcore_eeprom_enhanced_txpower(struct iwl_priv *priv)
 	struct iwl_eeprom_enhanced_txpwr *enhanced_txpower;
 	u32 offset;
 	s8 max_txpower_avg; /* (dBm) */
-	s8 max_txpower_in_half_dbm; /* (half-dBm) */
 
 	/* Loop through all the sections
 	 * adjust bands and channel's max tx power
@@ -931,29 +923,16 @@ void iwlcore_eeprom_enhanced_txpower(struct iwl_priv *priv)
 			if (enhinfo[section].is_common)
 				max_txpower_avg =
 					iwl_update_common_txpower(priv,
-						enhanced_txpower, section,
-						element,
-						&max_txpower_in_half_dbm);
+					enhanced_txpower, section, element);
 			else
 				max_txpower_avg =
 					iwl_update_channel_txpower(priv,
-						enhanced_txpower, section,
-						element,
-						&max_txpower_in_half_dbm);
+					enhanced_txpower, section, element);
 
 			/* Update the tx_power_user_lmt to the highest power
 			 * supported by any channel */
 			if (max_txpower_avg > priv->tx_power_user_lmt)
 				priv->tx_power_user_lmt = max_txpower_avg;
-
-			/*
-			 * Update the tx_power_lmt_in_half_dbm to
-			 * the highest power supported by any channel
-			 */
-			if (max_txpower_in_half_dbm >
-			    priv->tx_power_lmt_in_half_dbm)
-				priv->tx_power_lmt_in_half_dbm =
-					max_txpower_in_half_dbm;
 		}
 	}
 }
