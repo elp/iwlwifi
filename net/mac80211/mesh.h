@@ -174,7 +174,7 @@ struct mesh_rmc {
 #define MESH_CFG_CMP_LEN 	(IEEE80211_MESH_CONFIG_LEN - 2)
 
 /* Default values, timeouts in ms */
-#define MESH_TTL 		5
+#define MESH_TTL 		31
 #define MESH_MAX_RETR	 	3
 #define MESH_RET_T 		100
 #define MESH_CONF_T 		100
@@ -206,8 +206,9 @@ struct mesh_rmc {
 #define MESH_MAX_MPATHS		1024
 
 /* Pending ANA approval */
-#define PLINK_CATEGORY		30
+#define MESH_PLINK_CATEGORY	30
 #define MESH_PATH_SEL_CATEGORY	32
+#define MESH_PATH_SEL_ACTION	0
 
 /* Public interfaces */
 /* Various */

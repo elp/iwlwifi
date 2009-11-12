@@ -208,6 +208,9 @@ struct ieee80211_if_wds {
 
 struct ieee80211_if_vlan {
 	struct list_head list;
+
+	/* used for all tx if the VLAN is configured to 4-addr mode */
+	struct sta_info *sta;
 };
 
 struct mesh_stats {
@@ -361,15 +364,15 @@ struct ieee80211_if_mesh {
 	u8 mesh_id[IEEE80211_MAX_MESH_ID_LEN];
 	size_t mesh_id_len;
 	/* Active Path Selection Protocol Identifier */
-	u8 mesh_pp_id[4];
+	u8 mesh_pp_id;
 	/* Active Path Selection Metric Identifier */
-	u8 mesh_pm_id[4];
+	u8 mesh_pm_id;
 	/* Congestion Control Mode Identifier */
-	u8 mesh_cc_id[4];
+	u8 mesh_cc_id;
 	/* Synchronization Protocol Identifier */
-	u8 mesh_sp_id[4];
+	u8 mesh_sp_id;
 	/* Authentication Protocol Identifier */
-	u8 mesh_auth_id[4];
+	u8 mesh_auth_id;
 	/* Local mesh Destination Sequence Number */
 	u32 dsn;
 	/* Last used PREQ ID */
@@ -456,6 +459,8 @@ struct ieee80211_sub_if_data {
 
 	int force_unicast_rateidx; /* forced TX rateidx for unicast frames */
 	int max_ratectrl_rateidx; /* max TX rateidx for rate control */
+
+	bool use_4addr; /* use 4-address frames */
 
 	union {
 		struct ieee80211_if_ap ap;

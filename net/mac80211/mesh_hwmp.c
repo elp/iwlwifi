@@ -9,6 +9,12 @@
 
 #include "mesh.h"
 
+#ifdef CONFIG_MAC80211_VERBOSE_MHWMP_DEBUG
+#define mhwmp_dbg(fmt, args...)   printk(KERN_DEBUG "Mesh HWMP: " fmt, ##args)
+#else
+#define mhwmp_dbg(fmt, args...)   do { (void)(0); } while (0)
+#endif
+
 #define TEST_FRAME_LEN	8192
 #define MAX_METRIC	0xffffffff
 #define ARITH_SHIFT	8
@@ -105,15 +111,17 @@ static int mesh_path_sel_frame_tx(enum mpath_frame_type action, u8 flags,
 	memcpy(mgmt->sa, sdata->dev->dev_addr, ETH_ALEN);
 	/* BSSID is left zeroed, wildcard value */
 	mgmt->u.action.category = MESH_PATH_SEL_CATEGORY;
-	mgmt->u.action.u.mesh_action.action_code = action;
+	mgmt->u.action.u.mesh_action.action_code = MESH_PATH_SEL_ACTION;
 
 	switch (action) {
 	case MPATH_PREQ:
+		mhwmp_dbg("sending PREQ to %pM\n", dst);
 		ie_len = 37;
 		pos = skb_put(skb, 2 + ie_len);
 		*pos++ = WLAN_EID_PREQ;
 		break;
 	case MPATH_PREP:
+		mhwmp_dbg("sending PREP to %pM\n", dst);
 		ie_len = 31;
 		pos = skb_put(skb, 2 + ie_len);
 		*pos++ = WLAN_EID_PREP;
@@ -184,7 +192,7 @@ int mesh_path_error_tx(u8 *dst, __le32 dst_dsn, u8 *ra,
 	memcpy(mgmt->sa, sdata->dev->dev_addr, ETH_ALEN);
 	/* BSSID is left zeroed, wildcard value */
 	mgmt->u.action.category = MESH_PATH_SEL_CATEGORY;
-	mgmt->u.action.u.mesh_action.action_code = MPATH_PERR;
+	mgmt->u.action.u.mesh_action.action_code = MESH_PATH_SEL_ACTION;
 	ie_len = 12;
 	pos = skb_put(skb, 2 + ie_len);
 	*pos++ = WLAN_EID_PERR;
@@ -269,7 +277,7 @@ static u32 airtime_link_metric_get(struct ieee80211_local *local,
  */
 static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
 			    struct ieee80211_mgmt *mgmt,
-			    u8 *hwmp_ie)
+			    u8 *hwmp_ie, enum mpath_frame_type action)
 {
 	struct ieee80211_local *local = sdata->local;
 	struct mesh_path *mpath;
@@ -280,7 +288,6 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
 	unsigned long orig_lifetime, exp_time;
 	u32 last_hop_metric, new_metric;
 	bool process = true;
-	u8 action = mgmt->u.action.u.mesh_action.action_code;
 
 	rcu_read_lock();
 	sta = sta_info_get(local, mgmt->sa);
@@ -432,7 +439,10 @@ static void hwmp_preq_frame_process(struct ieee80211_sub_if_data *sdata,
 	orig_dsn = PREQ_IE_ORIG_DSN(preq_elem);
 	dst_flags = PREQ_IE_DST_F(preq_elem);
 
+	mhwmp_dbg("received PREQ from %pM\n", orig_addr);
+
 	if (memcmp(dst_addr, sdata->dev->dev_addr, ETH_ALEN) == 0) {
+		mhwmp_dbg("PREQ is for us\n");
 		forward = false;
 		reply = true;
 		metric = 0;
@@ -467,13 +477,14 @@ static void hwmp_preq_frame_process(struct ieee80211_sub_if_data *sdata,
 	if (reply) {
 		lifetime = PREQ_IE_LIFETIME(preq_elem);
 		ttl = ifmsh->mshcfg.dot11MeshTTL;
-		if (ttl != 0)
+		if (ttl != 0) {
+			mhwmp_dbg("replying to the PREQ\n");
 			mesh_path_sel_frame_tx(MPATH_PREP, 0, dst_addr,
 				cpu_to_le32(dst_dsn), 0, orig_addr,
 				cpu_to_le32(orig_dsn), mgmt->sa, 0, ttl,
 				cpu_to_le32(lifetime), cpu_to_le32(metric),
 				0, sdata);
-		else
+		} else
 			ifmsh->mshstats.dropped_frames_ttl++;
 	}
 
@@ -487,6 +498,7 @@ static void hwmp_preq_frame_process(struct ieee80211_sub_if_data *sdata,
 			ifmsh->mshstats.dropped_frames_ttl++;
 			return;
 		}
+		mhwmp_dbg("forwarding the PREQ from %pM\n", orig_addr);
 		--ttl;
 		flags = PREQ_IE_FLAGS(preq_elem);
 		preq_id = PREQ_IE_PREQ_ID(preq_elem);
@@ -512,6 +524,8 @@ static void hwmp_prep_frame_process(struct ieee80211_sub_if_data *sdata,
 	u8 ttl, hopcount, flags;
 	u8 next_hop[ETH_ALEN];
 	u32 dst_dsn, orig_dsn, lifetime;
+
+	mhwmp_dbg("received PREP from %pM\n", PREP_IE_ORIG_ADDR(prep_elem));
 
 	/* Note that we divert from the draft nomenclature and denominate
 	 * destination to what the draft refers to as origininator. So in this
@@ -614,32 +628,31 @@ void mesh_rx_path_sel_frame(struct ieee80211_sub_if_data *sdata,
 	ieee802_11_parse_elems(mgmt->u.action.u.mesh_action.variable,
 			len - baselen, &elems);
 
-	switch (mgmt->u.action.u.mesh_action.action_code) {
-	case MPATH_PREQ:
-		if (!elems.preq || elems.preq_len != 37)
+	if (elems.preq) {
+		if (elems.preq_len != 37)
 			/* Right now we support just 1 destination and no AE */
 			return;
-		last_hop_metric = hwmp_route_info_get(sdata, mgmt, elems.preq);
-		if (!last_hop_metric)
-			return;
-		hwmp_preq_frame_process(sdata, mgmt, elems.preq, last_hop_metric);
-		break;
-	case MPATH_PREP:
-		if (!elems.prep || elems.prep_len != 31)
+		last_hop_metric = hwmp_route_info_get(sdata, mgmt, elems.preq,
+						      MPATH_PREQ);
+		if (last_hop_metric)
+			hwmp_preq_frame_process(sdata, mgmt, elems.preq,
+						last_hop_metric);
+	}
+	if (elems.prep) {
+		if (elems.prep_len != 31)
 			/* Right now we support no AE */
 			return;
-		last_hop_metric = hwmp_route_info_get(sdata, mgmt, elems.prep);
-		if (!last_hop_metric)
-			return;
-		hwmp_prep_frame_process(sdata, mgmt, elems.prep, last_hop_metric);
-		break;
-	case MPATH_PERR:
-		if (!elems.perr || elems.perr_len != 12)
+		last_hop_metric = hwmp_route_info_get(sdata, mgmt, elems.prep,
+						      MPATH_PREP);
+		if (last_hop_metric)
+			hwmp_prep_frame_process(sdata, mgmt, elems.prep,
+						last_hop_metric);
+	}
+	if (elems.perr) {
+		if (elems.perr_len != 12)
 			/* Right now we support only one destination per PERR */
 			return;
 		hwmp_perr_frame_process(sdata, mgmt, elems.perr);
-	default:
-		return;
 	}
 
 }
@@ -661,7 +674,7 @@ static void mesh_queue_preq(struct mesh_path *mpath, u8 flags)
 
 	preq_node = kmalloc(sizeof(struct mesh_preq_queue), GFP_ATOMIC);
 	if (!preq_node) {
-		printk(KERN_DEBUG "Mesh HWMP: could not allocate PREQ node\n");
+		mhwmp_dbg("could not allocate PREQ node\n");
 		return;
 	}
 
@@ -670,7 +683,7 @@ static void mesh_queue_preq(struct mesh_path *mpath, u8 flags)
 		spin_unlock(&ifmsh->mesh_preq_queue_lock);
 		kfree(preq_node);
 		if (printk_ratelimit())
-			printk(KERN_DEBUG "Mesh HWMP: PREQ node queue full\n");
+			mhwmp_dbg("PREQ node queue full\n");
 		return;
 	}
 

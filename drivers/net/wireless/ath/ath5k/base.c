@@ -323,10 +323,13 @@ static inline void ath5k_txbuf_free(struct ath5k_softc *sc,
 static inline void ath5k_rxbuf_free(struct ath5k_softc *sc,
 				struct ath5k_buf *bf)
 {
+	struct ath5k_hw *ah = sc->ah;
+	struct ath_common *common = ath5k_hw_common(ah);
+
 	BUG_ON(!bf);
 	if (!bf->skb)
 		return;
-	pci_unmap_single(sc->pdev, bf->skbaddr, sc->rxbufsize,
+	pci_unmap_single(sc->pdev, bf->skbaddr, common->rx_bufsize,
 			PCI_DMA_FROMDEVICE);
 	dev_kfree_skb_any(bf->skb);
 	bf->skb = NULL;
@@ -1146,7 +1149,6 @@ ath5k_mode_setup(struct ath5k_softc *sc)
 	/* configure operational mode */
 	ath5k_hw_set_opmode(ah);
 
-	ath5k_hw_set_mcast_filter(ah, 0, 0);
 	ATH5K_DBG(sc, ATH5K_DEBUG_MODE, "RX filter 0x%x\n", rfilt);
 }
 
@@ -1182,17 +1184,18 @@ struct sk_buff *ath5k_rx_skb_alloc(struct ath5k_softc *sc, dma_addr_t *skb_addr)
 	 * fake physical layer header at the start.
 	 */
 	skb = ath_rxbuf_alloc(common,
-			      sc->rxbufsize + common->cachelsz - 1,
+			      common->rx_bufsize,
 			      GFP_ATOMIC);
 
 	if (!skb) {
 		ATH5K_ERR(sc, "can't alloc skbuff of size %u\n",
-				sc->rxbufsize + common->cachelsz - 1);
+				common->rx_bufsize);
 		return NULL;
 	}
 
 	*skb_addr = pci_map_single(sc->pdev,
-		skb->data, sc->rxbufsize, PCI_DMA_FROMDEVICE);
+				   skb->data, common->rx_bufsize,
+				   PCI_DMA_FROMDEVICE);
 	if (unlikely(pci_dma_mapping_error(sc->pdev, *skb_addr))) {
 		ATH5K_ERR(sc, "%s: DMA mapping failed\n", __func__);
 		dev_kfree_skb(skb);
@@ -1632,10 +1635,10 @@ ath5k_rx_start(struct ath5k_softc *sc)
 	struct ath5k_buf *bf;
 	int ret;
 
-	sc->rxbufsize = roundup(IEEE80211_MAX_LEN, common->cachelsz);
+	common->rx_bufsize = roundup(IEEE80211_MAX_LEN, common->cachelsz);
 
-	ATH5K_DBG(sc, ATH5K_DEBUG_RESET, "cachelsz %u rxbufsize %u\n",
-		common->cachelsz, sc->rxbufsize);
+	ATH5K_DBG(sc, ATH5K_DEBUG_RESET, "cachelsz %u rx_bufsize %u\n",
+		  common->cachelsz, common->rx_bufsize);
 
 	spin_lock_bh(&sc->rxbuflock);
 	sc->rxlink = NULL;
@@ -1680,6 +1683,8 @@ static unsigned int
 ath5k_rx_decrypted(struct ath5k_softc *sc, struct ath5k_desc *ds,
 		struct sk_buff *skb, struct ath5k_rx_status *rs)
 {
+	struct ath5k_hw *ah = sc->ah;
+	struct ath_common *common = ath5k_hw_common(ah);
 	struct ieee80211_hdr *hdr = (void *)skb->data;
 	unsigned int keyix, hlen;
 
@@ -1696,7 +1701,7 @@ ath5k_rx_decrypted(struct ath5k_softc *sc, struct ath5k_desc *ds,
 	    skb->len >= hlen + 4) {
 		keyix = skb->data[hlen + 3] >> 6;
 
-		if (test_bit(keyix, sc->keymap))
+		if (test_bit(keyix, common->keymap))
 			return RX_FLAG_DECRYPTED;
 	}
 
@@ -1770,6 +1775,8 @@ ath5k_tasklet_rx(unsigned long data)
 	struct sk_buff *skb, *next_skb;
 	dma_addr_t next_skb_addr;
 	struct ath5k_softc *sc = (void *)data;
+	struct ath5k_hw *ah = sc->ah;
+	struct ath_common *common = ath5k_hw_common(ah);
 	struct ath5k_buf *bf;
 	struct ath5k_desc *ds;
 	int ret;
@@ -1847,7 +1854,7 @@ accept:
 		if (!next_skb)
 			goto next;
 
-		pci_unmap_single(sc->pdev, bf->skbaddr, sc->rxbufsize,
+		pci_unmap_single(sc->pdev, bf->skbaddr, common->rx_bufsize,
 				PCI_DMA_FROMDEVICE);
 		skb_put(skb, rs.rs_datalen);
 
@@ -3033,6 +3040,8 @@ ath5k_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	      struct ieee80211_key_conf *key)
 {
 	struct ath5k_softc *sc = hw->priv;
+	struct ath5k_hw *ah = sc->ah;
+	struct ath_common *common = ath5k_hw_common(ah);
 	int ret = 0;
 
 	if (modparam_nohwcrypt)
@@ -3065,14 +3074,14 @@ ath5k_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			ATH5K_ERR(sc, "can't set the key\n");
 			goto unlock;
 		}
-		__set_bit(key->keyidx, sc->keymap);
+		__set_bit(key->keyidx, common->keymap);
 		key->hw_key_idx = key->keyidx;
 		key->flags |= (IEEE80211_KEY_FLAG_GENERATE_IV |
 			       IEEE80211_KEY_FLAG_GENERATE_MMIC);
 		break;
 	case DISABLE_KEY:
 		ath5k_hw_reset_key(sc->ah, key->keyidx);
-		__clear_bit(key->keyidx, sc->keymap);
+		__clear_bit(key->keyidx, common->keymap);
 		break;
 	default:
 		ret = -EINVAL;
