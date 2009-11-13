@@ -935,7 +935,7 @@ static void mpath_set_pinfo(struct mesh_path *mpath, u8 *next_hop,
 	pinfo->generation = mesh_paths_generation;
 
 	pinfo->filled = MPATH_INFO_FRAME_QLEN |
-			MPATH_INFO_DSN |
+			MPATH_INFO_SN |
 			MPATH_INFO_METRIC |
 			MPATH_INFO_EXPTIME |
 			MPATH_INFO_DISCOVERY_TIMEOUT |
@@ -943,7 +943,7 @@ static void mpath_set_pinfo(struct mesh_path *mpath, u8 *next_hop,
 			MPATH_INFO_FLAGS;
 
 	pinfo->frame_qlen = mpath->frame_queue.qlen;
-	pinfo->dsn = mpath->dsn;
+	pinfo->sn = mpath->sn;
 	pinfo->metric = mpath->metric;
 	if (time_before(jiffies, mpath->exp_time))
 		pinfo->exptime = jiffies_to_msecs(mpath->exp_time - jiffies);
@@ -955,8 +955,8 @@ static void mpath_set_pinfo(struct mesh_path *mpath, u8 *next_hop,
 		pinfo->flags |= NL80211_MPATH_FLAG_ACTIVE;
 	if (mpath->flags & MESH_PATH_RESOLVING)
 		pinfo->flags |= NL80211_MPATH_FLAG_RESOLVING;
-	if (mpath->flags & MESH_PATH_DSN_VALID)
-		pinfo->flags |= NL80211_MPATH_FLAG_DSN_VALID;
+	if (mpath->flags & MESH_PATH_SN_VALID)
+		pinfo->flags |= NL80211_MPATH_FLAG_SN_VALID;
 	if (mpath->flags & MESH_PATH_FIXED)
 		pinfo->flags |= NL80211_MPATH_FLAG_FIXED;
 	if (mpath->flags & MESH_PATH_RESOLVING)
@@ -1029,7 +1029,10 @@ static int ieee80211_set_mesh_params(struct wiphy *wiphy,
 {
 	struct mesh_config *conf;
 	struct ieee80211_sub_if_data *sdata;
+	struct ieee80211_if_mesh *ifmsh;
+
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	ifmsh = &sdata->u.mesh;
 
 	/* Set the config options which we are interested in setting */
 	conf = &(sdata->u.mesh.mshcfg);
@@ -1064,6 +1067,10 @@ static int ieee80211_set_mesh_params(struct wiphy *wiphy,
 			   mask))
 		conf->dot11MeshHWMPnetDiameterTraversalTime =
 			nconf->dot11MeshHWMPnetDiameterTraversalTime;
+	if (_chg_mesh_attr(NL80211_MESHCONF_HWMP_ROOTMODE, mask)) {
+		conf->dot11MeshHWMPRootMode = nconf->dot11MeshHWMPRootMode;
+		ieee80211_mesh_root_setup(ifmsh);
+	}
 	return 0;
 }
 

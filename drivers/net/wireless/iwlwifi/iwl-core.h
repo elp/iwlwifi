@@ -278,8 +278,8 @@ struct iwl_cfg {
 	const u16 max_ll_items;
 	const bool shadow_ram_support;
 	const bool ht_greenfield_support;
-	u16 led_compensation;
 	const bool broken_powersave;
+	u16 led_compensation;
 	bool use_rts_for_ht;
 	int chain_noise_num_beacons;
 	const bool supports_idle;

@@ -355,6 +355,7 @@ struct ieee80211_if_mesh {
 	struct work_struct work;
 	struct timer_list housekeeping_timer;
 	struct timer_list mesh_path_timer;
+	struct timer_list mesh_path_root_timer;
 	struct sk_buff_head skb_queue;
 
 	unsigned long timers_running;
@@ -373,14 +374,14 @@ struct ieee80211_if_mesh {
 	u8 mesh_sp_id;
 	/* Authentication Protocol Identifier */
 	u8 mesh_auth_id;
-	/* Local mesh Destination Sequence Number */
-	u32 dsn;
+	/* Local mesh Sequence Number */
+	u32 sn;
 	/* Last used PREQ ID */
 	u32 preq_id;
 	atomic_t mpaths;
-	/* Timestamp of last DSN update */
-	unsigned long last_dsn_update;
-	/* Timestamp of last DSN sent */
+	/* Timestamp of last SN update */
+	unsigned long last_sn_update;
+	/* Timestamp of last SN sent */
 	unsigned long last_preq;
 	struct mesh_rmc *rmc;
 	spinlock_t mesh_preq_queue_lock;
@@ -804,6 +805,7 @@ struct ieee802_11_elems {
 	u8 *preq;
 	u8 *prep;
 	u8 *perr;
+	struct ieee80211_rann_ie *rann;
 	u8 *ch_switch_elem;
 	u8 *country_elem;
 	u8 *pwr_constr_elem;

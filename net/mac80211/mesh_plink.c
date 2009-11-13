@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008 open80211s Ltd.
+ * Copyright (c) 2008, 2009 open80211s Ltd.
  * Author:     Luis Carlos Cobo <luisca@cozybit.com>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -181,7 +181,8 @@ static int mesh_plink_frame_tx(struct ieee80211_sub_if_data *sdata,
 		if (action == PLINK_CONFIRM) {
 			pos = skb_put(skb, 4);
 			/* two-byte status code followed by two-byte AID */
-			memset(pos, 0, 4);
+			memset(pos, 0, 2);
+			memcpy(pos + 2, &plid, 2);
 		}
 		mesh_mgmt_ies_add(skb, sdata);
 	}
