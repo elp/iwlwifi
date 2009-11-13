@@ -205,7 +205,7 @@ static void iwl5000_gain_computation(struct iwl_priv *priv,
 		cmd.delta_gain_1 = data->delta_gain_code[1];
 		cmd.delta_gain_2 = data->delta_gain_code[2];
 		iwl_send_cmd_pdu_async(priv, REPLY_PHY_CALIBRATION_CMD,
-			sizeof(cmd), &cmd, NULL);
+				       sizeof(cmd), &cmd, NULL, NULL);
 
 		data->radio_write = 1;
 		data->state = IWL_CHAIN_NOISE_CALIBRATED;
@@ -1236,7 +1236,8 @@ static int iwl5000_send_rxon_assoc(struct iwl_priv *priv)
 	rxon_assoc.acquisition_data = priv->staging_rxon.acquisition_data;
 
 	ret = iwl_send_cmd_pdu_async(priv, REPLY_RXON_ASSOC,
-				     sizeof(rxon_assoc), &rxon_assoc, NULL);
+				     sizeof(rxon_assoc), &rxon_assoc,
+				     NULL, NULL);
 	if (ret)
 		return ret;
 
@@ -1275,7 +1276,7 @@ int  iwl5000_send_tx_power(struct iwl_priv *priv)
 
 	return  iwl_send_cmd_pdu_async(priv, tx_ant_cfg_cmd,
 				       sizeof(tx_power_cmd), &tx_power_cmd,
-				       NULL);
+				       NULL, NULL);
 }
 
 void iwl5000_temperature(struct iwl_priv *priv)

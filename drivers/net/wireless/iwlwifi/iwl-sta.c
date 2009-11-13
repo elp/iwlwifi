@@ -99,7 +99,8 @@ static void iwl_sta_ucode_activate(struct iwl_priv *priv, u8 sta_id)
 
 static void iwl_add_sta_callback(struct iwl_priv *priv,
 				 struct iwl_device_cmd *cmd,
-				 struct iwl_rx_packet *pkt)
+				 struct iwl_rx_packet *pkt,
+				 void *cb_priv)
 {
 	struct iwl_addsta_cmd *addsta =
 		(struct iwl_addsta_cmd *)cmd->cmd.payload;
@@ -134,9 +135,10 @@ int iwl_send_add_sta(struct iwl_priv *priv,
 		.data = data,
 	};
 
-	if (flags & CMD_ASYNC)
+	if (flags & CMD_ASYNC) {
 		cmd.callback = iwl_add_sta_callback;
-	else
+		cmd.cb_priv = NULL;
+	} else
 		cmd.flags |= CMD_WANT_SKB;
 
 	cmd.len = priv->cfg->ops->utils->build_addsta_hcmd(sta, data);
@@ -322,7 +324,8 @@ static void iwl_sta_ucode_deactivate(struct iwl_priv *priv, const char *addr)
 
 static void iwl_remove_sta_callback(struct iwl_priv *priv,
 				    struct iwl_device_cmd *cmd,
-				    struct iwl_rx_packet *pkt)
+				    struct iwl_rx_packet *pkt,
+				    void *cb_priv)
 {
 	struct iwl_rem_sta_cmd *rm_sta =
 			(struct iwl_rem_sta_cmd *)cmd->cmd.payload;
@@ -363,9 +366,10 @@ static int iwl_send_remove_station(struct iwl_priv *priv, const u8 *addr,
 	rm_sta_cmd.num_sta = 1;
 	memcpy(&rm_sta_cmd.addr, addr , ETH_ALEN);
 
-	if (flags & CMD_ASYNC)
+	if (flags & CMD_ASYNC) {
 		cmd.callback = iwl_remove_sta_callback;
-	else
+		cmd.cb_priv = NULL;
+	} else
 		cmd.flags |= CMD_WANT_SKB;
 	ret = iwl_send_cmd(priv, &cmd);
 
@@ -470,7 +474,8 @@ void iwl_clear_stations_table(struct iwl_priv *priv)
 
 	if (iwl_is_alive(priv) &&
 	   !test_bit(STATUS_EXIT_PENDING, &priv->status) &&
-	   iwl_send_cmd_pdu_async(priv, REPLY_REMOVE_ALL_STA, 0, NULL, NULL))
+	   iwl_send_cmd_pdu_async(priv, REPLY_REMOVE_ALL_STA, 0, NULL,
+				  NULL, NULL))
 		IWL_ERR(priv, "Couldn't clear the station table\n");
 
 	priv->num_stations = 0;
@@ -991,7 +996,7 @@ static void iwl_sta_init_lq(struct iwl_priv *priv, const u8 *addr, bool is_ap)
 	link_cmd.sta_id = is_ap ? IWL_AP_ID : priv->hw_params.bcast_sta_id;
 
 	iwl_send_cmd_pdu_async(priv, REPLY_TX_LINK_QUALITY_CMD,
-			       sizeof(link_cmd), &link_cmd, NULL);
+			       sizeof(link_cmd), &link_cmd, NULL, NULL);
 }
 
 /**
@@ -1080,7 +1085,7 @@ static void iwl_sta_init_bcast_lq(struct iwl_priv *priv)
 	link_cmd.sta_id = priv->hw_params.bcast_sta_id;
 
 	iwl_send_cmd_pdu_async(priv, REPLY_TX_LINK_QUALITY_CMD,
-			       sizeof(link_cmd), &link_cmd, NULL);
+			       sizeof(link_cmd), &link_cmd, NULL, NULL);
 }
 
 

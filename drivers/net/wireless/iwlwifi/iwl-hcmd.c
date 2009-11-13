@@ -108,7 +108,8 @@ EXPORT_SYMBOL(get_cmd_string);
 
 static void iwl_generic_cmd_callback(struct iwl_priv *priv,
 				     struct iwl_device_cmd *cmd,
-				     struct iwl_rx_packet *pkt)
+				     struct iwl_rx_packet *pkt,
+				     void *cb_priv)
 {
 	if (pkt->hdr.flags & IWL_CMD_FAILED_MSK) {
 		IWL_ERR(priv, "Bad return from %s (0x%08X)\n",
@@ -140,8 +141,10 @@ static int iwl_send_cmd_async(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 	BUG_ON(cmd->flags & CMD_WANT_SKB);
 
 	/* Assign a generic callback if one is not provided */
-	if (!cmd->callback)
+	if (!cmd->callback) {
 		cmd->callback = iwl_generic_cmd_callback;
+		cmd->cb_priv = NULL;
+	}
 
 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
 		return -EBUSY;
@@ -164,6 +167,7 @@ int iwl_send_cmd_sync(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 
 	 /* A synchronous command can not have a callback set. */
 	BUG_ON(cmd->callback);
+	BUG_ON(cmd->cb_priv);
 
 	if (test_and_set_bit(STATUS_HCMD_SYNC_ACTIVE, &priv->status)) {
 		IWL_ERR(priv,
@@ -268,7 +272,9 @@ int iwl_send_cmd_pdu_async(struct iwl_priv *priv,
 			   u8 id, u16 len, const void *data,
 			   void (*callback)(struct iwl_priv *priv,
 					    struct iwl_device_cmd *cmd,
-					    struct iwl_rx_packet *pkt))
+					    struct iwl_rx_packet *pkt,
+					    void *cb_priv),
+			   void *cb_priv)
 {
 	struct iwl_host_cmd cmd = {
 		.id = id,
@@ -278,6 +284,7 @@ int iwl_send_cmd_pdu_async(struct iwl_priv *priv,
 
 	cmd.flags |= CMD_ASYNC;
 	cmd.callback = callback;
+	cmd.cb_priv = cb_priv;
 
 	return iwl_send_cmd_async(priv, &cmd);
 }

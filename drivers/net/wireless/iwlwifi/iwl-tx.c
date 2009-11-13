@@ -1043,8 +1043,10 @@ int iwl_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 	out_meta->flags = cmd->flags;
 	if (cmd->flags & CMD_WANT_SKB)
 		out_meta->source = cmd;
-	if (cmd->flags & CMD_ASYNC)
+	if (cmd->flags & CMD_ASYNC) {
 		out_meta->callback = cmd->callback;
+		out_meta->cb_priv = cmd->cb_priv;
+	}
 
 	out_cmd->hdr.cmd = cmd->id;
 	memcpy(&out_cmd->cmd.payload, cmd->data, cmd->len);
@@ -1235,7 +1237,7 @@ void iwl_tx_cmd_complete(struct iwl_priv *priv, struct iwl_rx_mem_buffer *rxb)
 		meta->source->reply_page = (unsigned long)rxb_addr(rxb);
 		rxb->page = NULL;
 	} else if (meta->callback)
-		meta->callback(priv, cmd, pkt);
+		meta->callback(priv, cmd, pkt, meta->cb_priv);
 
 	iwl_hcmd_queue_reclaim(priv, txq_id, index, cmd_index);
 
