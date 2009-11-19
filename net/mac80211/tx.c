@@ -1219,7 +1219,8 @@ static int invoke_tx_handlers(struct ieee80211_tx_data *tx)
 	CALL_TXH(ieee80211_tx_h_ps_buf);
 	CALL_TXH(ieee80211_tx_h_select_key);
 	CALL_TXH(ieee80211_tx_h_michael_mic_add);
-	CALL_TXH(ieee80211_tx_h_rate_ctrl);
+	if (!(tx->local->hw.flags & IEEE80211_HW_HAS_RATE_CONTROL))
+		CALL_TXH(ieee80211_tx_h_rate_ctrl);
 	CALL_TXH(ieee80211_tx_h_misc);
 	CALL_TXH(ieee80211_tx_h_sequence);
 	CALL_TXH(ieee80211_tx_h_fragment);
@@ -1430,8 +1431,6 @@ static void ieee80211_xmit(struct ieee80211_sub_if_data *sdata,
 	int headroom;
 	bool may_encrypt;
 
-	dev_hold(sdata->dev);
-
 	if (need_dynamic_ps(local)) {
 		if (local->hw.conf.flags & IEEE80211_CONF_PS) {
 			ieee80211_stop_queues_by_reason(&local->hw,
@@ -1445,6 +1444,8 @@ static void ieee80211_xmit(struct ieee80211_sub_if_data *sdata,
 	}
 
 	info->flags |= IEEE80211_TX_CTL_REQ_TX_STATUS;
+
+	rcu_read_lock();
 
 	if (unlikely(sdata->vif.type == NL80211_IFTYPE_MONITOR)) {
 		int hdrlen;
@@ -1468,7 +1469,6 @@ static void ieee80211_xmit(struct ieee80211_sub_if_data *sdata,
 			 * support we will need a different mechanism.
 			 */
 
-			rcu_read_lock();
 			list_for_each_entry_rcu(tmp_sdata, &local->interfaces,
 						list) {
 				if (!netif_running(tmp_sdata->dev))
@@ -1477,13 +1477,10 @@ static void ieee80211_xmit(struct ieee80211_sub_if_data *sdata,
 					continue;
 				if (compare_ether_addr(tmp_sdata->dev->dev_addr,
 						       hdr->addr2) == 0) {
-					dev_hold(tmp_sdata->dev);
-					dev_put(sdata->dev);
 					sdata = tmp_sdata;
 					break;
 				}
 			}
-			rcu_read_unlock();
 		}
 	}
 
@@ -1497,7 +1494,7 @@ static void ieee80211_xmit(struct ieee80211_sub_if_data *sdata,
 
 	if (ieee80211_skb_resize(local, skb, headroom, may_encrypt)) {
 		dev_kfree_skb(skb);
-		dev_put(sdata->dev);
+		rcu_read_unlock();
 		return;
 	}
 
@@ -1508,13 +1505,13 @@ static void ieee80211_xmit(struct ieee80211_sub_if_data *sdata,
 		!is_multicast_ether_addr(hdr->addr1))
 			if (mesh_nexthop_lookup(skb, sdata)) {
 				/* skb queued: don't free */
-				dev_put(sdata->dev);
+				rcu_read_unlock();
 				return;
 			}
 
 	ieee80211_select_queue(local, skb);
 	ieee80211_tx(sdata, skb, false);
-	dev_put(sdata->dev);
+	rcu_read_unlock();
 }
 
 netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
@@ -1687,21 +1684,25 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 			/* packet from other interface */
 			struct mesh_path *mppath;
 			int is_mesh_mcast = 1;
-			char *mesh_da;
+			const u8 *mesh_da;
 
 			rcu_read_lock();
 			if (is_multicast_ether_addr(skb->data))
 				/* DA TA mSA AE:SA */
 				mesh_da = skb->data;
 			else {
+				static const u8 bcast[ETH_ALEN] =
+					{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+
 				mppath = mpp_path_lookup(skb->data, sdata);
 				if (mppath) {
 					/* RA TA mDA mSA AE:DA SA */
 					mesh_da = mppath->mpp;
 					is_mesh_mcast = 0;
-				} else
+				} else {
 					/* DA TA mSA AE:SA */
-					mesh_da = dev->broadcast;
+					mesh_da = bcast;
+				}
 			}
 			hdrlen = ieee80211_fill_mesh_addresses(&hdr, &fc,
 					mesh_da, dev->dev_addr);
@@ -1964,12 +1965,10 @@ void ieee80211_tx_pending(unsigned long data)
 			}
 
 			sdata = vif_to_sdata(info->control.vif);
-			dev_hold(sdata->dev);
 			spin_unlock_irqrestore(&local->queue_stop_reason_lock,
 						flags);
 
 			txok = ieee80211_tx_pending_skb(local, skb);
-			dev_put(sdata->dev);
 			if (!txok)
 				__skb_queue_head(&local->pending[i], skb);
 			spin_lock_irqsave(&local->queue_stop_reason_lock,
@@ -2282,16 +2281,11 @@ ieee80211_get_buffered_bc(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ieee80211_get_buffered_bc);
 
-void ieee80211_tx_skb(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
-		      int encrypt)
+void ieee80211_tx_skb(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb)
 {
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	skb_set_mac_header(skb, 0);
 	skb_set_network_header(skb, 0);
 	skb_set_transport_header(skb, 0);
-
-	if (!encrypt)
-		info->flags |= IEEE80211_TX_INTFL_DONT_ENCRYPT;
 
 	/*
 	 * The other path calling ieee80211_xmit is from the tasklet,

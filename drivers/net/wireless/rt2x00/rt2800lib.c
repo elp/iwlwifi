@@ -1,5 +1,6 @@
 /*
 	Copyright (C) 2009 Bartlomiej Zolnierkiewicz <bzolnier@gmail.com>
+	Copyright (C) 2009 Gertjan van Wingerde <gwingerde@gmail.com>
 
 	Based on the original rt2800pci.c and rt2800usb.c.
 	  Copyright (C) 2009 Ivo van Doorn <IvDoorn@gmail.com>
@@ -560,7 +561,8 @@ void rt2800_config_intf(struct rt2x00_dev *rt2x00dev, struct rt2x00_intf *intf,
 		rt2800_register_read(rt2x00dev, BCN_TIME_CFG, &reg);
 		rt2x00_set_field32(&reg, BCN_TIME_CFG_TSF_TICKING, 1);
 		rt2x00_set_field32(&reg, BCN_TIME_CFG_TSF_SYNC, conf->sync);
-		rt2x00_set_field32(&reg, BCN_TIME_CFG_TBTT_ENABLE, 1);
+		rt2x00_set_field32(&reg, BCN_TIME_CFG_TBTT_ENABLE,
+				   (conf->sync == TSF_SYNC_BEACON));
 		rt2800_register_write(rt2x00dev, BCN_TIME_CFG, reg);
 	}
 
@@ -806,10 +808,15 @@ static void rt2800_config_channel(struct rt2x00_dev *rt2x00dev,
 	unsigned int tx_pin;
 	u8 bbp;
 
-	if (rt2x00_rev(&rt2x00dev->chip) != RT3070_VERSION)
-		rt2800_config_channel_rt2x(rt2x00dev, conf, rf, info);
-	else
+	if ((rt2x00_rt(&rt2x00dev->chip, RT3070) ||
+	     rt2x00_rt(&rt2x00dev->chip, RT3090)) &&
+	    (rt2x00_rf(&rt2x00dev->chip, RF2020) ||
+	     rt2x00_rf(&rt2x00dev->chip, RF3020) ||
+	     rt2x00_rf(&rt2x00dev->chip, RF3021) ||
+	     rt2x00_rf(&rt2x00dev->chip, RF3022)))
 		rt2800_config_channel_rt3x(rt2x00dev, conf, rf, info);
+	else
+		rt2800_config_channel_rt2x(rt2x00dev, conf, rf, info);
 
 	/*
 	 * Change BBP settings
@@ -1678,24 +1685,28 @@ static void rt2800_efuse_read(struct rt2x00_dev *rt2x00dev, unsigned int i)
 {
 	u32 reg;
 
-	rt2800_register_read(rt2x00dev, EFUSE_CTRL, &reg);
+	mutex_lock(&rt2x00dev->csr_mutex);
+
+	rt2800_register_read_lock(rt2x00dev, EFUSE_CTRL, &reg);
 	rt2x00_set_field32(&reg, EFUSE_CTRL_ADDRESS_IN, i);
 	rt2x00_set_field32(&reg, EFUSE_CTRL_MODE, 0);
 	rt2x00_set_field32(&reg, EFUSE_CTRL_KICK, 1);
-	rt2800_register_write(rt2x00dev, EFUSE_CTRL, reg);
+	rt2800_register_write_lock(rt2x00dev, EFUSE_CTRL, reg);
 
 	/* Wait until the EEPROM has been loaded */
 	rt2800_regbusy_read(rt2x00dev, EFUSE_CTRL, EFUSE_CTRL_KICK, &reg);
 
 	/* Apparently the data is read from end to start */
-	rt2800_register_read(rt2x00dev, EFUSE_DATA3,
-				(u32 *)&rt2x00dev->eeprom[i]);
-	rt2800_register_read(rt2x00dev, EFUSE_DATA2,
-				(u32 *)&rt2x00dev->eeprom[i + 2]);
-	rt2800_register_read(rt2x00dev, EFUSE_DATA1,
-				(u32 *)&rt2x00dev->eeprom[i + 4]);
-	rt2800_register_read(rt2x00dev, EFUSE_DATA0,
-				(u32 *)&rt2x00dev->eeprom[i + 6]);
+	rt2800_register_read_lock(rt2x00dev, EFUSE_DATA3,
+					(u32 *)&rt2x00dev->eeprom[i]);
+	rt2800_register_read_lock(rt2x00dev, EFUSE_DATA2,
+					(u32 *)&rt2x00dev->eeprom[i + 2]);
+	rt2800_register_read_lock(rt2x00dev, EFUSE_DATA1,
+					(u32 *)&rt2x00dev->eeprom[i + 4]);
+	rt2800_register_read_lock(rt2x00dev, EFUSE_DATA0,
+					(u32 *)&rt2x00dev->eeprom[i + 6]);
+
+	mutex_unlock(&rt2x00dev->csr_mutex);
 }
 
 void rt2800_read_eeprom_efuse(struct rt2x00_dev *rt2x00dev)
@@ -1848,6 +1859,7 @@ int rt2800_init_eeprom(struct rt2x00_dev *rt2x00dev)
 			return -ENODEV;
 		}
 	}
+	rt2x00_print_chip(rt2x00dev);
 
 	if (!rt2x00_rf(&rt2x00dev->chip, RF2820) &&
 	    !rt2x00_rf(&rt2x00dev->chip, RF2850) &&
@@ -1985,7 +1997,7 @@ static const struct rf_channel rf_vals[] = {
  * RF value list for rt3070
  * Supports: 2.4 GHz
  */
-static const struct rf_channel rf_vals_3070[] = {
+static const struct rf_channel rf_vals_302x[] = {
 	{1,  241, 2, 2 },
 	{2,  241, 2, 7 },
 	{3,  242, 2, 2 },
@@ -2042,26 +2054,19 @@ int rt2800_probe_hw_mode(struct rt2x00_dev *rt2x00dev)
 
 	if (rt2x00_rf(chip, RF2820) ||
 	    rt2x00_rf(chip, RF2720) ||
-	    (rt2x00_intf_is_pci(rt2x00dev) &&
-	     (rt2x00_rf(chip, RF3020) ||
-	      rt2x00_rf(chip, RF3021) ||
-	      rt2x00_rf(chip, RF3022) ||
-	      rt2x00_rf(chip, RF2020) ||
-	      rt2x00_rf(chip, RF3052)))) {
+	    (rt2x00_intf_is_pci(rt2x00dev) && rt2x00_rf(chip, RF3052))) {
 		spec->num_channels = 14;
 		spec->channels = rf_vals;
-	} else if (rt2x00_rf(chip, RF2850) ||
-		   rt2x00_rf(chip, RF2750)) {
+	} else if (rt2x00_rf(chip, RF2850) || rt2x00_rf(chip, RF2750)) {
 		spec->supported_bands |= SUPPORT_BAND_5GHZ;
 		spec->num_channels = ARRAY_SIZE(rf_vals);
 		spec->channels = rf_vals;
-	} else if (rt2x00_intf_is_usb(rt2x00dev) &&
-		    (rt2x00_rf(chip, RF3020) ||
-		     rt2x00_rf(chip, RF2020) ||
-		     rt2x00_rf(chip, RF3021) ||
-		     rt2x00_rf(chip, RF3022))) {
-		spec->num_channels = ARRAY_SIZE(rf_vals_3070);
-		spec->channels = rf_vals_3070;
+	} else if (rt2x00_rf(chip, RF3020) ||
+		   rt2x00_rf(chip, RF2020) ||
+		   rt2x00_rf(chip, RF3021) ||
+		   rt2x00_rf(chip, RF3022)) {
+		spec->num_channels = ARRAY_SIZE(rf_vals_302x);
+		spec->channels = rf_vals_302x;
 	}
 
 	/*
