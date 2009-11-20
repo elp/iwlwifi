@@ -312,6 +312,8 @@ struct ieee80211_if_managed {
 	} mfp; /* management frame protection */
 
 	int wmm_last_param_set;
+
+	u8 use_4addr;
 };
 
 enum ieee80211_ibss_request {
@@ -459,8 +461,6 @@ struct ieee80211_sub_if_data {
 	int force_unicast_rateidx; /* forced TX rateidx for unicast frames */
 	int max_ratectrl_rateidx; /* max TX rateidx for rate control */
 
-	bool use_4addr; /* use 4-address frames */
-
 	union {
 		struct ieee80211_if_ap ap;
 		struct ieee80211_if_wds wds;
@@ -600,6 +600,14 @@ struct ieee80211_local {
 	 * sanity. It can eventually be used for WoW as well.
 	 */
 	bool suspended;
+
+	/*
+	 * Resuming is true while suspended, but when we're reprogramming the
+	 * hardware -- at that time it's allowed to use ieee80211_queue_work()
+	 * again even though some other parts of the stack are still suspended
+	 * and we still drop received frames to avoid waking the stack.
+	 */
+	bool resuming;
 
 	/*
 	 * quiescing is true during the suspend process _only_ to

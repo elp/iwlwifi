@@ -1051,7 +1051,7 @@ ieee80211_tx_prepare(struct ieee80211_sub_if_data *sdata,
 
 	hdr = (struct ieee80211_hdr *) skb->data;
 
-	if ((sdata->vif.type == NL80211_IFTYPE_AP_VLAN) && sdata->use_4addr)
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 		tx->sta = rcu_dereference(sdata->u.vlan.sta);
 	if (!tx->sta)
 		tx->sta = sta_info_get(local, hdr->addr1);
@@ -1443,8 +1443,6 @@ static void ieee80211_xmit(struct ieee80211_sub_if_data *sdata,
 		        msecs_to_jiffies(local->hw.conf.dynamic_ps_timeout));
 	}
 
-	info->flags |= IEEE80211_TX_CTL_REQ_TX_STATUS;
-
 	rcu_read_lock();
 
 	if (unlikely(sdata->vif.type == NL80211_IFTYPE_MONITOR)) {
@@ -1575,6 +1573,8 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 
 	memset(info, 0, sizeof(*info));
 
+	info->flags |= IEEE80211_TX_CTL_REQ_TX_STATUS;
+
 	/* pass the radiotap header up to xmit */
 	ieee80211_xmit(IEEE80211_DEV_TO_SUB_IF(dev), skb);
 	return NETDEV_TX_OK;
@@ -1632,8 +1632,7 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 	switch (sdata->vif.type) {
 	case NL80211_IFTYPE_AP_VLAN:
 		rcu_read_lock();
-		if (sdata->use_4addr)
-			sta = rcu_dereference(sdata->u.vlan.sta);
+		sta = rcu_dereference(sdata->u.vlan.sta);
 		if (sta) {
 			fc |= cpu_to_le16(IEEE80211_FCTL_FROMDS | IEEE80211_FCTL_TODS);
 			/* RA TA DA SA */
@@ -1727,7 +1726,7 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 #endif
 	case NL80211_IFTYPE_STATION:
 		memcpy(hdr.addr1, sdata->u.mgd.bssid, ETH_ALEN);
-		if (sdata->use_4addr && ethertype != ETH_P_PAE) {
+		if (sdata->u.mgd.use_4addr && ethertype != ETH_P_PAE) {
 			fc |= cpu_to_le16(IEEE80211_FCTL_FROMDS | IEEE80211_FCTL_TODS);
 			/* RA TA DA SA */
 			memcpy(hdr.addr2, dev->dev_addr, ETH_ALEN);
