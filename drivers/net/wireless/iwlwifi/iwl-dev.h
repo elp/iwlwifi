@@ -164,9 +164,7 @@ struct iwl_cmd_meta {
 	 */
 	void (*callback)(struct iwl_priv *priv,
 			 struct iwl_device_cmd *cmd,
-			 struct iwl_rx_packet *pkt,
-			 void *cb_priv);
-	void *cb_priv;
+			 struct iwl_rx_packet *pkt);
 
 	/* The CMD_SIZE_HUGE flag bit indicates that the command
 	 * structure is stored at the end of the shared queue memory. */
@@ -398,9 +396,7 @@ struct iwl_host_cmd {
 	unsigned long reply_page;
 	void (*callback)(struct iwl_priv *priv,
 			 struct iwl_device_cmd *cmd,
-			 struct iwl_rx_packet *pkt,
-			 void *cb_priv);
-	void *cb_priv;
+			 struct iwl_rx_packet *pkt);
 	u32 flags;
 	u16 len;
 	u8 id;

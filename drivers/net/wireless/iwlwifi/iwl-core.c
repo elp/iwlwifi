@@ -326,8 +326,7 @@ void iwl_activate_qos(struct iwl_priv *priv, u8 force)
 
 		iwl_send_cmd_pdu_async(priv, REPLY_QOS_PARAM,
 				       sizeof(struct iwl_qosparam_cmd),
-				       &priv->qos_data.def_qos_parm,
-				       NULL, NULL);
+				       &priv->qos_data.def_qos_parm, NULL);
 	}
 }
 EXPORT_SYMBOL(iwl_activate_qos);
@@ -1998,7 +1997,7 @@ int iwl_send_statistics_request(struct iwl_priv *priv, u8 flags, bool clear)
 	if (flags & CMD_ASYNC)
 		return iwl_send_cmd_pdu_async(priv, REPLY_STATISTICS_CMD,
 					       sizeof(struct iwl_statistics_cmd),
-					       &statistics_cmd, NULL, NULL);
+					       &statistics_cmd, NULL);
 	else
 		return iwl_send_cmd_pdu(priv, REPLY_STATISTICS_CMD,
 					sizeof(struct iwl_statistics_cmd),

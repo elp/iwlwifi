@@ -1427,8 +1427,7 @@ static int iwl4965_send_rxon_assoc(struct iwl_priv *priv)
 	rxon_assoc.rx_chain_select_flags = priv->staging_rxon.rx_chain;
 
 	ret = iwl_send_cmd_pdu_async(priv, REPLY_RXON_ASSOC,
-				     sizeof(rxon_assoc), &rxon_assoc,
-				     NULL, NULL);
+				     sizeof(rxon_assoc), &rxon_assoc, NULL);
 	if (ret)
 		return ret;
 
