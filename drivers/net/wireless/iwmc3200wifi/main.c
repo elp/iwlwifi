@@ -80,7 +80,8 @@ static struct iwm_conf def_iwm_conf = {
 
 	.assoc_timeout		= 2,
 	.roam_timeout		= 10,
-	.wireless_mode		= WIRELESS_MODE_11A | WIRELESS_MODE_11G,
+	.wireless_mode		= WIRELESS_MODE_11A | WIRELESS_MODE_11G |
+				  WIRELESS_MODE_11N,
 	.coexist_mode		= COEX_MODE_CM,
 
 	/* IBSS */
@@ -247,7 +248,7 @@ static void iwm_watchdog(unsigned long data)
 
 int iwm_priv_init(struct iwm_priv *iwm)
 {
-	int i;
+	int i, j;
 	char name[32];
 
 	iwm->status = 0;
@@ -291,12 +292,20 @@ int iwm_priv_init(struct iwm_priv *iwm)
 			return -EAGAIN;
 
 		skb_queue_head_init(&iwm->txq[i].queue);
+		skb_queue_head_init(&iwm->txq[i].stopped_queue);
+		spin_lock_init(&iwm->txq[i].lock);
 	}
 
 	for (i = 0; i < IWM_NUM_KEYS; i++)
 		memset(&iwm->keys[i], 0, sizeof(struct iwm_key));
 
 	iwm->default_key = -1;
+
+	for (i = 0; i < IWM_STA_TABLE_NUM; i++)
+		for (j = 0; j < IWM_UMAC_TID_NR; j++) {
+			mutex_init(&iwm->sta_table[i].tid_info[j].mutex);
+			iwm->sta_table[i].tid_info[j].stopped = false;
+		}
 
 	init_timer(&iwm->watchdog);
 	iwm->watchdog.function = iwm_watchdog;
@@ -571,6 +580,7 @@ void iwm_link_off(struct iwm_priv *iwm)
 
 	for (i = 0; i < IWM_TX_QUEUES; i++) {
 		skb_queue_purge(&iwm->txq[i].queue);
+		skb_queue_purge(&iwm->txq[i].stopped_queue);
 
 		iwm->txq[i].concat_count = 0;
 		iwm->txq[i].concat_ptr = iwm->txq[i].concat_buf;
@@ -630,6 +640,7 @@ static int __iwm_up(struct iwm_priv *iwm)
 	int ret;
 	struct iwm_notif *notif_reboot, *notif_ack = NULL;
 	struct wiphy *wiphy = iwm_to_wiphy(iwm);
+	u32 wireless_mode;
 
 	ret = iwm_bus_enable(iwm);
 	if (ret) {
@@ -690,6 +701,27 @@ static int __iwm_up(struct iwm_priv *iwm)
 		IWM_ERR(iwm, "FW loading failed\n");
 		goto err_disable;
 	}
+
+	ret = iwm_eeprom_fat_channels(iwm);
+	if (ret) {
+		IWM_ERR(iwm, "Couldnt read HT channels EEPROM entries\n");
+		goto err_fw;
+	}
+
+	/*
+	 * Read our SKU capabilities.
+	 * If it's valid, we AND the configured wireless mode with the
+	 * device EEPROM value as the current profile wireless mode.
+	 */
+	wireless_mode = iwm_eeprom_wireless_mode(iwm);
+	if (wireless_mode) {
+		iwm->conf.wireless_mode &= wireless_mode;
+		if (iwm->umac_profile)
+			iwm->umac_profile->wireless_mode =
+					iwm->conf.wireless_mode;
+	} else
+		IWM_ERR(iwm, "Wrong SKU capabilities: 0x%x\n",
+			*((u16 *)iwm_eeprom_access(iwm, IWM_EEPROM_SKU_CAP)));
 
 	snprintf(wiphy->fw_version, sizeof(wiphy->fw_version), "L%s_U%s",
 		 iwm->lmac_version, iwm->umac_version);
