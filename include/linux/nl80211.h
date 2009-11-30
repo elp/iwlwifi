@@ -606,6 +606,11 @@ enum nl80211_commands {
  * @NL80211_ATTR_MAX_NUM_PMKIDS: maximum number of PMKIDs a firmware can
  *	cache, a wiphy attribute.
  *
+ * @NL80211_ATTR_SMPS_MODE: Used with change interface, this will set the
+ *	desired spatial multiplexing powersave mode for a device. Due to
+ *	multiple virtual interfaces it might not always be the mode that
+ *	actually ends up being used.
+ *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
  */
@@ -742,6 +747,8 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_PMKID,
 	NL80211_ATTR_MAX_NUM_PMKIDS,
+
+	NL80211_ATTR_SMPS_MODE,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -1440,6 +1447,31 @@ enum nl80211_key_attributes {
 	/* keep last */
 	__NL80211_KEY_AFTER_LAST,
 	NL80211_KEY_MAX = __NL80211_KEY_AFTER_LAST - 1
+};
+
+/**
+ * enum nl80211_smps_mode - spatial multiplexing powersave mode
+ *
+ * @NL80211_SMPS_AUTOMATIC: automatic SM PS, i.e. enable
+ *	dynamic SM PS if supported and in powersave, disable
+ *	SM PS when powersave is turned off. This is the default
+ *	mode for HT devices if they support SM PS.
+ * @NL80211_SMPS_OFF: SM PS turned off, i.e. all chains on
+ * @NL80211_SMPS_STATIC: static SM PS, i.e. using a single chain
+ * @NL80211_SMPS_DYNAMIC: dynamic SM PS, i.e. chains turned on
+ *	after, for example, rts/cts handshake
+ * @__NL80211_SMPS_NUM: internal
+ * @NL80211_SMPS_MAX: largest allowed smps value
+ */
+enum nl80211_smps_mode {
+	NL80211_SMPS_AUTOMATIC,
+	NL80211_SMPS_OFF,
+	NL80211_SMPS_STATIC,
+	NL80211_SMPS_DYNAMIC,
+
+	/* keep last */
+	__NL80211_SMPS_NUM,
+	NL80211_SMPS_MAX = __NL80211_SMPS_NUM - 1,
 };
 
 #endif /* __LINUX_NL80211_H */

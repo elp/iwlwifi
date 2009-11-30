@@ -141,6 +141,7 @@ static struct nla_policy nl80211_policy[NL80211_ATTR_MAX+1] __read_mostly = {
 	[NL80211_ATTR_4ADDR] = { .type = NLA_U8 },
 	[NL80211_ATTR_PMKID] = { .type = NLA_BINARY,
 				 .len = WLAN_PMKID_LEN },
+	[NL80211_ATTR_SMPS_MODE] = { .type = NLA_U32 },
 };
 
 /* policy for the attributes */
@@ -1050,6 +1051,26 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 			goto unlock;
 	} else {
 		params.use_4addr = -1;
+	}
+
+	if (info->attrs[NL80211_ATTR_SMPS_MODE]) {
+		enum nl80211_smps_mode smps_mode;
+
+		smps_mode = nla_get_u32(info->attrs[NL80211_ATTR_SMPS_MODE]);
+
+		if (smps_mode > NL80211_SMPS_MAX) {
+			err = -EINVAL;
+			goto unlock;
+		}
+
+		if (!rdev->ops->set_smps) {
+			err = -EOPNOTSUPP;
+			goto unlock;
+		}
+
+		err = rdev->ops->set_smps(&rdev->wiphy, dev, smps_mode);
+		if (err)
+			goto unlock;
 	}
 
 	if (info->attrs[NL80211_ATTR_MNTR_FLAGS]) {

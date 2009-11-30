@@ -1115,7 +1115,10 @@ struct cfg80211_ops {
 				    const struct cfg80211_bitrate_mask *mask);
 
 	int	(*dump_survey)(struct wiphy *wiphy, struct net_device *netdev,
-			int idx, struct survey_info *info);
+			       int idx, struct survey_info *info);
+
+	int	(*set_smps)(struct wiphy *wiphy, struct net_device *netdev,
+			    enum nl80211_smps_mode smps_mode);
 
 	int	(*set_pmksa)(struct wiphy *wiphy, struct net_device *netdev,
 			     struct cfg80211_pmksa *pmksa);
