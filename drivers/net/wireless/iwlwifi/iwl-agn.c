@@ -1832,9 +1832,8 @@ void iwl_dump_nic_error_log(struct iwl_priv *priv)
  * iwl_print_event_log - Dump error event log to syslog
  *
  */
-static int iwl_print_event_log(struct iwl_priv *priv, u32 start_idx,
-			       u32 num_events, u32 mode,
-			       int pos, char **buf, size_t bufsz)
+static void iwl_print_event_log(struct iwl_priv *priv, u32 start_idx,
+				u32 num_events, u32 mode)
 {
 	u32 i;
 	u32 base;       /* SRAM byte address of event log header */
@@ -1844,7 +1843,7 @@ static int iwl_print_event_log(struct iwl_priv *priv, u32 start_idx,
 	unsigned long reg_flags;
 
 	if (num_events == 0)
-		return pos;
+		return;
 	if (priv->ucode_type == UCODE_INIT)
 		base = le32_to_cpu(priv->card_alive_init.log_event_table_ptr);
 	else
@@ -1872,44 +1871,27 @@ static int iwl_print_event_log(struct iwl_priv *priv, u32 start_idx,
 		time = _iwl_read_direct32(priv, HBUS_TARG_MEM_RDAT);
 		if (mode == 0) {
 			/* data, ev */
-			if (bufsz) {
-				pos += scnprintf(*buf + pos, bufsz - pos,
-						"EVT_LOG:0x%08x:%04u\n",
-						time, ev);
-			} else {
-				trace_iwlwifi_dev_ucode_event(priv, 0,
-					time, ev);
-				IWL_ERR(priv, "EVT_LOG:0x%08x:%04u\n",
-					time, ev);
-			}
+			trace_iwlwifi_dev_ucode_event(priv, 0, time, ev);
+			IWL_ERR(priv, "EVT_LOG:0x%08x:%04u\n", time, ev);
 		} else {
 			data = _iwl_read_direct32(priv, HBUS_TARG_MEM_RDAT);
-			if (bufsz) {
-				pos += scnprintf(*buf + pos, bufsz - pos,
-						"EVT_LOGT:%010u:0x%08x:%04u\n",
-						 time, data, ev);
-			} else {
-				IWL_ERR(priv, "EVT_LOGT:%010u:0x%08x:%04u\n",
+			IWL_ERR(priv, "EVT_LOGT:%010u:0x%08x:%04u\n",
 					time, data, ev);
-				trace_iwlwifi_dev_ucode_event(priv, time,
-					data, ev);
-			}
+			trace_iwlwifi_dev_ucode_event(priv, time, data, ev);
 		}
 	}
 
 	/* Allow device to power down */
 	iwl_release_nic_access(priv);
 	spin_unlock_irqrestore(&priv->reg_lock, reg_flags);
-	return pos;
 }
 
 /**
  * iwl_print_last_event_logs - Dump the newest # of event log to syslog
  */
-static int iwl_print_last_event_logs(struct iwl_priv *priv, u32 capacity,
-				    u32 num_wraps, u32 next_entry,
-				    u32 size, u32 mode,
-				    int pos, char **buf, size_t bufsz)
+static void iwl_print_last_event_logs(struct iwl_priv *priv, u32 capacity,
+				      u32 num_wraps, u32 next_entry,
+				      u32 size, u32 mode)
 {
 	/*
 	 * display the newest DEFAULT_LOG_ENTRIES entries
@@ -1917,26 +1899,21 @@ static int iwl_print_last_event_logs(struct iwl_priv *priv, u32 capacity,
 	 */
 	if (num_wraps) {
 		if (next_entry < size) {
-			pos = iwl_print_event_log(priv,
-						capacity - (size - next_entry),
-						size - next_entry, mode,
-						pos, buf, bufsz);
-			pos = iwl_print_event_log(priv, 0,
-						  next_entry, mode,
-						  pos, buf, bufsz);
+			iwl_print_event_log(priv,
+					capacity - (size - next_entry),
+					size - next_entry, mode);
+			iwl_print_event_log(priv, 0,
+				    next_entry, mode);
 		} else
-			pos = iwl_print_event_log(priv, next_entry - size,
-						  size, mode, pos, buf, bufsz);
+			iwl_print_event_log(priv, next_entry - size,
+				    size, mode);
 	} else {
-		if (next_entry < size) {
-			pos = iwl_print_event_log(priv, 0, next_entry,
-						  mode, pos, buf, bufsz);
-		} else {
-			pos = iwl_print_event_log(priv, next_entry - size,
-						  size, mode, pos, buf, bufsz);
-		}
+		if (next_entry < size)
+			iwl_print_event_log(priv, 0, next_entry, mode);
+		else
+			iwl_print_event_log(priv, next_entry - size,
+					    size, mode);
 	}
-	return pos;
 }
 
 /* For sanity check only.  Actual size is determined by uCode, typ. 512 */
@@ -1944,8 +1921,7 @@ static int iwl_print_last_event_logs(struct iwl_priv *priv, u32 capacity,
 
 #define DEFAULT_DUMP_EVENT_LOG_ENTRIES (20)
 
-int iwl_dump_nic_event_log(struct iwl_priv *priv, bool full_log,
-			    char **buf, bool display)
+void iwl_dump_nic_event_log(struct iwl_priv *priv, bool full_log)
 {
 	u32 base;       /* SRAM byte address of event log header */
 	u32 capacity;   /* event log capacity in # entries */
@@ -1953,8 +1929,6 @@ int iwl_dump_nic_event_log(struct iwl_priv *priv, bool full_log,
 	u32 num_wraps;  /* # times uCode wrapped to top of log */
 	u32 next_entry; /* index of next entry to be written by uCode */
 	u32 size;       /* # entries that we'll print */
-	int pos = 0;
-	size_t bufsz = 0;
 
 	if (priv->ucode_type == UCODE_INIT)
 		base = le32_to_cpu(priv->card_alive_init.log_event_table_ptr);
@@ -1965,7 +1939,7 @@ int iwl_dump_nic_event_log(struct iwl_priv *priv, bool full_log,
 		IWL_ERR(priv,
 			"Invalid event log pointer 0x%08X for %s uCode\n",
 			base, (priv->ucode_type == UCODE_INIT) ? "Init" : "RT");
-		return pos;
+		return;
 	}
 
 	/* event log header */
@@ -1991,7 +1965,7 @@ int iwl_dump_nic_event_log(struct iwl_priv *priv, bool full_log,
 	/* bail out if nothing in log */
 	if (size == 0) {
 		IWL_ERR(priv, "Start IWL Event Log Dump: nothing in log\n");
-		return pos;
+		return;
 	}
 
 #ifdef CONFIG_IWLWIFI_DEBUG
@@ -2006,15 +1980,6 @@ int iwl_dump_nic_event_log(struct iwl_priv *priv, bool full_log,
 		size);
 
 #ifdef CONFIG_IWLWIFI_DEBUG
-	if (display) {
-		if (full_log)
-			bufsz = capacity * 48;
-		else
-			bufsz = size * 48;
-		*buf = kmalloc(bufsz, GFP_KERNEL);
-		if (!*buf)
-			return pos;
-	}
 	if ((iwl_get_debug_level(priv) & IWL_DL_FW_ERRORS) || full_log) {
 		/*
 		 * if uCode has wrapped back to top of log,
@@ -2022,22 +1987,17 @@ int iwl_dump_nic_event_log(struct iwl_priv *priv, bool full_log,
 		 * i.e the next one that uCode would fill.
 		 */
 		if (num_wraps)
-			pos = iwl_print_event_log(priv, next_entry,
-						capacity - next_entry, mode,
-						pos, buf, bufsz);
+			iwl_print_event_log(priv, next_entry,
+					    capacity - next_entry, mode);
 		/* (then/else) start at top of log */
-		pos = iwl_print_event_log(priv, 0,
-					  next_entry, mode, pos, buf, bufsz);
+		iwl_print_event_log(priv, 0, next_entry, mode);
 	} else
-		pos = iwl_print_last_event_logs(priv, capacity, num_wraps,
-						next_entry, size, mode,
-						pos, buf, bufsz);
+		iwl_print_last_event_logs(priv, capacity, num_wraps,
+					next_entry, size, mode);
 #else
-	pos = iwl_print_last_event_logs(priv, capacity, num_wraps,
-					next_entry, size, mode,
-					pos, buf, bufsz);
+	iwl_print_last_event_logs(priv, capacity, num_wraps,
+				next_entry, size, mode);
 #endif
-	return pos;
 }
 
 /**
