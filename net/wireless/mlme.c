@@ -93,7 +93,18 @@ void cfg80211_send_rx_assoc(struct net_device *dev, const u8 *buf, size_t len)
 			}
 		}
 
-		WARN_ON(!bss);
+		/*
+		 * We might be coming here because the driver reported
+		 * a successful association at the same time as the
+		 * user requested a deauth. In that case, we will have
+		 * removed the BSS from the auth_bsses list due to the
+		 * deauth request when the assoc response makes it. If
+		 * the two code paths acquire the lock the other way
+		 * around, that's just the standard situation of a
+		 * deauth being requested while connected.
+		 */
+		if (!bss)
+			goto out;
 	} else if (wdev->conn) {
 		cfg80211_sme_failed_assoc(wdev);
 		/*
@@ -137,22 +148,23 @@ void __cfg80211_send_deauth(struct net_device *dev,
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)buf;
 	const u8 *bssid = mgmt->bssid;
 	int i;
+	bool found = false;
 
 	ASSERT_WDEV_LOCK(wdev);
-
-	nl80211_send_deauth(rdev, dev, buf, len, GFP_KERNEL);
 
 	if (wdev->current_bss &&
 	    memcmp(wdev->current_bss->pub.bssid, bssid, ETH_ALEN) == 0) {
 		cfg80211_unhold_bss(wdev->current_bss);
 		cfg80211_put_bss(&wdev->current_bss->pub);
 		wdev->current_bss = NULL;
+		found = true;
 	} else for (i = 0; i < MAX_AUTH_BSSES; i++) {
 		if (wdev->auth_bsses[i] &&
 		    memcmp(wdev->auth_bsses[i]->pub.bssid, bssid, ETH_ALEN) == 0) {
 			cfg80211_unhold_bss(wdev->auth_bsses[i]);
 			cfg80211_put_bss(&wdev->auth_bsses[i]->pub);
 			wdev->auth_bsses[i] = NULL;
+			found = true;
 			break;
 		}
 		if (wdev->authtry_bsses[i] &&
@@ -160,9 +172,15 @@ void __cfg80211_send_deauth(struct net_device *dev,
 			cfg80211_unhold_bss(wdev->authtry_bsses[i]);
 			cfg80211_put_bss(&wdev->authtry_bsses[i]->pub);
 			wdev->authtry_bsses[i] = NULL;
+			found = true;
 			break;
 		}
 	}
+
+	if (!found)
+		return;
+
+	nl80211_send_deauth(rdev, dev, buf, len, GFP_KERNEL);
 
 	if (wdev->sme_state == CFG80211_SME_CONNECTED) {
 		u16 reason_code;
@@ -673,3 +691,40 @@ void cfg80211_mlme_down(struct cfg80211_registered_device *rdev,
 		}
 	}
 }
+
+void cfg80211_ready_on_channel(struct net_device *dev, u64 cookie,
+			       struct ieee80211_channel *chan,
+			       enum nl80211_channel_type channel_type,
+			       unsigned int duration, gfp_t gfp)
+{
+	struct wiphy *wiphy = dev->ieee80211_ptr->wiphy;
+	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
+
+	nl80211_send_remain_on_channel(rdev, dev, cookie, chan, channel_type,
+				       duration, gfp);
+}
+EXPORT_SYMBOL(cfg80211_ready_on_channel);
+
+void cfg80211_remain_on_channel_expired(struct net_device *dev,
+					u64 cookie,
+					struct ieee80211_channel *chan,
+					enum nl80211_channel_type channel_type,
+					gfp_t gfp)
+{
+	struct wiphy *wiphy = dev->ieee80211_ptr->wiphy;
+	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
+
+	nl80211_send_remain_on_channel_cancel(rdev, dev, cookie, chan,
+					      channel_type, gfp);
+}
+EXPORT_SYMBOL(cfg80211_remain_on_channel_expired);
+
+void cfg80211_new_sta(struct net_device *dev, const u8 *mac_addr,
+		      struct station_info *sinfo, gfp_t gfp)
+{
+	struct wiphy *wiphy = dev->ieee80211_ptr->wiphy;
+	struct cfg80211_registered_device *rdev = wiphy_to_dev(wiphy);
+
+	nl80211_send_sta_event(rdev, dev, mac_addr, sinfo, gfp);
+}
+EXPORT_SYMBOL(cfg80211_new_sta);

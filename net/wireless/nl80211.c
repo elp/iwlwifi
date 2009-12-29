@@ -141,7 +141,8 @@ static struct nla_policy nl80211_policy[NL80211_ATTR_MAX+1] __read_mostly = {
 	[NL80211_ATTR_4ADDR] = { .type = NLA_U8 },
 	[NL80211_ATTR_PMKID] = { .type = NLA_BINARY,
 				 .len = WLAN_PMKID_LEN },
-	[NL80211_ATTR_SMPS_MODE] = { .type = NLA_U32 },
+	[NL80211_ATTR_DURATION] = { .type = NLA_U32 },
+	[NL80211_ATTR_COOKIE] = { .type = NLA_U64 },
 };
 
 /* policy for the attributes */
@@ -570,6 +571,7 @@ static int nl80211_send_wiphy(struct sk_buff *msg, u32 pid, u32 seq, int flags,
 	CMD(set_pmksa, SET_PMKSA);
 	CMD(del_pmksa, DEL_PMKSA);
 	CMD(flush_pmksa, FLUSH_PMKSA);
+	CMD(remain_on_channel, REMAIN_ON_CHANNEL);
 	if (dev->wiphy.flags & WIPHY_FLAG_NETNS_OK) {
 		i++;
 		NLA_PUT_U32(msg, i, NL80211_CMD_SET_WIPHY_NETNS);
@@ -1051,26 +1053,6 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 			goto unlock;
 	} else {
 		params.use_4addr = -1;
-	}
-
-	if (info->attrs[NL80211_ATTR_SMPS_MODE]) {
-		enum nl80211_smps_mode smps_mode;
-
-		smps_mode = nla_get_u32(info->attrs[NL80211_ATTR_SMPS_MODE]);
-
-		if (smps_mode > NL80211_SMPS_MAX) {
-			err = -EINVAL;
-			goto unlock;
-		}
-
-		if (!rdev->ops->set_smps) {
-			err = -EOPNOTSUPP;
-			goto unlock;
-		}
-
-		err = rdev->ops->set_smps(&rdev->wiphy, dev, smps_mode);
-		if (err)
-			goto unlock;
 	}
 
 	if (info->attrs[NL80211_ATTR_MNTR_FLAGS]) {
@@ -1658,42 +1640,9 @@ static int parse_station_flags(struct genl_info *info,
 	return 0;
 }
 
-static u16 nl80211_calculate_bitrate(struct rate_info *rate)
-{
-	int modulation, streams, bitrate;
-
-	if (!(rate->flags & RATE_INFO_FLAGS_MCS))
-		return rate->legacy;
-
-	/* the formula below does only work for MCS values smaller than 32 */
-	if (rate->mcs >= 32)
-		return 0;
-
-	modulation = rate->mcs & 7;
-	streams = (rate->mcs >> 3) + 1;
-
-	bitrate = (rate->flags & RATE_INFO_FLAGS_40_MHZ_WIDTH) ?
-			13500000 : 6500000;
-
-	if (modulation < 4)
-		bitrate *= (modulation + 1);
-	else if (modulation == 4)
-		bitrate *= (modulation + 2);
-	else
-		bitrate *= (modulation + 3);
-
-	bitrate *= streams;
-
-	if (rate->flags & RATE_INFO_FLAGS_SHORT_GI)
-		bitrate = (bitrate / 9) * 10;
-
-	/* do NOT round down here */
-	return (bitrate + 50000) / 100000;
-}
-
 static int nl80211_send_station(struct sk_buff *msg, u32 pid, u32 seq,
 				int flags, struct net_device *dev,
-				u8 *mac_addr, struct station_info *sinfo)
+				const u8 *mac_addr, struct station_info *sinfo)
 {
 	void *hdr;
 	struct nlattr *sinfoattr, *txrate;
@@ -1737,8 +1686,8 @@ static int nl80211_send_station(struct sk_buff *msg, u32 pid, u32 seq,
 		if (!txrate)
 			goto nla_put_failure;
 
-		/* nl80211_calculate_bitrate will return 0 for mcs >= 32 */
-		bitrate = nl80211_calculate_bitrate(&sinfo->txrate);
+		/* cfg80211_calculate_bitrate will return 0 for mcs >= 32 */
+		bitrate = cfg80211_calculate_bitrate(&sinfo->txrate);
 		if (bitrate > 0)
 			NLA_PUT_U16(msg, NL80211_RATE_INFO_BITRATE, bitrate);
 
@@ -2603,12 +2552,6 @@ static int nl80211_req_set_reg(struct sk_buff *skb, struct genl_info *info)
 		return -EINVAL;
 
 	data = nla_data(info->attrs[NL80211_ATTR_REG_ALPHA2]);
-
-#ifdef CONFIG_WIRELESS_OLD_REGULATORY
-	/* We ignore world regdom requests with the old regdom setup */
-	if (is_world_regdom(data))
-		return -EINVAL;
-#endif
 
 	r = regulatory_hint_user(data);
 
@@ -4343,6 +4286,143 @@ static int nl80211_flush_pmksa(struct sk_buff *skb, struct genl_info *info)
 
 }
 
+static int nl80211_remain_on_channel(struct sk_buff *skb,
+				     struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev;
+	struct net_device *dev;
+	struct ieee80211_channel *chan;
+	struct sk_buff *msg;
+	void *hdr;
+	u64 cookie;
+	enum nl80211_channel_type channel_type = NL80211_CHAN_NO_HT;
+	u32 freq, duration;
+	int err;
+
+	if (!info->attrs[NL80211_ATTR_WIPHY_FREQ] ||
+	    !info->attrs[NL80211_ATTR_DURATION])
+		return -EINVAL;
+
+	duration = nla_get_u32(info->attrs[NL80211_ATTR_DURATION]);
+
+	/*
+	 * We should be on that channel for at least one jiffie,
+	 * and more than 5 seconds seems excessive.
+	 */
+	if (!duration || !msecs_to_jiffies(duration) || duration > 5000)
+		return -EINVAL;
+
+	rtnl_lock();
+
+	err = get_rdev_dev_by_info_ifindex(info, &rdev, &dev);
+	if (err)
+		goto unlock_rtnl;
+
+	if (!rdev->ops->remain_on_channel) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (!netif_running(dev)) {
+		err = -ENETDOWN;
+		goto out;
+	}
+
+	if (info->attrs[NL80211_ATTR_WIPHY_CHANNEL_TYPE]) {
+		channel_type = nla_get_u32(
+			info->attrs[NL80211_ATTR_WIPHY_CHANNEL_TYPE]);
+		if (channel_type != NL80211_CHAN_NO_HT &&
+		    channel_type != NL80211_CHAN_HT20 &&
+		    channel_type != NL80211_CHAN_HT40PLUS &&
+		    channel_type != NL80211_CHAN_HT40MINUS)
+			err = -EINVAL;
+			goto out;
+	}
+
+	freq = nla_get_u32(info->attrs[NL80211_ATTR_WIPHY_FREQ]);
+	chan = rdev_freq_to_chan(rdev, freq, channel_type);
+	if (chan == NULL) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	hdr = nl80211hdr_put(msg, info->snd_pid, info->snd_seq, 0,
+			     NL80211_CMD_REMAIN_ON_CHANNEL);
+
+	if (IS_ERR(hdr)) {
+		err = PTR_ERR(hdr);
+		goto free_msg;
+	}
+
+	err = rdev->ops->remain_on_channel(&rdev->wiphy, dev, chan,
+					   channel_type, duration, &cookie);
+
+	if (err)
+		goto free_msg;
+
+	NLA_PUT_U64(msg, NL80211_ATTR_COOKIE, cookie);
+
+	genlmsg_end(msg, hdr);
+	err = genlmsg_reply(msg, info);
+	goto out;
+
+ nla_put_failure:
+	err = -ENOBUFS;
+ free_msg:
+	nlmsg_free(msg);
+ out:
+	cfg80211_unlock_rdev(rdev);
+	dev_put(dev);
+ unlock_rtnl:
+	rtnl_unlock();
+	return err;
+}
+
+static int nl80211_cancel_remain_on_channel(struct sk_buff *skb,
+					    struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev;
+	struct net_device *dev;
+	u64 cookie;
+	int err;
+
+	if (!info->attrs[NL80211_ATTR_COOKIE])
+		return -EINVAL;
+
+	rtnl_lock();
+
+	err = get_rdev_dev_by_info_ifindex(info, &rdev, &dev);
+	if (err)
+		goto unlock_rtnl;
+
+	if (!rdev->ops->cancel_remain_on_channel) {
+		err = -EOPNOTSUPP;
+		goto out;
+	}
+
+	if (!netif_running(dev)) {
+		err = -ENETDOWN;
+		goto out;
+	}
+
+	cookie = nla_get_u64(info->attrs[NL80211_ATTR_COOKIE]);
+
+	err = rdev->ops->cancel_remain_on_channel(&rdev->wiphy, dev, cookie);
+
+ out:
+	cfg80211_unlock_rdev(rdev);
+	dev_put(dev);
+ unlock_rtnl:
+	rtnl_unlock();
+	return err;
+}
+
 static struct genl_ops nl80211_ops[] = {
 	{
 		.cmd = NL80211_CMD_GET_WIPHY,
@@ -4605,8 +4685,20 @@ static struct genl_ops nl80211_ops[] = {
 		.policy = nl80211_policy,
 		.flags = GENL_ADMIN_PERM,
 	},
-
+	{
+		.cmd = NL80211_CMD_REMAIN_ON_CHANNEL,
+		.doit = nl80211_remain_on_channel,
+		.policy = nl80211_policy,
+		.flags = GENL_ADMIN_PERM,
+	},
+	{
+		.cmd = NL80211_CMD_CANCEL_REMAIN_ON_CHANNEL,
+		.doit = nl80211_cancel_remain_on_channel,
+		.policy = nl80211_policy,
+		.flags = GENL_ADMIN_PERM,
+	},
 };
+
 static struct genl_multicast_group nl80211_mlme_mcgrp = {
 	.name = "mlme",
 };
@@ -5192,6 +5284,89 @@ void nl80211_send_beacon_hint_event(struct wiphy *wiphy,
 nla_put_failure:
 	genlmsg_cancel(msg, hdr);
 	nlmsg_free(msg);
+}
+
+static void nl80211_send_remain_on_chan_event(
+	int cmd, struct cfg80211_registered_device *rdev,
+	struct net_device *netdev, u64 cookie,
+	struct ieee80211_channel *chan,
+	enum nl80211_channel_type channel_type,
+	unsigned int duration, gfp_t gfp)
+{
+	struct sk_buff *msg;
+	void *hdr;
+
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
+	if (!msg)
+		return;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, cmd);
+	if (!hdr) {
+		nlmsg_free(msg);
+		return;
+	}
+
+	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx);
+	NLA_PUT_U32(msg, NL80211_ATTR_IFINDEX, netdev->ifindex);
+	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY_FREQ, chan->center_freq);
+	NLA_PUT_U32(msg, NL80211_ATTR_WIPHY_CHANNEL_TYPE, channel_type);
+	NLA_PUT_U64(msg, NL80211_ATTR_COOKIE, cookie);
+
+	if (cmd == NL80211_CMD_REMAIN_ON_CHANNEL)
+		NLA_PUT_U32(msg, NL80211_ATTR_DURATION, duration);
+
+	if (genlmsg_end(msg, hdr) < 0) {
+		nlmsg_free(msg);
+		return;
+	}
+
+	genlmsg_multicast_netns(wiphy_net(&rdev->wiphy), msg, 0,
+				nl80211_mlme_mcgrp.id, gfp);
+	return;
+
+ nla_put_failure:
+	genlmsg_cancel(msg, hdr);
+	nlmsg_free(msg);
+}
+
+void nl80211_send_remain_on_channel(struct cfg80211_registered_device *rdev,
+				    struct net_device *netdev, u64 cookie,
+				    struct ieee80211_channel *chan,
+				    enum nl80211_channel_type channel_type,
+				    unsigned int duration, gfp_t gfp)
+{
+	nl80211_send_remain_on_chan_event(NL80211_CMD_REMAIN_ON_CHANNEL,
+					  rdev, netdev, cookie, chan,
+					  channel_type, duration, gfp);
+}
+
+void nl80211_send_remain_on_channel_cancel(
+	struct cfg80211_registered_device *rdev, struct net_device *netdev,
+	u64 cookie, struct ieee80211_channel *chan,
+	enum nl80211_channel_type channel_type, gfp_t gfp)
+{
+	nl80211_send_remain_on_chan_event(NL80211_CMD_CANCEL_REMAIN_ON_CHANNEL,
+					  rdev, netdev, cookie, chan,
+					  channel_type, 0, gfp);
+}
+
+void nl80211_send_sta_event(struct cfg80211_registered_device *rdev,
+			    struct net_device *dev, const u8 *mac_addr,
+			    struct station_info *sinfo, gfp_t gfp)
+{
+	struct sk_buff *msg;
+
+	msg = nlmsg_new(NLMSG_GOODSIZE, gfp);
+	if (!msg)
+		return;
+
+	if (nl80211_send_station(msg, 0, 0, 0, dev, mac_addr, sinfo) < 0) {
+		nlmsg_free(msg);
+		return;
+	}
+
+	genlmsg_multicast_netns(wiphy_net(&rdev->wiphy), msg, 0,
+				nl80211_mlme_mcgrp.id, gfp);
 }
 
 /* initialisation/exit functions */

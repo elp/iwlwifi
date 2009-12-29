@@ -681,19 +681,13 @@ static void iwl3945_rx_reply_rx(struct iwl_priv *priv,
 		snr = rx_stats_sig_avg / rx_stats_noise_diff;
 		rx_status.noise = rx_status.signal -
 					iwl3945_calc_db_from_ratio(snr);
-		rx_status.qual = iwl3945_calc_sig_qual(rx_status.signal,
-							 rx_status.noise);
-
-	/* If noise info not available, calculate signal quality indicator (%)
-	 *   using just the dBm signal level. */
 	} else {
 		rx_status.noise = priv->last_rx_noise;
-		rx_status.qual = iwl3945_calc_sig_qual(rx_status.signal, 0);
 	}
 
 
-	IWL_DEBUG_STATS(priv, "Rssi %d noise %d qual %d sig_avg %d noise_diff %d\n",
-			rx_status.signal, rx_status.noise, rx_status.qual,
+	IWL_DEBUG_STATS(priv, "Rssi %d noise %d sig_avg %d noise_diff %d\n",
+			rx_status.signal, rx_status.noise,
 			rx_stats_sig_avg, rx_stats_noise_diff);
 
 	header = (struct ieee80211_hdr *)IWL_RX_DATA(pkt);
@@ -2810,7 +2804,7 @@ static struct iwl_hcmd_utils_ops iwl3945_hcmd_utils = {
 	.rts_tx_cmd_flag = iwlcore_rts_tx_cmd_flag,
 };
 
-static struct iwl_ops iwl3945_ops = {
+static const struct iwl_ops iwl3945_ops = {
 	.ucode = &iwl3945_ucode,
 	.lib = &iwl3945_lib,
 	.hcmd = &iwl3945_hcmd,

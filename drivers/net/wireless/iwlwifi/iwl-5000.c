@@ -1557,7 +1557,7 @@ static struct iwl_lib_ops iwl5150_lib = {
 	 },
 };
 
-static struct iwl_ops iwl5000_ops = {
+static const struct iwl_ops iwl5000_ops = {
 	.ucode = &iwl5000_ucode,
 	.lib = &iwl5000_lib,
 	.hcmd = &iwl5000_hcmd,
@@ -1565,7 +1565,7 @@ static struct iwl_ops iwl5000_ops = {
 	.led = &iwlagn_led_ops,
 };
 
-static struct iwl_ops iwl5150_ops = {
+static const struct iwl_ops iwl5150_ops = {
 	.ucode = &iwl5000_ucode,
 	.lib = &iwl5150_lib,
 	.hcmd = &iwl5000_hcmd,

@@ -63,7 +63,7 @@
 #ifndef __iwl_core_h__
 #define __iwl_core_h__
 
-#include <linux/utsrelease.h>
+#include <generated/utsrelease.h>
 
 /************************
  * forward declarations *
@@ -225,10 +225,10 @@ struct iwl_mod_params {
  * @pa_type: used by 6000 series only to identify the type of Power Amplifier
  * @max_ll_items: max number of OTP blocks
  * @shadow_ram_support: shadow support for OTP memory
- * @use_rts_for_ht: use rts/cts protection for HT traffic
  * @led_compensation: compensate on the led on/off time per HW according
  *	to the deviation to achieve the desired led frequency.
  *	The detail algorithm is described in iwl-led.c
+ * @use_rts_for_ht: use rts/cts protection for HT traffic
  * @chain_noise_num_beacons: number of beacons used to compute chain noise
  * @adv_thermal_throttle: support advance thermal throttle
  * @support_ct_kill_exit: support ct kill exit condition
@@ -281,9 +281,9 @@ struct iwl_cfg {
 	const u16 max_ll_items;
 	const bool shadow_ram_support;
 	const bool ht_greenfield_support;
+	u16 led_compensation;
 	const bool broken_powersave;
 	bool use_rts_for_ht;
-	u16 led_compensation;
 	int chain_noise_num_beacons;
 	const bool supports_idle;
 	bool adv_thermal_throttle;
@@ -332,9 +332,9 @@ int iwl_mac_beacon_update(struct ieee80211_hw *hw, struct sk_buff *skb);
 int iwl_commit_rxon(struct iwl_priv *priv);
 int iwl_set_mode(struct iwl_priv *priv, int mode);
 int iwl_mac_add_interface(struct ieee80211_hw *hw,
-				 struct ieee80211_if_init_conf *conf);
+			  struct ieee80211_vif *vif);
 void iwl_mac_remove_interface(struct ieee80211_hw *hw,
-				 struct ieee80211_if_init_conf *conf);
+			      struct ieee80211_vif *vif);
 int iwl_mac_config(struct ieee80211_hw *hw, u32 changed);
 void iwl_config_ap(struct iwl_priv *priv);
 int iwl_mac_get_tx_stats(struct ieee80211_hw *hw,

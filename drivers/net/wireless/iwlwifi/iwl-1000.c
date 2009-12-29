@@ -141,7 +141,7 @@ static struct iwl_lib_ops iwl1000_lib = {
 	 },
 };
 
-static struct iwl_ops iwl1000_ops = {
+static const struct iwl_ops iwl1000_ops = {
 	.ucode = &iwl5000_ucode,
 	.lib = &iwl1000_lib,
 	.hcmd = &iwl5000_hcmd,
@@ -170,8 +170,8 @@ struct iwl_cfg iwl1000_bgn_cfg = {
 	.max_ll_items = OTP_MAX_LL_ITEMS_1000,
 	.shadow_ram_support = false,
 	.ht_greenfield_support = true,
-	.use_rts_for_ht = true, /* use rts/cts protection */
 	.led_compensation = 51,
+	.use_rts_for_ht = true, /* use rts/cts protection */
 	.chain_noise_num_beacons = IWL_CAL_NUM_BEACONS,
 	.support_ct_kill_exit = true,
 };

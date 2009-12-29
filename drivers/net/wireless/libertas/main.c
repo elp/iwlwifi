@@ -123,7 +123,7 @@ static ssize_t lbs_rtap_set(struct device *dev,
 		if (priv->monitormode == monitor_mode)
 			return strlen(buf);
 		if (!priv->monitormode) {
-			if (priv->infra_open || priv->mesh_open)
+			if (priv->infra_open || lbs_mesh_open(priv))
 				return -EBUSY;
 			if (priv->mode == IW_MODE_INFRA)
 				lbs_cmd_80211_deauthenticate(priv,
@@ -459,7 +459,7 @@ static int lbs_thread(void *data)
 		else if (!list_empty(&priv->cmdpendingq) &&
 					!(priv->wakeup_dev_required))
 			shouldsleep = 0;	/* We have a command to send */
-		else if (__kfifo_len(priv->event_fifo))
+		else if (kfifo_len(&priv->event_fifo))
 			shouldsleep = 0;	/* We have an event to process */
 		else
 			shouldsleep = 1;	/* No command */
@@ -511,10 +511,13 @@ static int lbs_thread(void *data)
 
 		/* Process hardware events, e.g. card removed, link lost */
 		spin_lock_irq(&priv->driver_lock);
-		while (__kfifo_len(priv->event_fifo)) {
+		while (kfifo_len(&priv->event_fifo)) {
 			u32 event;
-			__kfifo_get(priv->event_fifo, (unsigned char *) &event,
-				sizeof(event));
+
+			if (kfifo_out(&priv->event_fifo,
+				(unsigned char *) &event, sizeof(event)) !=
+				sizeof(event))
+					break;
 			spin_unlock_irq(&priv->driver_lock);
 			lbs_process_event(priv, event);
 			spin_lock_irq(&priv->driver_lock);
@@ -619,7 +622,7 @@ static int lbs_thread(void *data)
 				if (priv->connect_status == LBS_CONNECTED)
 					netif_wake_queue(priv->dev);
 				if (priv->mesh_dev &&
-				    priv->mesh_connect_status == LBS_CONNECTED)
+				    lbs_mesh_connected(priv))
 					netif_wake_queue(priv->mesh_dev);
 			}
 		}
@@ -806,18 +809,6 @@ int lbs_exit_auto_deep_sleep(struct lbs_private *priv)
 	return 0;
 }
 
-static void lbs_sync_channel_worker(struct work_struct *work)
-{
-	struct lbs_private *priv = container_of(work, struct lbs_private,
-		sync_channel);
-
-	lbs_deb_enter(LBS_DEB_MAIN);
-	if (lbs_update_channel(priv))
-		lbs_pr_info("Channel synchronization failed.");
-	lbs_deb_leave(LBS_DEB_MAIN);
-}
-
-
 static int lbs_init_adapter(struct lbs_private *priv)
 {
 	size_t bufsize;
@@ -845,14 +836,12 @@ static int lbs_init_adapter(struct lbs_private *priv)
 	memset(priv->current_addr, 0xff, ETH_ALEN);
 
 	priv->connect_status = LBS_DISCONNECTED;
-	priv->mesh_connect_status = LBS_DISCONNECTED;
 	priv->secinfo.auth_mode = IW_AUTH_ALG_OPEN_SYSTEM;
 	priv->mode = IW_MODE_INFRA;
 	priv->channel = DEFAULT_AD_HOC_CHANNEL;
 	priv->mac_control = CMD_ACT_MAC_RX_ON | CMD_ACT_MAC_TX_ON;
 	priv->radio_on = 1;
 	priv->enablehwauto = 1;
-	priv->capability = WLAN_CAPABILITY_SHORT_PREAMBLE;
 	priv->psmode = LBS802_11POWERMODECAM;
 	priv->psstate = PS_STATE_FULL_POWER;
 	priv->is_deep_sleep = 0;
@@ -883,10 +872,9 @@ static int lbs_init_adapter(struct lbs_private *priv)
 	priv->resp_len[0] = priv->resp_len[1] = 0;
 
 	/* Create the event FIFO */
-	priv->event_fifo = kfifo_alloc(sizeof(u32) * 16, GFP_KERNEL, NULL);
-	if (IS_ERR(priv->event_fifo)) {
+	ret = kfifo_alloc(&priv->event_fifo, sizeof(u32) * 16, GFP_KERNEL);
+	if (ret) {
 		lbs_pr_err("Out of memory allocating event FIFO buffer\n");
-		ret = -ENOMEM;
 		goto out;
 	}
 
@@ -901,8 +889,7 @@ static void lbs_free_adapter(struct lbs_private *priv)
 	lbs_deb_enter(LBS_DEB_MAIN);
 
 	lbs_free_cmd_buffer(priv);
-	if (priv->event_fifo)
-		kfifo_free(priv->event_fifo);
+	kfifo_free(&priv->event_fifo);
 	del_timer(&priv->command_timer);
 	del_timer(&priv->auto_deepsleep_timer);
 	kfree(priv->networks);
@@ -997,11 +984,6 @@ struct lbs_private *lbs_add_card(void *card, struct device *dmdev)
 	INIT_DELAYED_WORK(&priv->assoc_work, lbs_association_worker);
 	INIT_DELAYED_WORK(&priv->scan_work, lbs_scan_worker);
 	INIT_WORK(&priv->mcast_work, lbs_set_mcast_worker);
-	INIT_WORK(&priv->sync_channel, lbs_sync_channel_worker);
-
-	priv->mesh_open = 0;
-	sprintf(priv->mesh_ssid, "mesh");
-	priv->mesh_ssid_len = 4;
 
 	priv->wol_criteria = 0xffffffff;
 	priv->wol_gpio = 0xff;
@@ -1075,6 +1057,17 @@ void lbs_remove_card(struct lbs_private *priv)
 EXPORT_SYMBOL_GPL(lbs_remove_card);
 
 
+static int lbs_rtap_supported(struct lbs_private *priv)
+{
+	if (MRVL_FW_MAJOR_REV(priv->fwrelease) == MRVL_FW_V5)
+		return 1;
+
+	/* newer firmware use a capability mask */
+	return ((MRVL_FW_MAJOR_REV(priv->fwrelease) >= MRVL_FW_V10) &&
+		(priv->fwcapinfo & MESH_CAPINFO_ENABLE_MASK));
+}
+
+
 int lbs_start_card(struct lbs_private *priv)
 {
 	struct net_device *dev = priv->dev;
@@ -1094,12 +1087,14 @@ int lbs_start_card(struct lbs_private *priv)
 
 	lbs_update_channel(priv);
 
+	lbs_init_mesh(priv);
+
 	/*
 	 * While rtap isn't related to mesh, only mesh-enabled
 	 * firmware implements the rtap functionality via
 	 * CMD_802_11_MONITOR_MODE.
 	 */
-	if (lbs_init_mesh(priv)) {
+	if (lbs_rtap_supported(priv)) {
 		if (device_create_file(&dev->dev, &dev_attr_lbs_rtap))
 			lbs_pr_err("cannot register lbs_rtap attribute\n");
 	}
@@ -1133,7 +1128,9 @@ void lbs_stop_card(struct lbs_private *priv)
 	netif_carrier_off(dev);
 
 	lbs_debugfs_remove_one(priv);
-	if (lbs_deinit_mesh(priv))
+	lbs_deinit_mesh(priv);
+
+	if (lbs_rtap_supported(priv))
 		device_remove_file(&dev->dev, &dev_attr_lbs_rtap);
 
 	/* Delete the timeout of the currently processing command */
@@ -1177,7 +1174,7 @@ void lbs_queue_event(struct lbs_private *priv, u32 event)
 	if (priv->psstate == PS_STATE_SLEEP)
 		priv->psstate = PS_STATE_AWAKE;
 
-	__kfifo_put(priv->event_fifo, (unsigned char *) &event, sizeof(u32));
+	kfifo_in(&priv->event_fifo, (unsigned char *) &event, sizeof(u32));
 
 	wake_up_interruptible(&priv->waitq);
 

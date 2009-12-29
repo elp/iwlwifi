@@ -270,6 +270,31 @@
  * @NL80211_CMD_SET_WIPHY_NETNS: Set a wiphy's netns. Note that all devices
  *	associated with this wiphy must be down and will follow.
  *
+ * @NL80211_CMD_REMAIN_ON_CHANNEL: Request to remain awake on the specified
+ *	channel for the specified amount of time. This can be used to do
+ *	off-channel operations like transmit a Public Action frame and wait for
+ *	a response while being associated to an AP on another channel.
+ *	%NL80211_ATTR_WIPHY or %NL80211_ATTR_IFINDEX is used to specify which
+ *	radio is used. %NL80211_ATTR_WIPHY_FREQ is used to specify the
+ *	frequency for the operation and %NL80211_ATTR_WIPHY_CHANNEL_TYPE may be
+ *	optionally used to specify additional channel parameters.
+ *	%NL80211_ATTR_DURATION is used to specify the duration in milliseconds
+ *	to remain on the channel. This command is also used as an event to
+ *	notify when the requested duration starts (it may take a while for the
+ *	driver to schedule this time due to other concurrent needs for the
+ *	radio).
+ *	When called, this operation returns a cookie (%NL80211_ATTR_COOKIE)
+ *	that will be included with any events pertaining to this request;
+ *	the cookie is also used to cancel the request.
+ * @NL80211_CMD_CANCEL_REMAIN_ON_CHANNEL: This command can be used to cancel a
+ *	pending remain-on-channel duration if the desired operation has been
+ *	completed prior to expiration of the originally requested duration.
+ *	%NL80211_ATTR_WIPHY or %NL80211_ATTR_IFINDEX is used to specify the
+ *	radio. The %NL80211_ATTR_COOKIE attribute must be given as well to
+ *	uniquely identify the request.
+ *	This command is also used as an event to notify when a requested
+ *	remain-on-channel duration has expired.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -352,6 +377,9 @@ enum nl80211_commands {
 	NL80211_CMD_SET_PMKSA,
 	NL80211_CMD_DEL_PMKSA,
 	NL80211_CMD_FLUSH_PMKSA,
+
+	NL80211_CMD_REMAIN_ON_CHANNEL,
+	NL80211_CMD_CANCEL_REMAIN_ON_CHANNEL,
 
 	/* add new commands above here */
 
@@ -606,10 +634,9 @@ enum nl80211_commands {
  * @NL80211_ATTR_MAX_NUM_PMKIDS: maximum number of PMKIDs a firmware can
  *	cache, a wiphy attribute.
  *
- * @NL80211_ATTR_SMPS_MODE: Used with change interface, this will set the
- *	desired spatial multiplexing powersave mode for a device. Due to
- *	multiple virtual interfaces it might not always be the mode that
- *	actually ends up being used.
+ * @NL80211_ATTR_DURATION: Duration of an operation in milliseconds, u32.
+ *
+ * @NL80211_ATTR_COOKIE: Generic 64-bit cookie to identify objects.
  *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -748,7 +775,9 @@ enum nl80211_attrs {
 	NL80211_ATTR_PMKID,
 	NL80211_ATTR_MAX_NUM_PMKIDS,
 
-	NL80211_ATTR_SMPS_MODE,
+	NL80211_ATTR_DURATION,
+
+	NL80211_ATTR_COOKIE,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -1447,31 +1476,6 @@ enum nl80211_key_attributes {
 	/* keep last */
 	__NL80211_KEY_AFTER_LAST,
 	NL80211_KEY_MAX = __NL80211_KEY_AFTER_LAST - 1
-};
-
-/**
- * enum nl80211_smps_mode - spatial multiplexing powersave mode
- *
- * @NL80211_SMPS_AUTOMATIC: automatic SM PS, i.e. enable
- *	dynamic SM PS if supported and in powersave, disable
- *	SM PS when powersave is turned off. This is the default
- *	mode for HT devices if they support SM PS.
- * @NL80211_SMPS_OFF: SM PS turned off, i.e. all chains on
- * @NL80211_SMPS_STATIC: static SM PS, i.e. using a single chain
- * @NL80211_SMPS_DYNAMIC: dynamic SM PS, i.e. chains turned on
- *	after, for example, rts/cts handshake
- * @__NL80211_SMPS_NUM: internal
- * @NL80211_SMPS_MAX: largest allowed smps value
- */
-enum nl80211_smps_mode {
-	NL80211_SMPS_AUTOMATIC,
-	NL80211_SMPS_OFF,
-	NL80211_SMPS_STATIC,
-	NL80211_SMPS_DYNAMIC,
-
-	/* keep last */
-	__NL80211_SMPS_NUM,
-	NL80211_SMPS_MAX = __NL80211_SMPS_NUM - 1,
 };
 
 #endif /* __LINUX_NL80211_H */

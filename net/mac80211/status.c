@@ -180,7 +180,7 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 	struct ieee80211_tx_status_rtap_hdr *rthdr;
 	struct ieee80211_sub_if_data *sdata;
 	struct net_device *prev_dev = NULL;
-	struct sta_info *sta;
+	struct sta_info *sta, *tmp;
 	int retry_count = -1, i;
 	bool injected;
 
@@ -200,9 +200,11 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 
 	sband = local->hw.wiphy->bands[info->band];
 
-	sta = sta_info_get(local, hdr->addr1);
+	for_each_sta_info(local, hdr->addr1, sta, tmp) {
+		/* skip wrong virtual interface */
+		if (memcmp(hdr->addr2, sta->sdata->vif.addr, ETH_ALEN))
+			continue;
 
-	if (sta) {
 		if (!(info->flags & IEEE80211_TX_STAT_ACK) &&
 		    test_sta_flags(sta, WLAN_STA_PS_STA)) {
 			/*
@@ -349,7 +351,7 @@ void ieee80211_tx_status(struct ieee80211_hw *hw, struct sk_buff *skb)
 	rcu_read_lock();
 	list_for_each_entry_rcu(sdata, &local->interfaces, list) {
 		if (sdata->vif.type == NL80211_IFTYPE_MONITOR) {
-			if (!netif_running(sdata->dev))
+			if (!ieee80211_sdata_running(sdata))
 				continue;
 
 			if ((sdata->u.mntr_flags & MONITOR_FLAG_COOK_FRAMES) &&

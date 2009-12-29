@@ -1108,11 +1108,11 @@ void ath_drain_all_txq(struct ath_softc *sc, bool retry_tx)
 	if (npend) {
 		int r;
 
-		ath_print(common, ATH_DBG_XMIT,
+		ath_print(common, ATH_DBG_FATAL,
 			  "Unable to stop TxDMA. Reset HAL!\n");
 
 		spin_lock_bh(&sc->sc_resetlock);
-		r = ath9k_hw_reset(ah, sc->sc_ah->curchan, true);
+		r = ath9k_hw_reset(ah, sc->sc_ah->curchan, false);
 		if (r)
 			ath_print(common, ATH_DBG_FATAL,
 				  "Unable to reset hardware; reset status %d\n",
@@ -1414,17 +1414,9 @@ static void assign_aggr_tid_seqno(struct sk_buff *skb,
 	 * For HT capable stations, we save tidno for later use.
 	 * We also override seqno set by upper layer with the one
 	 * in tx aggregation state.
-	 *
-	 * If fragmentation is on, the sequence number is
-	 * not overridden, since it has been
-	 * incremented by the fragmentation routine.
-	 *
-	 * FIXME: check if the fragmentation threshold exceeds
-	 * IEEE80211 max.
 	 */
 	tid = ATH_AN_2_TID(an, bf->bf_tidno);
-	hdr->seq_ctrl = cpu_to_le16(tid->seq_next <<
-			IEEE80211_SEQ_SEQ_SHIFT);
+	hdr->seq_ctrl = cpu_to_le16(tid->seq_next << IEEE80211_SEQ_SEQ_SHIFT);
 	bf->bf_seqno = tid->seq_next;
 	INCR(tid->seq_next, IEEE80211_SEQ_MAX);
 }
@@ -1636,7 +1628,8 @@ static int ath_tx_setup_buffer(struct ieee80211_hw *hw, struct ath_buf *bf,
 		bf->bf_keyix = ATH9K_TXKEYIX_INVALID;
 	}
 
-	if (ieee80211_is_data_qos(fc) && (sc->sc_flags & SC_OP_TXAGGR))
+	if (ieee80211_is_data_qos(fc) && bf_isht(bf) &&
+	    (sc->sc_flags & SC_OP_TXAGGR))
 		assign_aggr_tid_seqno(skb, bf);
 
 	bf->bf_mpdu = skb;
@@ -2079,7 +2072,7 @@ static void ath_tx_processq(struct ath_softc *sc, struct ath_txq *txq)
 				&txq->axq_q, lastbf->list.prev);
 
 		txq->axq_depth--;
-		txok = !(ds->ds_txstat.ts_status & ATH9K_TXERR_FILT);
+		txok = !(ds->ds_txstat.ts_status & ATH9K_TXERR_MASK);
 		txq->axq_tx_inprogress = false;
 		spin_unlock_bh(&txq->axq_lock);
 

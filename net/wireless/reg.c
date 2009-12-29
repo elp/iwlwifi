@@ -40,6 +40,7 @@
 #include <net/cfg80211.h>
 #include "core.h"
 #include "reg.h"
+#include "regdb.h"
 #include "nl80211.h"
 
 /* Receipt of information from last regulatory request */
@@ -128,78 +129,6 @@ static char *ieee80211_regdom = "00";
 module_param(ieee80211_regdom, charp, 0444);
 MODULE_PARM_DESC(ieee80211_regdom, "IEEE 802.11 regulatory domain code");
 
-#ifdef CONFIG_WIRELESS_OLD_REGULATORY
-/*
- * We assume 40 MHz bandwidth for the old regulatory work.
- * We make emphasis we are using the exact same frequencies
- * as before
- */
-
-static const struct ieee80211_regdomain us_regdom = {
-	.n_reg_rules = 6,
-	.alpha2 =  "US",
-	.reg_rules = {
-		/* IEEE 802.11b/g, channels 1..11 */
-		REG_RULE(2412-10, 2462+10, 40, 6, 27, 0),
-		/* IEEE 802.11a, channel 36..48 */
-		REG_RULE(5180-10, 5240+10, 40, 6, 17, 0),
-		/* IEEE 802.11a, channels 48..64 */
-		REG_RULE(5260-10, 5320+10, 40, 6, 20, NL80211_RRF_DFS),
-		/* IEEE 802.11a, channels 100..124 */
-		REG_RULE(5500-10, 5590+10, 40, 6, 20, NL80211_RRF_DFS),
-		/* IEEE 802.11a, channels 132..144 */
-		REG_RULE(5660-10, 5700+10, 40, 6, 20, NL80211_RRF_DFS),
-		/* IEEE 802.11a, channels 149..165, outdoor */
-		REG_RULE(5745-10, 5825+10, 40, 6, 30, 0),
-	}
-};
-
-static const struct ieee80211_regdomain jp_regdom = {
-	.n_reg_rules = 6,
-	.alpha2 =  "JP",
-	.reg_rules = {
-		/* IEEE 802.11b/g, channels 1..11 */
-		REG_RULE(2412-10, 2462+10, 40, 6, 20, 0),
-		/* IEEE 802.11b/g, channels 12..13 */
-		REG_RULE(2467-10, 2472+10, 20, 6, 20, 0),
-		/* IEEE 802.11b/g, channel 14 */
-		REG_RULE(2484-10, 2484+10, 20, 6, 20, NL80211_RRF_NO_OFDM),
-		/* IEEE 802.11a, channels 36..48 */
-		REG_RULE(5180-10, 5240+10, 40, 6, 20, 0),
-		/* IEEE 802.11a, channels 52..64 */
-		REG_RULE(5260-10, 5320+10, 40, 6, 20, NL80211_RRF_DFS),
-		/* IEEE 802.11a, channels 100..144 */
-		REG_RULE(5500-10, 5700+10, 40, 6, 23, NL80211_RRF_DFS),
-	}
-};
-
-static const struct ieee80211_regdomain *static_regdom(char *alpha2)
-{
-	if (alpha2[0] == 'U' && alpha2[1] == 'S')
-		return &us_regdom;
-	if (alpha2[0] == 'J' && alpha2[1] == 'P')
-		return &jp_regdom;
-	/* Use world roaming rules for "EU", since it was a pseudo
-	   domain anyway... */
-	if (alpha2[0] == 'E' && alpha2[1] == 'U')
-		return &world_regdom;
-	/* Default, world roaming rules */
-	return &world_regdom;
-}
-
-static bool is_old_static_regdom(const struct ieee80211_regdomain *rd)
-{
-	if (rd == &us_regdom || rd == &jp_regdom || rd == &world_regdom)
-		return true;
-	return false;
-}
-#else
-static inline bool is_old_static_regdom(const struct ieee80211_regdomain *rd)
-{
-	return false;
-}
-#endif
-
 static void reset_regdomains(void)
 {
 	/* avoid freeing static information or freeing something twice */
@@ -208,8 +137,6 @@ static void reset_regdomains(void)
 	if (cfg80211_world_regdom == &world_regdom)
 		cfg80211_world_regdom = NULL;
 	if (cfg80211_regdomain == &world_regdom)
-		cfg80211_regdomain = NULL;
-	if (is_old_static_regdom(cfg80211_regdomain))
 		cfg80211_regdomain = NULL;
 
 	kfree(cfg80211_regdomain);
@@ -335,6 +262,98 @@ static bool country_ie_integrity_changes(u32 checksum)
 	return false;
 }
 
+static int reg_copy_regd(const struct ieee80211_regdomain **dst_regd,
+			 const struct ieee80211_regdomain *src_regd)
+{
+	struct ieee80211_regdomain *regd;
+	int size_of_regd = 0;
+	unsigned int i;
+
+	size_of_regd = sizeof(struct ieee80211_regdomain) +
+	  ((src_regd->n_reg_rules + 1) * sizeof(struct ieee80211_reg_rule));
+
+	regd = kzalloc(size_of_regd, GFP_KERNEL);
+	if (!regd)
+		return -ENOMEM;
+
+	memcpy(regd, src_regd, sizeof(struct ieee80211_regdomain));
+
+	for (i = 0; i < src_regd->n_reg_rules; i++)
+		memcpy(&regd->reg_rules[i], &src_regd->reg_rules[i],
+			sizeof(struct ieee80211_reg_rule));
+
+	*dst_regd = regd;
+	return 0;
+}
+
+#ifdef CONFIG_CFG80211_INTERNAL_REGDB
+struct reg_regdb_search_request {
+	char alpha2[2];
+	struct list_head list;
+};
+
+static LIST_HEAD(reg_regdb_search_list);
+static DEFINE_SPINLOCK(reg_regdb_search_lock);
+
+static void reg_regdb_search(struct work_struct *work)
+{
+	struct reg_regdb_search_request *request;
+	const struct ieee80211_regdomain *curdom, *regdom;
+	int i, r;
+
+	spin_lock(&reg_regdb_search_lock);
+	while (!list_empty(&reg_regdb_search_list)) {
+		request = list_first_entry(&reg_regdb_search_list,
+					   struct reg_regdb_search_request,
+					   list);
+		list_del(&request->list);
+
+		for (i=0; i<reg_regdb_size; i++) {
+			curdom = reg_regdb[i];
+
+			if (!memcmp(request->alpha2, curdom->alpha2, 2)) {
+				r = reg_copy_regd(&regdom, curdom);
+				if (r)
+					break;
+				spin_unlock(&reg_regdb_search_lock);
+				mutex_lock(&cfg80211_mutex);
+				set_regdom(regdom);
+				mutex_unlock(&cfg80211_mutex);
+				spin_lock(&reg_regdb_search_lock);
+				break;
+			}
+		}
+
+		kfree(request);
+	}
+	spin_unlock(&reg_regdb_search_lock);
+}
+
+static DECLARE_WORK(reg_regdb_work, reg_regdb_search);
+
+static void reg_regdb_query(const char *alpha2)
+{
+	struct reg_regdb_search_request *request;
+
+	if (!alpha2)
+		return;
+
+	request = kzalloc(sizeof(struct reg_regdb_search_request), GFP_KERNEL);
+	if (!request)
+		return;
+
+	memcpy(request->alpha2, alpha2, 2);
+
+	spin_lock(&reg_regdb_search_lock);
+	list_add_tail(&request->list, &reg_regdb_search_list);
+	spin_unlock(&reg_regdb_search_lock);
+
+	schedule_work(&reg_regdb_work);
+}
+#else
+static inline void reg_regdb_query(const char *alpha2) {}
+#endif /* CONFIG_CFG80211_INTERNAL_REGDB */
+
 /*
  * This lets us keep regulatory code which is updated on a regulatory
  * basis in userspace.
@@ -353,6 +372,9 @@ static int call_crda(const char *alpha2)
 	else
 		printk(KERN_INFO "cfg80211: Calling CRDA to update world "
 			"regulatory domain\n");
+
+	/* query internal regulatory database (if it exists) */
+	reg_regdb_query(alpha2);
 
 	country_env[8] = alpha2[0];
 	country_env[9] = alpha2[1];
@@ -1342,30 +1364,6 @@ void wiphy_apply_custom_regulatory(struct wiphy *wiphy,
 }
 EXPORT_SYMBOL(wiphy_apply_custom_regulatory);
 
-static int reg_copy_regd(const struct ieee80211_regdomain **dst_regd,
-			 const struct ieee80211_regdomain *src_regd)
-{
-	struct ieee80211_regdomain *regd;
-	int size_of_regd = 0;
-	unsigned int i;
-
-	size_of_regd = sizeof(struct ieee80211_regdomain) +
-	  ((src_regd->n_reg_rules + 1) * sizeof(struct ieee80211_reg_rule));
-
-	regd = kzalloc(size_of_regd, GFP_KERNEL);
-	if (!regd)
-		return -ENOMEM;
-
-	memcpy(regd, src_regd, sizeof(struct ieee80211_regdomain));
-
-	for (i = 0; i < src_regd->n_reg_rules; i++)
-		memcpy(&regd->reg_rules[i], &src_regd->reg_rules[i],
-			sizeof(struct ieee80211_reg_rule));
-
-	*dst_regd = regd;
-	return 0;
-}
-
 /*
  * Return value which can be used by ignore_request() to indicate
  * it has been determined we should intersect two regulatory domains
@@ -1418,8 +1416,6 @@ static int ignore_request(struct wiphy *wiphy,
 		return REG_INTERSECT;
 	case NL80211_REGDOM_SET_BY_DRIVER:
 		if (last_request->initiator == NL80211_REGDOM_SET_BY_CORE) {
-			if (is_old_static_regdom(cfg80211_regdomain))
-				return 0;
 			if (regdom_changes(pending_request->alpha2))
 				return 0;
 			return -EALREADY;
@@ -1456,8 +1452,7 @@ static int ignore_request(struct wiphy *wiphy,
 				return -EAGAIN;
 		}
 
-		if (!is_old_static_regdom(cfg80211_regdomain) &&
-		    !regdom_changes(pending_request->alpha2))
+		if (!regdom_changes(pending_request->alpha2))
 			return -EALREADY;
 
 		return 0;
@@ -2039,8 +2034,7 @@ static int __set_regdom(const struct ieee80211_regdomain *rd)
 		 * If someone else asked us to change the rd lets only bother
 		 * checking if the alpha2 changes if CRDA was already called
 		 */
-		if (!is_old_static_regdom(cfg80211_regdomain) &&
-		    !regdom_changes(rd->alpha2))
+		if (!regdom_changes(rd->alpha2))
 			return -EINVAL;
 	}
 
@@ -2239,15 +2233,8 @@ int regulatory_init(void)
 	spin_lock_init(&reg_requests_lock);
 	spin_lock_init(&reg_pending_beacons_lock);
 
-#ifdef CONFIG_WIRELESS_OLD_REGULATORY
-	cfg80211_regdomain = static_regdom(ieee80211_regdom);
-
-	printk(KERN_INFO "cfg80211: Using static regulatory domain info\n");
-	print_regdomain_info(cfg80211_regdomain);
-#else
 	cfg80211_regdomain = cfg80211_world_regdom;
 
-#endif
 	/* We always try to get an update for the static regdomain */
 	err = regulatory_hint_core(cfg80211_regdomain->alpha2);
 	if (err) {

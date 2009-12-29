@@ -244,7 +244,7 @@ struct mesh_path *mesh_path_lookup_by_idx(int idx, struct ieee80211_sub_if_data 
  * @addr: destination address of the path (ETH_ALEN length)
  * @sdata: local subif
  *
- * Returns: 0 on sucess
+ * Returns: 0 on success
  *
  * State: the initial state of the new path is set to 0
  */
@@ -260,7 +260,7 @@ int mesh_path_add(u8 *dst, struct ieee80211_sub_if_data *sdata)
 	int err = 0;
 	u32 hash_idx;
 
-	if (memcmp(dst, sdata->dev->dev_addr, ETH_ALEN) == 0)
+	if (memcmp(dst, sdata->vif.addr, ETH_ALEN) == 0)
 		/* never add ourselves as neighbours */
 		return -ENOTSUPP;
 
@@ -377,7 +377,7 @@ int mpp_path_add(u8 *dst, u8 *mpp, struct ieee80211_sub_if_data *sdata)
 	int err = 0;
 	u32 hash_idx;
 
-	if (memcmp(dst, sdata->dev->dev_addr, ETH_ALEN) == 0)
+	if (memcmp(dst, sdata->vif.addr, ETH_ALEN) == 0)
 		/* never add ourselves as neighbours */
 		return -ENOTSUPP;
 
@@ -532,7 +532,7 @@ static void mesh_path_node_reclaim(struct rcu_head *rp)
  * @addr: dst address (ETH_ALEN length)
  * @sdata: local subif
  *
- * Returns: 0 if succesful
+ * Returns: 0 if successful
  */
 int mesh_path_del(u8 *addr, struct ieee80211_sub_if_data *sdata)
 {
@@ -605,7 +605,7 @@ void mesh_path_discard_frame(struct sk_buff *skb,
 	struct mesh_path *mpath;
 	u32 sn = 0;
 
-	if (memcmp(hdr->addr4, sdata->dev->dev_addr, ETH_ALEN) != 0) {
+	if (memcmp(hdr->addr4, sdata->vif.addr, ETH_ALEN) != 0) {
 		u8 *ra, *da;
 
 		da = hdr->addr3;
