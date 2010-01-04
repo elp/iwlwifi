@@ -1011,6 +1011,8 @@ struct iwl_event_log {
 	int wraps_more_count;
 };
 
+#define IWL_MISSED_BEACON_THRESHOLD	(5)
+
 struct iwl_priv {
 
 	/* ieee device used by generic ieee processing code */
@@ -1038,6 +1040,7 @@ struct iwl_priv {
 #endif
 	/* ucode beacon time */
 	u32 ucode_beacon_time;
+	u8 missed_beacon_threshold;
 
 	/* we allocate array of iwl4965_channel_info for NIC's valid channels.
 	 *    Access via channel # using indirect index array */

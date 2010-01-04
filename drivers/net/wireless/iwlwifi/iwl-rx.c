@@ -499,7 +499,8 @@ void iwl_rx_missed_beacon_notif(struct iwl_priv *priv,
 	struct iwl_missed_beacon_notif *missed_beacon;
 
 	missed_beacon = &pkt->u.missed_beacon;
-	if (le32_to_cpu(missed_beacon->consequtive_missed_beacons) > 5) {
+	if (le32_to_cpu(missed_beacon->consequtive_missed_beacons) >
+	    priv->missed_beacon_threshold) {
 		IWL_DEBUG_CALIB(priv, "missed bcn cnsq %d totl %d rcd %d expctd %d\n",
 		    le32_to_cpu(missed_beacon->consequtive_missed_beacons),
 		    le32_to_cpu(missed_beacon->total_missed_becons),
