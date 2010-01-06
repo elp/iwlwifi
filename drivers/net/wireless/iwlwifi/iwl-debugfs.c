@@ -2150,46 +2150,6 @@ static ssize_t iwl_dbgfs_ucode_tracing_write(struct file *file,
 	return count;
 }
 
-static ssize_t iwl_dbgfs_missed_beacon_read(struct file *file,
-					char __user *user_buf,
-					size_t count, loff_t *ppos) {
-
-	struct iwl_priv *priv = (struct iwl_priv *)file->private_data;
-	int pos = 0;
-	char buf[12];
-	const size_t bufsz = sizeof(buf);
-	ssize_t ret;
-
-	pos += scnprintf(buf + pos, bufsz - pos, "%d\n",
-			priv->missed_beacon_threshold);
-
-	ret = simple_read_from_buffer(user_buf, count, ppos, buf, pos);
-	return ret;
-}
-
-static ssize_t iwl_dbgfs_missed_beacon_write(struct file *file,
-					 const char __user *user_buf,
-					 size_t count, loff_t *ppos)
-{
-	struct iwl_priv *priv = file->private_data;
-	char buf[8];
-	int buf_size;
-	int missed;
-
-	memset(buf, 0, sizeof(buf));
-	buf_size = min(count, sizeof(buf) -  1);
-	if (copy_from_user(buf, user_buf, buf_size))
-		return -EFAULT;
-	if (sscanf(buf, "%d", &missed) != 1)
-		return -EINVAL;
-
-	if (missed)
-		priv->missed_beacon_threshold =	IWL_MISSED_BEACON_THRESHOLD;
-	priv->missed_beacon_threshold = missed;
-
-	return count;
-}
-
 DEBUGFS_READ_FILE_OPS(rx_statistics);
 DEBUGFS_READ_FILE_OPS(tx_statistics);
 DEBUGFS_READ_WRITE_FILE_OPS(traffic_log);
@@ -2206,7 +2166,6 @@ DEBUGFS_WRITE_FILE_OPS(clear_ucode_statistics);
 DEBUGFS_WRITE_FILE_OPS(clear_traffic_statistics);
 DEBUGFS_WRITE_FILE_OPS(csr);
 DEBUGFS_READ_WRITE_FILE_OPS(ucode_tracing);
-DEBUGFS_READ_WRITE_FILE_OPS(missed_beacon);
 
 /*
  * Create the debugfs files and directories
@@ -2258,7 +2217,6 @@ int iwl_dbgfs_register(struct iwl_priv *priv, const char *name)
 	DEBUGFS_ADD_FILE(clear_ucode_statistics, debug, S_IWUSR);
 	DEBUGFS_ADD_FILE(clear_traffic_statistics, debug, S_IWUSR);
 	DEBUGFS_ADD_FILE(csr, debug, S_IWUSR);
-	DEBUGFS_ADD_FILE(missed_beacon, debug, S_IWUSR);
 	if ((priv->hw_rev & CSR_HW_REV_TYPE_MSK) != CSR_HW_REV_TYPE_3945) {
 		DEBUGFS_ADD_FILE(ucode_rx_stats, debug, S_IRUSR);
 		DEBUGFS_ADD_FILE(ucode_tx_stats, debug, S_IRUSR);
@@ -2318,7 +2276,6 @@ void iwl_dbgfs_unregister(struct iwl_priv *priv)
 	DEBUGFS_REMOVE(priv->dbgfs->dbgfs_debug_files.
 			file_clear_traffic_statistics);
 	DEBUGFS_REMOVE(priv->dbgfs->dbgfs_debug_files.file_csr);
-	DEBUGFS_REMOVE(priv->dbgfs->dbgfs_debug_files.file_missed_beacon);
 	if ((priv->hw_rev & CSR_HW_REV_TYPE_MSK) != CSR_HW_REV_TYPE_3945) {
 		DEBUGFS_REMOVE(priv->dbgfs->dbgfs_debug_files.
 			file_ucode_rx_stats);

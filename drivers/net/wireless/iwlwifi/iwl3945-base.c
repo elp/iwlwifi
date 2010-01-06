@@ -3881,7 +3881,6 @@ static int iwl3945_init_drv(struct iwl_priv *priv)
 	priv->band = IEEE80211_BAND_2GHZ;
 
 	priv->iw_mode = NL80211_IFTYPE_STATION;
-	priv->missed_beacon_threshold = IWL_MISSED_BEACON_THRESHOLD;
 
 	iwl_reset_qos(priv);
 
