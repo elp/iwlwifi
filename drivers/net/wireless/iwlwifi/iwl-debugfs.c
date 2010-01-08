@@ -1956,7 +1956,6 @@ static ssize_t iwl_dbgfs_tx_power_read(struct file *file,
 	struct iwl_priv *priv = (struct iwl_priv *)file->private_data;
 	char buf[128];
 	int pos = 0;
-	ssize_t ret;
 	const size_t bufsz = sizeof(buf);
 	struct statistics_tx *tx;
 
