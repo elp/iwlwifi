@@ -329,7 +329,7 @@ static int ieee80211_open(struct net_device *dev)
 	if (sdata->vif.type == NL80211_IFTYPE_STATION)
 		ieee80211_queue_work(&local->hw, &sdata->u.mgd.work);
 
-	netif_start_queue(dev);
+	netif_tx_start_all_queues(dev);
 
 	return 0;
  err_del_interface:
@@ -357,7 +357,7 @@ static int ieee80211_stop(struct net_device *dev)
 	/*
 	 * Stop TX on this interface first.
 	 */
-	netif_stop_queue(dev);
+	netif_tx_stop_all_queues(dev);
 
 	/*
 	 * Purge work for this interface.
@@ -684,20 +684,24 @@ static u16 ieee80211_monitor_select_queue(struct net_device *dev,
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_hdr *hdr;
 	struct ieee80211_radiotap_header *rtap = (void *)skb->data;
+	u8 *p;
 
 	if (local->hw.queues < 4)
 		return 0;
 
 	if (skb->len < 4 ||
-	    skb->len < rtap->it_len + 2 /* frame control */)
+	    skb->len < le16_to_cpu(rtap->it_len) + 2 /* frame control */)
 		return 0; /* doesn't matter, frame will be dropped */
 
-	hdr = (void *)((u8 *)skb->data + rtap->it_len);
+	hdr = (void *)((u8 *)skb->data + le16_to_cpu(rtap->it_len));
 
-	if (!ieee80211_is_data(hdr->frame_control)) {
+	if (!ieee80211_is_data_qos(hdr->frame_control)) {
 		skb->priority = 7;
 		return ieee802_1d_to_ac[skb->priority];
 	}
+
+	p = ieee80211_get_qos_ctl(hdr);
+	skb->priority = *p & IEEE80211_QOS_CTL_TAG1D_MASK;
 
 	return ieee80211_downgrade_queue(local, skb);
 }
@@ -856,8 +860,12 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 	INIT_LIST_HEAD(&sdata->key_list);
 
-	sdata->force_unicast_rateidx = -1;
-	sdata->max_ratectrl_rateidx = -1;
+	for (i = 0; i < IEEE80211_NUM_BANDS; i++) {
+		struct ieee80211_supported_band *sband;
+		sband = local->hw.wiphy->bands[i];
+		sdata->rc_rateidx_mask[i] =
+			sband ? (1 << sband->n_bitrates) - 1 : 0;
+	}
 
 	/* setup type-dependent data */
 	ieee80211_setup_sdata(sdata, type);
