@@ -2588,8 +2588,6 @@ int iwl_set_mode(struct iwl_priv *priv, int mode)
 
 	memcpy(priv->staging_rxon.node_addr, priv->mac_addr, ETH_ALEN);
 
-	iwl_clear_stations_table(priv);
-
 	/* dont commit rxon if rf-kill is on*/
 	if (!iwl_is_ready_rf(priv))
 		return -EAGAIN;
@@ -2630,6 +2628,9 @@ int iwl_mac_add_interface(struct ieee80211_hw *hw,
 		/* we are not ready, will run again when ready */
 		set_bit(STATUS_MODE_PENDING, &priv->status);
 
+	/* Add the broadcast address so we can send broadcast frames */
+	priv->cfg->ops->lib->add_bcast_station(priv);
+
 	mutex_unlock(&priv->mutex);
 
 	IWL_DEBUG_MAC80211(priv, "leave\n");
@@ -2645,6 +2646,8 @@ void iwl_mac_remove_interface(struct ieee80211_hw *hw,
 	IWL_DEBUG_MAC80211(priv, "enter\n");
 
 	mutex_lock(&priv->mutex);
+
+	iwl_clear_ucode_stations(priv, true);
 
 	if (iwl_is_ready_rf(priv)) {
 		iwl_scan_cancel_timeout(priv, 100);
