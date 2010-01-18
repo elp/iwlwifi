@@ -63,7 +63,7 @@ MODULE_LICENSE("GPL");
  *
  * default: bt_coex_active = true (BT_COEX_ENABLE)
  */
-bool bt_coex_active = true;
+static bool bt_coex_active = true;
 module_param(bt_coex_active, bool, S_IRUGO);
 MODULE_PARM_DESC(bt_coex_active, "enable wifi/bluetooth co-exist\n");
 
