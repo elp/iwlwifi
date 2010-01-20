@@ -1470,10 +1470,10 @@ static void ath9k_remove_interface(struct ieee80211_hw *hw,
 	    (sc->sc_ah->opmode == NL80211_IFTYPE_MESH_POINT)) {
 		ath9k_ps_wakeup(sc);
 		ath9k_hw_stoptxdma(sc->sc_ah, sc->beacon.beaconq);
-		ath_beacon_return(sc, avp);
 		ath9k_ps_restore(sc);
 	}
 
+	ath_beacon_return(sc, avp);
 	sc->sc_flags &= ~SC_OP_BEACONS;
 
 	for (i = 0; i < ARRAY_SIZE(sc->beacon.bslot); i++) {
@@ -1624,8 +1624,10 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	}
 
 skip_chan_change:
-	if (changed & IEEE80211_CONF_CHANGE_POWER)
+	if (changed & IEEE80211_CONF_CHANGE_POWER) {
 		sc->config.txpowlimit = 2 * conf->power_level;
+		ath_update_txpow(sc);
+	}
 
 	spin_lock_bh(&sc->wiphy_lock);
 	disable_radio = ath9k_all_wiphys_idle(sc);
