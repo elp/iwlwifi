@@ -173,8 +173,6 @@ int iwl_send_cmd_sync(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 	}
 
 	set_bit(STATUS_HCMD_ACTIVE, &priv->status);
-	IWL_DEBUG_INFO(priv, "Setting HCMD_ACTIVE for command %s \n",
-			get_cmd_string(cmd->id));
 
 	cmd_idx = iwl_enqueue_hcmd(priv, cmd);
 	if (cmd_idx < 0) {
@@ -240,8 +238,6 @@ fail:
 	}
 out:
 	clear_bit(STATUS_HCMD_SYNC_ACTIVE, &priv->status);
-	IWL_DEBUG_INFO(priv, "Clearing HCMD_ACTIVE for command %s \n",
-			get_cmd_string(cmd->id));
 	return ret;
 }
 EXPORT_SYMBOL(iwl_send_cmd_sync);

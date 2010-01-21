@@ -165,8 +165,6 @@ int iwl_commit_rxon(struct iwl_priv *priv)
 			IWL_ERR(priv, "Error clearing ASSOC_MSK (%d)\n", ret);
 			return ret;
 		}
-		iwl_clear_ucode_stations(priv, false);
-		iwl_restore_stations(priv);
 	}
 
 	IWL_DEBUG_INFO(priv, "Sending RXON\n"
@@ -191,13 +189,16 @@ int iwl_commit_rxon(struct iwl_priv *priv)
 			IWL_ERR(priv, "Error setting new RXON (%d)\n", ret);
 			return ret;
 		}
-		IWL_DEBUG_INFO(priv, "Return from !new_assoc RXON. \n");
 		memcpy(active_rxon, &priv->staging_rxon, sizeof(*active_rxon));
-		iwl_clear_ucode_stations(priv, false);
-		iwl_restore_stations(priv);
 	}
 
+	iwl_clear_stations_table(priv);
+
 	priv->start_calib = 0;
+
+	/* Add the broadcast address so we can send broadcast frames */
+	priv->cfg->ops->lib->add_bcast_station(priv);
+
 
 	/* If we have set the ASSOC_MSK and we are in BSS mode then
 	 * add the IWL_AP_ID to the station rate table */
@@ -2085,6 +2086,7 @@ static void iwl_alive_start(struct iwl_priv *priv)
 		goto restart;
 	}
 
+	iwl_clear_stations_table(priv);
 	ret = priv->cfg->ops->lib->alive_notify(priv);
 	if (ret) {
 		IWL_WARN(priv,
@@ -2141,8 +2143,6 @@ static void iwl_alive_start(struct iwl_priv *priv)
 	wake_up_interruptible(&priv->wait_command_queue);
 
 	iwl_power_update_mode(priv, true);
-	IWL_DEBUG_INFO(priv, "Updated power mode\n");
-
 
 	/* reassociate for ADHOC mode */
 	if (priv->vif && (priv->iw_mode == NL80211_IFTYPE_ADHOC)) {
@@ -2174,7 +2174,7 @@ static void __iwl_down(struct iwl_priv *priv)
 	if (!exit_pending)
 		set_bit(STATUS_EXIT_PENDING, &priv->status);
 
-	iwl_clear_ucode_stations(priv, true);
+	iwl_clear_stations_table(priv);
 
 	/* Unblock any waiting calls */
 	wake_up_interruptible_all(&priv->wait_command_queue);
@@ -2370,6 +2370,8 @@ static int __iwl_up(struct iwl_priv *priv)
 	       priv->ucode_data.len);
 
 	for (i = 0; i < MAX_HW_RESTARTS; i++) {
+
+		iwl_clear_stations_table(priv);
 
 		/* load bootstrap state machine,
 		 * load bootstrap program into processor's memory,
@@ -3363,6 +3365,9 @@ static int iwl_init_drv(struct iwl_priv *priv)
 
 	mutex_init(&priv->mutex);
 
+	/* Clear the driver's (not device's) station table */
+	iwl_clear_stations_table(priv);
+
 	priv->ieee_channels = NULL;
 	priv->ieee_rates = NULL;
 	priv->band = IEEE80211_BAND_2GHZ;
@@ -3729,6 +3734,7 @@ static void __devexit iwl_pci_remove(struct pci_dev *pdev)
 		iwl_rx_queue_free(priv, &priv->rxq);
 	iwl_hw_txq_ctx_free(priv);
 
+	iwl_clear_stations_table(priv);
 	iwl_eeprom_free(priv);
 
 
