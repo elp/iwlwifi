@@ -549,8 +549,8 @@ ieee80211_tx_h_select_key(struct ieee80211_tx_data *tx)
 				tx->key = NULL;
 			else
 				skip_hw = (tx->key->conf.flags &
-						IEEE80211_KEY_FLAG_SW_MGMT) &&
-				   ieee80211_is_mgmt(hdr->frame_control);
+					   IEEE80211_KEY_FLAG_SW_MGMT) &&
+					ieee80211_is_mgmt(hdr->frame_control);
 			break;
 		case ALG_AES_CMAC:
 			if (!ieee80211_is_mgmt(hdr->frame_control))
