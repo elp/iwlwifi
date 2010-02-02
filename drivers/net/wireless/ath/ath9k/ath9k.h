@@ -480,6 +480,7 @@ struct ath_softc {
 	u8 nbcnvifs;
 	u16 nvifs;
 	bool ps_enabled;
+	bool ps_idle;
 	unsigned long ps_usecount;
 	enum ath9k_int imask;
 
@@ -535,11 +536,6 @@ int ath_cabq_update(struct ath_softc *);
 static inline void ath_read_cachesize(struct ath_common *common, int *csz)
 {
 	common->bus_ops->read_cachesize(common, csz);
-}
-
-static inline void ath_bus_cleanup(struct ath_common *common)
-{
-	common->bus_ops->cleanup(common);
 }
 
 extern struct ieee80211_ops ath9k_ops;
