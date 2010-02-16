@@ -3378,6 +3378,7 @@ int iwl_force_reset(struct iwl_priv *priv, int mode)
 		iwl_force_rf_reset(priv);
 		break;
 	case IWL_FW_RESET:
+		IWL_ERR(priv, "On demand firmware reload\n");
 		/* Set the FW error flag -- cleared on iwl_down */
 		set_bit(STATUS_FW_ERROR, &priv->status);
 		wake_up_interruptible(&priv->wait_command_queue);
