@@ -214,7 +214,6 @@ void iwl_leds_background(struct iwl_priv *priv)
 	priv->last_blink_time = jiffies;
 	priv->last_blink_rate = blink_idx;
 }
-EXPORT_SYMBOL(iwl_leds_background);
 
 void iwl_leds_init(struct iwl_priv *priv)
 {
