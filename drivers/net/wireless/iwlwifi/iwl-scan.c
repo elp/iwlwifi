@@ -580,6 +580,7 @@ int iwl_internal_short_hw_scan(struct iwl_priv *priv)
 out:
 	return ret;
 }
+EXPORT_SYMBOL(iwl_internal_short_hw_scan);
 
 #define IWL_SCAN_CHECK_WATCHDOG (7 * HZ)
 
