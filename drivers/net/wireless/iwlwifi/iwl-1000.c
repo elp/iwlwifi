@@ -212,6 +212,7 @@ static struct iwl_lib_ops iwl1000_lib = {
 		.set_ct_kill = iwl1000_set_ct_threshold,
 	 },
 	.add_bcast_station = iwl_add_bcast_station,
+	.recover_from_statistics = iwl_recover_from_statistics,
 };
 
 static const struct iwl_ops iwl1000_ops = {
