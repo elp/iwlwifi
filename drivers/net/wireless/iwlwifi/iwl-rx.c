@@ -621,24 +621,18 @@ static void iwl_accumulative_statistics(struct iwl_priv *priv,
 #define BA_TIMEOUT_CNT (5)
 #define BA_TIMEOUT_MAX (16)
 
-#define PLCP_MSG "plcp_err exceeded %u, %u, %u, %u, %u, %d, %u mSecs\n"
-/*
- * This function checks for plcp error, ACK count ratios, aggregated BA
- * timeout retries.
- * - When the ACK count ratio is 0 and aggregated BA timeout retries is
- * exceeding the BA_TIMEOUT_MAX, it will recover the failure by resetting
- * the firmware.
- * - When the plcp error is exceeding the thresholds, it will reset the radio
- * to improve the throughput.
+/**
+ * iwl_good_ack_health - checks for ACK count ratios, BA timeout retries.
+ *
+ * When the ACK count ratio is 0 and aggregated BA timeout retries exceeding
+ * the BA_TIMEOUT_MAX, reload firmware and bring system back to normal
+ * operation state.
  */
-void iwl_recover_from_statistics(struct iwl_priv *priv,
-				   struct iwl_rx_packet *pkt)
+static bool iwl_good_ack_health(struct iwl_priv *priv,
+				struct iwl_rx_packet *pkt)
 {
-	int combined_plcp_delta;
-	unsigned int plcp_msec;
-	unsigned long plcp_received_jiffies;
-	int actual_ack_cnt_delta;
-	int expected_ack_cnt_delta;
+	bool rc = true;
+	int actual_ack_cnt_delta, expected_ack_cnt_delta;
 	int ba_timeout_delta;
 
 	actual_ack_cnt_delta =
@@ -669,13 +663,26 @@ void iwl_recover_from_statistics(struct iwl_priv *priv,
 #endif
 		IWL_DEBUG_RADIO(priv, "agg ba_timeout delta = %d\n",
 				ba_timeout_delta);
-		if ((actual_ack_cnt_delta == 0) &&
-		    (ba_timeout_delta >= BA_TIMEOUT_MAX)) {
-			IWL_DEBUG_RADIO(priv,
-					"call iwl_force_reset(IWL_FW_RESET)\n");
-			iwl_force_reset(priv, IWL_FW_RESET);
-		}
+		if (!actual_ack_cnt_delta &&
+		    (ba_timeout_delta >= BA_TIMEOUT_MAX))
+			rc = false;
 	}
+	return rc;
+}
+
+/**
+ * iwl_good_plcp_health - checks for plcp error.
+ *
+ * When the plcp error is exceeding the thresholds, reset the radio
+ * to improve the throughput.
+ */
+static bool iwl_good_plcp_health(struct iwl_priv *priv,
+				struct iwl_rx_packet *pkt)
+{
+	bool rc = true;
+	int combined_plcp_delta;
+	unsigned int plcp_msec;
+	unsigned long plcp_received_jiffies;
 
 	/*
 	 * check for plcp_err and trigger radio reset if it exceeds
@@ -710,7 +717,8 @@ void iwl_recover_from_statistics(struct iwl_priv *priv,
 			 *    combined_plcp_delta,
 			 *    plcp_msec
 			 */
-			IWL_DEBUG_RADIO(priv, PLCP_MSG,
+			IWL_DEBUG_RADIO(priv, "plcp_err exceeded %u, "
+				"%u, %u, %u, %u, %d, %u mSecs\n",
 				priv->cfg->plcp_delta_threshold,
 				le32_to_cpu(pkt->u.stats.rx.ofdm.plcp_err),
 				le32_to_cpu(priv->statistics.rx.ofdm.plcp_err),
@@ -718,9 +726,30 @@ void iwl_recover_from_statistics(struct iwl_priv *priv,
 				le32_to_cpu(
 				  priv->statistics.rx.ofdm_ht.plcp_err),
 				combined_plcp_delta, plcp_msec);
+			rc = false;
+		}
+	}
+	return rc;
+}
+
+void iwl_recover_from_statistics(struct iwl_priv *priv,
+				struct iwl_rx_packet *pkt)
+{
+	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
+		return;
+	if (iwl_is_associated(priv)) {
+		if (!iwl_good_ack_health(priv, pkt)) {
 			/*
-			 * Reset the RF radio due to the high plcp
-			 * error rate
+			 * low ack count detected
+			 * restart Firmware
+			 */
+			IWL_ERR(priv,
+				"low ack count detected, restart firmware\n");
+			iwl_force_reset(priv, IWL_FW_RESET);
+		} else if (!iwl_good_plcp_health(priv, pkt)) {
+			/*
+			 * high plcp error detected
+			 * reset Radio
 			 */
 			iwl_force_reset(priv, IWL_RF_RESET);
 		}
