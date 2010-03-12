@@ -1039,9 +1039,12 @@ static void iwl3945_nic_config(struct iwl_priv *priv)
 {
 	struct iwl3945_eeprom *eeprom = (struct iwl3945_eeprom *)priv->eeprom;
 	unsigned long flags;
-	u8 rev_id = priv->rev_id;
+	u8 rev_id = 0;
 
 	spin_lock_irqsave(&priv->lock, flags);
+
+	/* Determine HW type */
+	pci_read_config_byte(priv->pci_dev, PCI_REVISION_ID, &rev_id);
 
 	IWL_DEBUG_INFO(priv, "HW Revision ID = 0x%X\n", rev_id);
 

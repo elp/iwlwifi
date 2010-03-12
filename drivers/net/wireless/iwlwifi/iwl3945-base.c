@@ -4075,9 +4075,6 @@ static int iwl3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 	 * and this is now the kdump kernel trying to start up
 	 */
 	iwl_write32(priv, CSR_RESET, CSR_RESET_REG_FLAG_NEVO_RESET);
-	iwl_hw_detect(priv);
-	IWL_INFO(priv, "Detected Intel Wireless WiFi Link %s REV=0x%X\n",
-		priv->cfg->name, priv->hw_rev);
 
 	/***********************
 	 * 4. Read EEPROM
@@ -4114,6 +4111,8 @@ static int iwl3945_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 		goto out_unset_hw_params;
 	}
 
+	IWL_INFO(priv, "Detected Intel Wireless WiFi Link %s\n",
+		priv->cfg->name);
 
 	/***********************
 	 * 7. Setup Services
