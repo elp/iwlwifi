@@ -2125,7 +2125,6 @@ static void iwl_alive_start(struct iwl_priv *priv)
 	iwl_power_update_mode(priv, true);
 	IWL_DEBUG_INFO(priv, "Updated power mode\n");
 
-
 	return;
 
  restart:

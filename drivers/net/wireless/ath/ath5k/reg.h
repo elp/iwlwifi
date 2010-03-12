@@ -1974,7 +1974,7 @@
 #define AR5K_PHY_SETTLING		0x9844			/* Register Address */
 #define	AR5K_PHY_SETTLING_AGC		0x0000007f	/* AGC settling time */
 #define	AR5K_PHY_SETTLING_AGC_S		0
-#define	AR5K_PHY_SETTLING_SWITCH	0x00003f80	/* Switch settlig time */
+#define	AR5K_PHY_SETTLING_SWITCH	0x00003f80	/* Switch settling time */
 #define	AR5K_PHY_SETTLING_SWITCH_S	7
 
 /*
@@ -2187,6 +2187,7 @@
  */
 #define	AR5K_PHY_IQ			0x9920			/* Register Address */
 #define	AR5K_PHY_IQ_CORR_Q_Q_COFF	0x0000001f	/* Mask for q correction info */
+#define	AR5K_PHY_IQ_CORR_Q_Q_COFF_S	0
 #define	AR5K_PHY_IQ_CORR_Q_I_COFF	0x000007e0	/* Mask for i correction info */
 #define	AR5K_PHY_IQ_CORR_Q_I_COFF_S	5
 #define	AR5K_PHY_IQ_CORR_ENABLE		0x00000800	/* Enable i/q correction */
