@@ -278,7 +278,6 @@ static struct iwl_lib_ops iwl6000_lib = {
 		.set_ct_kill = iwl6000_set_ct_threshold,
 	 },
 	.add_bcast_station = iwl_add_bcast_station,
-	.recover_from_statistics = iwl_recover_from_statistics,
 };
 
 static const struct iwl_ops iwl6000_ops = {
@@ -344,7 +343,6 @@ static struct iwl_lib_ops iwl6050_lib = {
 		.set_calib_version = iwl6050_set_calib_version,
 	 },
 	.add_bcast_station = iwl_add_bcast_station,
-	.recover_from_statistics = iwl_recover_from_statistics,
 };
 
 static const struct iwl_ops iwl6050_ops = {

@@ -191,9 +191,6 @@ struct iwl_lib_ops {
 	struct iwl_temp_ops temp_ops;
 	/* station management */
 	void (*add_bcast_station)(struct iwl_priv *priv);
-	/* recover from errors showed in statistics */
-	void (*recover_from_statistics)(struct iwl_priv *priv,
-					struct iwl_rx_packet *pkt);
 };
 
 struct iwl_led_ops {
@@ -435,8 +432,6 @@ void iwl_rx_missed_beacon_notif(struct iwl_priv *priv,
 			       struct iwl_rx_mem_buffer *rxb);
 void iwl_rx_spectrum_measure_notif(struct iwl_priv *priv,
 					  struct iwl_rx_mem_buffer *rxb);
-void iwl_recover_from_statistics(struct iwl_priv *priv,
-				 struct iwl_rx_packet *pkt);
 void iwl_rx_statistics(struct iwl_priv *priv,
 			      struct iwl_rx_mem_buffer *rxb);
 void iwl_reply_statistics(struct iwl_priv *priv,
