@@ -600,3 +600,14 @@ Why:	The paravirt mmu host support is slower than non-paravirt mmu, both
 Who:	Avi Kivity <avi@redhat.com>
 
 ----------------------------
+
+What:	iwlwifi 50XX module parameters
+When:	2.6.40
+Why:	The "..50" modules parameters were used to configure 5000 series and
+	up devices; different set of module parameters also available for 4965
+	with same functionalities. Consolidate both set into single place
+	in driver/net/wireless/iwlwifi/iwl-agn.c
+
+Who:	Wey-Yi Guy <wey-yi.w.guy@intel.com>
+
+----------------------------
