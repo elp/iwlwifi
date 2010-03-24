@@ -1991,6 +1991,7 @@ static bool ieee80211_tx_pending_skb(struct ieee80211_local *local,
 void ieee80211_tx_pending(unsigned long data)
 {
 	struct ieee80211_local *local = (struct ieee80211_local *)data;
+	struct ieee80211_sub_if_data *sdata;
 	unsigned long flags;
 	int i;
 	bool txok;
@@ -2010,14 +2011,12 @@ void ieee80211_tx_pending(unsigned long data)
 		while (!skb_queue_empty(&local->pending[i])) {
 			struct sk_buff *skb = __skb_dequeue(&local->pending[i]);
 			struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
-			struct ieee80211_sub_if_data *sdata;
 
 			if (WARN_ON(!info->control.vif)) {
 				kfree_skb(skb);
 				continue;
 			}
 
-			sdata = vif_to_sdata(info->control.vif);
 			spin_unlock_irqrestore(&local->queue_stop_reason_lock,
 						flags);
 
@@ -2029,6 +2028,11 @@ void ieee80211_tx_pending(unsigned long data)
 			if (!txok)
 				break;
 		}
+
+		if (skb_queue_empty(&local->pending[i]))
+			list_for_each_entry_rcu(sdata, &local->interfaces, list)
+				netif_tx_wake_queue(
+					netdev_get_tx_queue(sdata->dev, i));
 	}
 	spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
 

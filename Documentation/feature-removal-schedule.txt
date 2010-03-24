@@ -621,3 +621,9 @@ Why:	Internal alias support has been present in module-init-tools for some
 Who:	Wey-Yi Guy <wey-yi.w.guy@intel.com>
 
 ----------------------------
+What: 	"acpi=ht" boot option
+When:	2.6.35
+Why:	Useful in 2003, implementation is a hack.
+	Generally invoked by accident today.
+	Seen as doing more harm than good.
+Who:	Len Brown <len.brown@intel.com>
