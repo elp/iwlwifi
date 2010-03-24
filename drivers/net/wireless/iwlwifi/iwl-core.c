@@ -348,7 +348,7 @@ void iwl_reset_qos(struct iwl_priv *priv)
 			priv->qos_data.def_qos_parm.ac[i].reserved1 = 0;
 		}
 	}
-	IWL_DEBUG_QOS(priv, "set QoS to default \n");
+	IWL_DEBUG_QOS(priv, "set QoS to default\n");
 
 	spin_unlock_irqrestore(&priv->lock, flags);
 }
@@ -1915,7 +1915,7 @@ static void iwl_ht_conf(struct iwl_priv *priv,
 	struct iwl_ht_config *ht_conf = &priv->current_ht_config;
 	struct ieee80211_sta *sta;
 
-	IWL_DEBUG_MAC80211(priv, "enter: \n");
+	IWL_DEBUG_MAC80211(priv, "enter:\n");
 
 	if (!ht_conf->is_ht)
 		return;
@@ -2476,7 +2476,7 @@ int iwl_alloc_txq_mem(struct iwl_priv *priv)
 			sizeof(struct iwl_tx_queue) * priv->cfg->num_of_queues,
 			GFP_KERNEL);
 	if (!priv->txq) {
-		IWL_ERR(priv, "Not enough memory for txq \n");
+		IWL_ERR(priv, "Not enough memory for txq\n");
 		return -ENOMEM;
 	}
 	return 0;
