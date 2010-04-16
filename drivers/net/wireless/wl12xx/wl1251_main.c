@@ -29,6 +29,7 @@
 #include <linux/crc32.h>
 #include <linux/etherdevice.h>
 #include <linux/vmalloc.h>
+#include <linux/slab.h>
 
 #include "wl1251.h"
 #include "wl12xx_80211.h"
@@ -201,8 +202,8 @@ static int wl1251_chip_wakeup(struct wl1251 *wl)
 			goto out;
 	}
 
-	/* No NVS from netlink, try to get it from the filesystem */
-	if (wl->nvs == NULL) {
+	if (wl->nvs == NULL && !wl->use_eeprom) {
+		/* No NVS from netlink, try to get it from the filesystem */
 		ret = wl1251_fetch_nvs(wl);
 		if (ret < 0)
 			goto out;
