@@ -175,6 +175,8 @@ static u32 ieee80211_enable_ht(struct ieee80211_sub_if_data *sdata,
 	ht_changed = conf_is_ht(&local->hw.conf) != enable_ht ||
 		     channel_type != local->hw.conf.channel_type;
 
+	if (local->tmp_channel)
+		local->tmp_channel_type = channel_type;
 	local->oper_channel_type = channel_type;
 
 	if (ht_changed) {
@@ -1331,12 +1333,17 @@ static void ieee80211_rx_mgmt_probe_resp(struct ieee80211_sub_if_data *sdata,
 		mutex_lock(&sdata->local->iflist_mtx);
 		ieee80211_recalc_ps(sdata->local, -1);
 		mutex_unlock(&sdata->local->iflist_mtx);
+
+		if (sdata->local->hw.flags & IEEE80211_HW_CONNECTION_MONITOR)
+			return;
+
 		/*
 		 * We've received a probe response, but are not sure whether
 		 * we have or will be receiving any beacons or data, so let's
 		 * schedule the timers again, just in case.
 		 */
 		mod_beacon_timer(sdata);
+
 		mod_timer(&ifmgd->conn_mon_timer,
 			  round_jiffies_up(jiffies +
 					   IEEE80211_CONNECTION_IDLE_TIME));
