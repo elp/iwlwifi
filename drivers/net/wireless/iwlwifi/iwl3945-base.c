@@ -3321,6 +3321,9 @@ static int iwl3945_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		return -EOPNOTSUPP;
 	}
 
+	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
+		return 0;
+
 	addr = sta ? sta->addr : iwl_bcast_addr;
 	static_key = !iwl_is_associated(priv);
 
