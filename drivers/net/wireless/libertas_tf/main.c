@@ -7,12 +7,12 @@
  *  the Free Software Foundation; either version 2 of the License, or (at
  *  your option) any later version.
  */
-#include "deb_defs.h"
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/slab.h>
+#include <linux/etherdevice.h>
 
 #include "libertas_tf.h"
-#include "linux/etherdevice.h"
 
 #define DRIVER_RELEASE_VERSION "004.p0"
 /* thinfirm version: 5.132.X.pX */
@@ -558,7 +558,6 @@ int lbtf_rx(struct lbtf_private *priv, struct sk_buff *skb)
 	stats.freq = priv->cur_freq;
 	stats.band = IEEE80211_BAND_2GHZ;
 	stats.signal = prxpd->snr;
-	stats.noise = prxpd->nf;
 	/* Marvell rate index has a hole at value 4 */
 	if (prxpd->rx_rate > 4)
 		--prxpd->rx_rate;
