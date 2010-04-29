@@ -1227,7 +1227,6 @@ struct iwl_priv {
 
 	/* Last Rx'd beacon timestamp */
 	u64 timestamp;
-	u16 beacon_int;
 	struct ieee80211_vif *vif;
 
 	union {
@@ -1287,10 +1286,6 @@ struct iwl_priv {
 	struct iwl_hw_params hw_params;
 
 	u32 inta_mask;
-	/* Current association information needed to configure the
-	 * hardware */
-	u16 assoc_id;
-	u16 assoc_capability;
 
 	struct iwl_qos_info qos_data;
 
