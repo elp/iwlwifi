@@ -157,7 +157,7 @@ int iwl_commit_rxon(struct iwl_priv *priv)
 			IWL_ERR(priv, "Error clearing ASSOC_MSK (%d)\n", ret);
 			return ret;
 		}
-		iwl_clear_ucode_stations(priv, false);
+		iwl_clear_ucode_stations(priv);
 		iwl_restore_stations(priv);
 		ret = iwl_restore_default_wep_keys(priv);
 		if (ret) {
@@ -189,7 +189,7 @@ int iwl_commit_rxon(struct iwl_priv *priv)
 		}
 		IWL_DEBUG_INFO(priv, "Return from !new_assoc RXON.\n");
 		memcpy(active_rxon, &priv->staging_rxon, sizeof(*active_rxon));
-		iwl_clear_ucode_stations(priv, false);
+		iwl_clear_ucode_stations(priv);
 		iwl_restore_stations(priv);
 		ret = iwl_restore_default_wep_keys(priv);
 		if (ret) {
@@ -2369,7 +2369,8 @@ static void __iwl_down(struct iwl_priv *priv)
 	if (!exit_pending)
 		set_bit(STATUS_EXIT_PENDING, &priv->status);
 
-	iwl_clear_ucode_stations(priv, true);
+	iwl_clear_ucode_stations(priv);
+	iwl_dealloc_bcast_station(priv);
 
 	/* Unblock any waiting calls */
 	wake_up_interruptible_all(&priv->wait_command_queue);
@@ -2515,6 +2516,10 @@ static int __iwl_up(struct iwl_priv *priv)
 		IWL_ERR(priv, "ucode not available for device bringup\n");
 		return -EIO;
 	}
+
+	ret = iwl_alloc_bcast_station(priv, true);
+	if (ret)
+		return ret;
 
 	iwl_prepare_card_hw(priv);
 
@@ -2999,7 +3004,6 @@ void iwl_config_ap(struct iwl_priv *priv, struct ieee80211_vif *vif)
 		/* restore RXON assoc */
 		priv->staging_rxon.filter_flags |= RXON_FILTER_ASSOC_MSK;
 		iwlcore_commit_rxon(priv);
-		iwl_add_bcast_station(priv);
 	}
 	iwl_send_beacon_cmd(priv);
 
