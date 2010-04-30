@@ -2823,6 +2823,8 @@ static int iwl_mac_setup_register(struct iwl_priv *priv,
 			     IEEE80211_HW_SUPPORTS_STATIC_SMPS;
 
 	hw->sta_data_size = sizeof(struct iwl_station_priv);
+	hw->vif_data_size = sizeof(struct iwl_vif_priv);
+
 	hw->wiphy->interface_modes =
 		BIT(NL80211_IFTYPE_STATION) |
 		BIT(NL80211_IFTYPE_ADHOC);
@@ -3198,6 +3200,8 @@ static int iwlagn_mac_sta_add(struct ieee80211_hw *hw,
 	int ret;
 	u8 sta_id;
 
+	sta_priv->common.sta_id = IWL_INVALID_STATION;
+
 	IWL_DEBUG_INFO(priv, "received request to add station %pM\n",
 			sta->addr);
 
@@ -3214,12 +3218,14 @@ static int iwlagn_mac_sta_add(struct ieee80211_hw *hw,
 		return ret;
 	}
 
+	sta_priv->common.sta_id = sta_id;
+
 	/* Initialize rate scaling */
 	IWL_DEBUG_INFO(priv, "Initializing rate scaling for station %pM\n",
 		       sta->addr);
 	iwl_rs_rate_init(priv, sta, sta_id);
 
-	return ret;
+	return 0;
 }
 
 /*****************************************************************************
