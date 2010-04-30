@@ -3039,7 +3039,6 @@ static int iwl_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			   struct ieee80211_key_conf *key)
 {
 	struct iwl_priv *priv = hw->priv;
-	const u8 *addr;
 	int ret;
 	u8 sta_id;
 	bool is_default_wep_key = false;
@@ -3050,13 +3049,17 @@ static int iwl_mac_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		IWL_DEBUG_MAC80211(priv, "leave - hwcrypto disabled\n");
 		return -EOPNOTSUPP;
 	}
-	addr = sta ? sta->addr : iwl_bcast_addr;
-	sta_id = iwl_find_station(priv, addr);
-	if (sta_id == IWL_INVALID_STATION) {
-		IWL_DEBUG_MAC80211(priv, "leave - %pM not in station map.\n",
-				   addr);
-		return -EINVAL;
 
+	if (sta) {
+		sta_id = iwl_sta_id(sta);
+
+		if (sta_id == IWL_INVALID_STATION) {
+			IWL_DEBUG_MAC80211(priv, "leave - %pM not in station map.\n",
+					   sta->addr);
+			return -EINVAL;
+		}
+	} else {
+		sta_id = priv->hw_params.bcast_sta_id;
 	}
 
 	mutex_lock(&priv->mutex);
@@ -3181,7 +3184,7 @@ static void iwl_mac_sta_notify(struct ieee80211_hw *hw,
 		if (!sta_priv->asleep)
 			break;
 		sta_priv->asleep = false;
-		sta_id = iwl_find_station(priv, sta->addr);
+		sta_id = iwl_sta_id(sta);
 		if (sta_id != IWL_INVALID_STATION)
 			iwl_sta_modify_ps_wake(priv, sta_id);
 		break;
