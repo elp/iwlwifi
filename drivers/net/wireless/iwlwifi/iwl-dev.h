@@ -536,7 +536,7 @@ struct fw_desc {
 	u32 len;		/* bytes */
 };
 
-/* v1/v2 uCode file layout */
+/* uCode file layout */
 struct iwl_ucode_header {
 	__le32 ver;	/* major/minor/API/serial */
 	union {
@@ -558,46 +558,6 @@ struct iwl_ucode_header {
 			u8 data[0];		/* in same order as sizes */
 		} v2;
 	} u;
-};
-
-/* new TLV uCode file layout */
-enum iwl_ucode_tlv_type {
-	IWL_UCODE_TLV_INVALID		= 0, /* unused */
-	IWL_UCODE_TLV_INST		= 1,
-	IWL_UCODE_TLV_DATA		= 2,
-	IWL_UCODE_TLV_INIT		= 3,
-	IWL_UCODE_TLV_INIT_DATA		= 4,
-	IWL_UCODE_TLV_BOOT		= 5,
-	IWL_UCODE_TLV_PROBE_MAX_LEN	= 6, /* a u32 value */
-};
-
-struct iwl_ucode_tlv {
-	__le32 type;	/* see above */
-	__le32 length;	/* not including type/length fields */
-	u8 data[0];
-} __attribute__ ((packed));
-
-#define IWL_TLV_UCODE_MAGIC	0x0a4c5749
-
-struct iwl_tlv_ucode_header {
-	/*
-	 * The TLV style ucode header is distinguished from
-	 * the v1/v2 style header by first four bytes being
-	 * zero, as such is an invalid combination of
-	 * major/minor/API/serial versions.
-	 */
-	__le32 zero;
-	__le32 magic;
-	u8 human_readable[64];
-	__le32 ver;		/* major/minor/API/serial */
-	__le32 build;
-	/*
-	 * The data contained herein has a TLV layout,
-	 * see above for the TLV header and types.
-	 * Note that each TLV is padded to a length
-	 * that is a multiple of 4 for alignment.
-	 */
-	u8 data[0];
 };
 
 struct iwl4965_ibss_seq {

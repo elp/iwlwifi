@@ -1506,13 +1506,9 @@ static void iwl_nic_start(struct iwl_priv *priv)
 	iwl_write32(priv, CSR_RESET, 0);
 }
 
-struct iwlagn_ucode_capabilities {
-	u32 max_probe_length;
-};
 
 static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context);
-static int iwl_mac_setup_register(struct iwl_priv *priv,
-				  struct iwlagn_ucode_capabilities *capa);
+static int iwl_mac_setup_register(struct iwl_priv *priv);
 
 static int __must_check iwl_request_firmware(struct iwl_priv *priv, bool first)
 {
@@ -1624,83 +1620,6 @@ static int iwlagn_load_legacy_firmware(struct iwl_priv *priv,
 	return 0;
 }
 
-static int iwlagn_load_firmware(struct iwl_priv *priv,
-				const struct firmware *ucode_raw,
-				struct iwlagn_firmware_pieces *pieces,
-				struct iwlagn_ucode_capabilities *capa)
-{
-	struct iwl_tlv_ucode_header *ucode = (void *)ucode_raw->data;
-	struct iwl_ucode_tlv *tlv;
-	size_t len = ucode_raw->size;
-	const u8 *data;
-
-	if (len < sizeof(*ucode))
-		return -EINVAL;
-
-	if (ucode->magic != cpu_to_le32(IWL_TLV_UCODE_MAGIC))
-		return -EINVAL;
-
-	priv->ucode_ver = le32_to_cpu(ucode->ver);
-	pieces->build = le32_to_cpu(ucode->build);
-	data = ucode->data;
-
-	len -= sizeof(*ucode);
-
-	while (len >= sizeof(*tlv)) {
-		u32 tlv_len;
-		enum iwl_ucode_tlv_type tlv_type;
-		const u8 *tlv_data;
-
-		len -= sizeof(*tlv);
-		tlv = (void *)data;
-
-		tlv_len = le32_to_cpu(tlv->length);
-		tlv_type = le32_to_cpu(tlv->type);
-		tlv_data = tlv->data;
-
-		if (len < tlv_len)
-			return -EINVAL;
-		len -= ALIGN(tlv_len, 4);
-		data += sizeof(*tlv) + ALIGN(tlv_len, 4);
-
-		switch (tlv_type) {
-		case IWL_UCODE_TLV_INST:
-			pieces->inst = tlv_data;
-			pieces->inst_size = tlv_len;
-			break;
-		case IWL_UCODE_TLV_DATA:
-			pieces->data = tlv_data;
-			pieces->data_size = tlv_len;
-			break;
-		case IWL_UCODE_TLV_INIT:
-			pieces->init = tlv_data;
-			pieces->init_size = tlv_len;
-			break;
-		case IWL_UCODE_TLV_INIT_DATA:
-			pieces->init_data = tlv_data;
-			pieces->init_data_size = tlv_len;
-			break;
-		case IWL_UCODE_TLV_BOOT:
-			pieces->boot = tlv_data;
-			pieces->boot_size = tlv_len;
-			break;
-		case IWL_UCODE_TLV_PROBE_MAX_LEN:
-			if (tlv_len != 4)
-				return -EINVAL;
-			capa->max_probe_length =
-				le32_to_cpup((__le32 *)tlv_data);
-			break;
-		default:
-			break;
-		}
-	}
-
-	if (len)
-		return -EINVAL;
-
-	return 0;
-}
-
 /**
  * iwl_ucode_callback - callback when firmware was loaded
  *
@@ -1718,9 +1637,6 @@ static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context)
 	u32 api_ver;
 	char buildstr[25];
 	u32 build;
-	struct iwlagn_ucode_capabilities ucode_capa = {
-		.max_probe_length = 200,
-	};
 
 	memset(&pieces, 0, sizeof(pieces));
 
@@ -1745,8 +1661,7 @@ static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context)
 	if (ucode->ver)
 		err = iwlagn_load_legacy_firmware(priv, ucode_raw, &pieces);
 	else
-		err = iwlagn_load_firmware(priv, ucode_raw, &pieces,
-					   &ucode_capa);
+		err = -EINVAL;
 
 	if (err)
 		goto try_again;
@@ -1843,6 +1758,7 @@ static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context)
 		goto try_again;
 	}
 
+
 	/* Allocate ucode buffers for card's bus-master loading ... */
 
 	/* Runtime instructions and 2 copies of data:
@@ -1926,7 +1842,7 @@ static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context)
 	 *
 	 * 9. Setup and register with mac80211 and debugfs
 	 **************************************************/
-	err = iwl_mac_setup_register(priv, &ucode_capa);
+	err = iwl_mac_setup_register(priv);
 	if (err)
 		goto out_unbind;
 
@@ -2802,8 +2718,7 @@ void iwl_post_associate(struct iwl_priv *priv, struct ieee80211_vif *vif)
  * Not a mac80211 entry point function, but it fits in with all the
  * other mac80211 functions grouped here.
  */
-static int iwl_mac_setup_register(struct iwl_priv *priv,
-				  struct iwlagn_ucode_capabilities *capa)
+static int iwl_mac_setup_register(struct iwl_priv *priv)
 {
 	int ret;
 	struct ieee80211_hw *hw = priv->hw;
@@ -2841,7 +2756,7 @@ static int iwl_mac_setup_register(struct iwl_priv *priv,
 
 	hw->wiphy->max_scan_ssids = PROBE_OPTION_MAX;
 	/* we create the 802.11 header and a zero-length SSID element */
-	hw->wiphy->max_scan_ie_len = capa->max_probe_length - 24 - 2;
+	hw->wiphy->max_scan_ie_len = IWL_MAX_PROBE_REQUEST - 24 - 2;
 
 	/* Default value; 4 EDCA QOS priorities */
 	hw->queues = 4;
