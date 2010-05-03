@@ -1564,7 +1564,8 @@ static int iwlagn_load_legacy_firmware(struct iwl_priv *priv,
 		 * along with the API version, it always uses v1
 		 * file format.
 		 */
-		if (priv->cfg != &iwl4965_agn_cfg) {
+		if ((priv->hw_rev & CSR_HW_REV_TYPE_MSK) ==
+				CSR_HW_REV_TYPE_4965) {
 			hdr_size = 28;
 			if (ucode_raw->size < hdr_size) {
 				IWL_ERR(priv, "File size too small!\n");
