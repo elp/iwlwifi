@@ -347,6 +347,8 @@ int iwl_check_rxon_cmd(struct iwl_priv *priv);
 int iwl_full_rxon_required(struct iwl_priv *priv);
 void iwl_set_rxon_chain(struct iwl_priv *priv);
 int iwl_set_rxon_channel(struct iwl_priv *priv, struct ieee80211_channel *ch);
+u8 iwl_get_single_channel_number(struct iwl_priv *priv,
+				  enum ieee80211_band band);
 void iwl_set_flags_for_band(struct iwl_priv *priv,
 			    enum ieee80211_band band,
 			    struct ieee80211_vif *vif);
