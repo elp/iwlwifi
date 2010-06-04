@@ -114,8 +114,8 @@ struct iwl_cmd_meta {
 	 * structure is stored at the end of the shared queue memory. */
 	u32 flags;
 
-	DECLARE_PCI_UNMAP_ADDR(mapping)
-	DECLARE_PCI_UNMAP_LEN(len)
+	DEFINE_DMA_UNMAP_ADDR(mapping);
+	DEFINE_DMA_UNMAP_LEN(len);
 };
 
 /*
@@ -1224,6 +1224,13 @@ struct iwl_priv {
 	struct iwl_power_mgr power_data;
 	struct iwl_tt_mgmt thermal_throttle;
 
+	struct iwl_notif_statistics statistics;
+#ifdef CONFIG_IWLWIFI_DEBUG
+	struct iwl_notif_statistics accum_statistics;
+	struct iwl_notif_statistics delta_statistics;
+	struct iwl_notif_statistics max_delta;
+#endif
+
 	/* context information */
 	u8 bssid[ETH_ALEN]; /* used only on 3945 but filled by core */
 
@@ -1313,13 +1320,6 @@ struct iwl_priv {
 			bool last_phy_res_valid;
 
 			struct completion firmware_loading_complete;
-
-			struct iwl_notif_statistics statistics;
-#ifdef CONFIG_IWLWIFI_DEBUGFS
-			struct iwl_notif_statistics accum_statistics;
-			struct iwl_notif_statistics delta_statistics;
-			struct iwl_notif_statistics max_delta;
-#endif
 
 			u32 init_evtlog_ptr, init_evtlog_size, init_errlog_ptr;
 			u32 inst_evtlog_ptr, inst_evtlog_size, inst_errlog_ptr;
