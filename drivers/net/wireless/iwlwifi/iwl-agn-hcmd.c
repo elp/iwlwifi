@@ -216,9 +216,9 @@ static void iwlagn_rts_tx_cmd_flag(struct ieee80211_tx_info *info,
 {
 	if ((info->control.rates[0].flags & IEEE80211_TX_RC_USE_RTS_CTS) ||
 	    (info->control.rates[0].flags & IEEE80211_TX_RC_USE_CTS_PROTECT))
-		*tx_flags |= TX_CMD_FLG_RTS_CTS_MSK;
+		*tx_flags |= TX_CMD_FLG_PROT_REQUIRE_MSK;
 	else
-		*tx_flags &= ~TX_CMD_FLG_RTS_CTS_MSK;
+		*tx_flags &= ~TX_CMD_FLG_PROT_REQUIRE_MSK;
 }
 
 /* Calc max signal level (dBm) among 3 possible receivers */
