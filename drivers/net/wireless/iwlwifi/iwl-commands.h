@@ -3139,13 +3139,6 @@ struct statistics_rx_non_phy_bt {
 	__le32 reserved[2];
 } __packed;
 
-struct statistics_rx_non_phy_bt {
-	struct statistics_rx_non_phy common;
-	/* additional stats for bt */
-	__le32 num_bt_kills;
-	__le32 reserved[2];
-} __attribute__ ((packed));
-
 struct statistics_rx {
 	struct statistics_rx_phy ofdm;
 	struct statistics_rx_phy cck;
@@ -3160,12 +3153,6 @@ struct statistics_rx_bt {
 	struct statistics_rx_ht_phy ofdm_ht;
 } __packed;
 
-struct statistics_rx_bt {
-	struct statistics_rx_phy ofdm;
-	struct statistics_rx_phy cck;
-	struct statistics_rx_non_phy_bt general;
-	struct statistics_rx_ht_phy ofdm_ht;
-} __attribute__ ((packed));
 
 /**
  * struct statistics_tx_power - current tx power
