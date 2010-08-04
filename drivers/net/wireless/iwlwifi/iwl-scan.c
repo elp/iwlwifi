@@ -511,6 +511,7 @@ void iwl_bg_scan_completed(struct work_struct *work)
 	struct iwl_priv *priv =
 	    container_of(work, struct iwl_priv, scan_completed);
 	bool internal = false;
+	bool scan_completed = false;
 
 	IWL_DEBUG_SCAN(priv, "SCAN complete scan\n");
 
@@ -521,7 +522,8 @@ void iwl_bg_scan_completed(struct work_struct *work)
 		priv->is_internal_short_scan = false;
 		IWL_DEBUG_SCAN(priv, "internal short scan completed\n");
 		internal = true;
-	} else {
+	} else if (priv->scan_request) {
+		scan_completed = true;
 		priv->scan_request = NULL;
 		priv->scan_vif = NULL;
 	}
@@ -552,7 +554,7 @@ void iwl_bg_scan_completed(struct work_struct *work)
 	 * into driver again into functions that will attempt to take
 	 * mutex.
 	 */
-	if (!internal)
+	if (scan_completed)
 		ieee80211_scan_completed(priv->hw, false);
 }
 EXPORT_SYMBOL(iwl_bg_scan_completed);
