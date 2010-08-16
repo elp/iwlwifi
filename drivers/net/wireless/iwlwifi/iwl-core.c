@@ -183,14 +183,6 @@ out:
 }
 EXPORT_SYMBOL(iwl_alloc_all);
 
-void iwl_hw_detect(struct iwl_priv *priv)
-{
-	priv->hw_rev = _iwl_read32(priv, CSR_HW_REV);
-	priv->hw_wa_rev = _iwl_read32(priv, CSR_HW_REV_WA_REG);
-	pci_read_config_byte(priv->pci_dev, PCI_REVISION_ID, &priv->rev_id);
-}
-EXPORT_SYMBOL(iwl_hw_detect);
-
 /*
  * QoS  support
 */
@@ -1373,25 +1365,6 @@ void iwl_configure_filter(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(iwl_configure_filter);
 
-int iwl_set_hw_params(struct iwl_priv *priv)
-{
-	priv->hw_params.max_rxq_size = RX_QUEUE_SIZE;
-	priv->hw_params.max_rxq_log = RX_QUEUE_SIZE_LOG;
-	if (priv->cfg->mod_params->amsdu_size_8K)
-		priv->hw_params.rx_page_order = get_order(IWL_RX_BUF_SIZE_8K);
-	else
-		priv->hw_params.rx_page_order = get_order(IWL_RX_BUF_SIZE_4K);
-
-	priv->hw_params.max_beacon_itrvl = IWL_MAX_UCODE_BEACON_INTERVAL;
-
-	if (priv->cfg->mod_params->disable_11n)
-		priv->cfg->sku &= ~IWL_SKU_N;
-
-	/* Device-specific setup */
-	return priv->cfg->ops->lib->set_hw_params(priv);
-}
-EXPORT_SYMBOL(iwl_set_hw_params);
-
 int iwl_set_tx_power(struct iwl_priv *priv, s8 tx_power, bool force)
 {
 	int ret = 0;
@@ -1692,6 +1665,14 @@ int iwl_mac_conf_tx(struct ieee80211_hw *hw, u16 queue,
 	return 0;
 }
 EXPORT_SYMBOL(iwl_mac_conf_tx);
+
+int iwl_mac_tx_last_beacon(struct ieee80211_hw *hw)
+{
+	struct iwl_priv *priv = hw->priv;
+
+	return priv->ibss_manager == IWL_IBSS_MANAGER;
+}
+EXPORT_SYMBOL_GPL(iwl_mac_tx_last_beacon);
 
 static void iwl_ht_conf(struct iwl_priv *priv,
 			struct ieee80211_vif *vif)
