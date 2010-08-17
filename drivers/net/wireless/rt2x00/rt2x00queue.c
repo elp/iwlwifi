@@ -1,5 +1,6 @@
 /*
-	Copyright (C) 2004 - 2009 Ivo van Doorn <IvDoorn@gmail.com>
+	Copyright (C) 2010 Willow Garage <http://www.willowgarage.com>
+	Copyright (C) 2004 - 2010 Ivo van Doorn <IvDoorn@gmail.com>
 	Copyright (C) 2004 - 2009 Gertjan van Wingerde <gwingerde@gmail.com>
 	<http://rt2x00.serialmonkey.com>
 
@@ -730,9 +731,9 @@ void rt2x00queue_init_queues(struct rt2x00_dev *rt2x00dev)
 		rt2x00queue_reset(queue);
 
 		for (i = 0; i < queue->limit; i++) {
-			queue->entries[i].flags = 0;
-
 			rt2x00dev->ops->lib->clear_entry(&queue->entries[i]);
+			if (queue->qid == QID_RX)
+				rt2x00queue_index_inc(queue, Q_INDEX);
 		}
 	}
 }
@@ -755,7 +756,7 @@ static int rt2x00queue_alloc_entries(struct data_queue *queue,
 	 * Allocate all queue entries.
 	 */
 	entry_size = sizeof(*entries) + qdesc->priv_size;
-	entries = kzalloc(queue->limit * entry_size, GFP_KERNEL);
+	entries = kcalloc(queue->limit, entry_size, GFP_KERNEL);
 	if (!entries)
 		return -ENOMEM;
 
@@ -891,7 +892,7 @@ int rt2x00queue_allocate(struct rt2x00_dev *rt2x00dev)
 	 */
 	rt2x00dev->data_queues = 2 + rt2x00dev->ops->tx_queues + req_atim;
 
-	queue = kzalloc(rt2x00dev->data_queues * sizeof(*queue), GFP_KERNEL);
+	queue = kcalloc(rt2x00dev->data_queues, sizeof(*queue), GFP_KERNEL);
 	if (!queue) {
 		ERROR(rt2x00dev, "Queue allocation failed.\n");
 		return -ENOMEM;

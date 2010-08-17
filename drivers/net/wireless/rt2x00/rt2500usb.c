@@ -355,7 +355,9 @@ static int rt2500usb_config_key(struct rt2x00_dev *rt2x00dev,
 		 * it is known that not work at least on some hardware.
 		 * SW crypto will be used in that case.
 		 */
-		if (key->alg == ALG_WEP && key->keyidx != 0)
+		if ((key->cipher == WLAN_CIPHER_SUITE_WEP40 ||
+		     key->cipher == WLAN_CIPHER_SUITE_WEP104) &&
+		    key->keyidx != 0)
 			return -EOPNOTSUPP;
 
 		/*
@@ -1698,7 +1700,7 @@ static int rt2500usb_probe_hw_mode(struct rt2x00_dev *rt2x00dev)
 	/*
 	 * Create channel information array
 	 */
-	info = kzalloc(spec->num_channels * sizeof(*info), GFP_KERNEL);
+	info = kcalloc(spec->num_channels, sizeof(*info), GFP_KERNEL);
 	if (!info)
 		return -ENOMEM;
 
