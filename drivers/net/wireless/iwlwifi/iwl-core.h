@@ -278,6 +278,11 @@ struct iwl_mod_params {
  * @chain_noise_calib_by_driver: driver has the capability to perform
  *	chain noise calibration operation
  * @scan_antennas: available antenna for scan operation
+ * @need_dc_calib: need to perform init dc calibration
+ * @bt_statistics: use BT version of statistics notification
+ * @agg_time_limit: maximum number of uSec in aggregation
+ * @ampdu_factor: Maximum A-MPDU length factor
+ * @ampdu_density: Minimum A-MPDU spacing
  *
  * We enable the driver to be backward compatible wrt API version. The
  * driver specifies which APIs it supports (with @ucode_api_max being the
@@ -348,6 +353,9 @@ struct iwl_cfg {
 	u8 scan_tx_antennas[IEEE80211_NUM_BANDS];
 	const bool need_dc_calib;
 	const bool bt_statistics;
+	u16 agg_time_limit;
+	u8 ampdu_factor;
+	u8 ampdu_density;
 };
 
 /***************************
@@ -584,8 +592,6 @@ int iwl_send_cmd_pdu_async(struct iwl_priv *priv, u8 id, u16 len,
 
 int iwl_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd);
 
-int iwl_send_card_state(struct iwl_priv *priv, u32 flags,
-			u8 meta_flag);
 
 /*****************************************************
  * PCI						     *
@@ -707,7 +713,7 @@ extern int iwl_send_lq_cmd(struct iwl_priv *priv,
 void iwl_apm_stop(struct iwl_priv *priv);
 int iwl_apm_init(struct iwl_priv *priv);
 
-void iwl_setup_rxon_timing(struct iwl_priv *priv, struct ieee80211_vif *vif);
+int iwl_send_rxon_timing(struct iwl_priv *priv, struct ieee80211_vif *vif);
 static inline int iwl_send_rxon_assoc(struct iwl_priv *priv)
 {
 	return priv->cfg->ops->hcmd->rxon_assoc(priv);

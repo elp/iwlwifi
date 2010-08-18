@@ -239,7 +239,11 @@ static void iwlcore_init_ht_hw_capab(const struct iwl_priv *priv,
 		ht_info->cap |= IEEE80211_HT_CAP_MAX_AMSDU;
 
 	ht_info->ampdu_factor = CFG_HT_RX_AMPDU_FACTOR_DEF;
+	if (priv->cfg->ampdu_factor)
+		ht_info->ampdu_factor = priv->cfg->ampdu_factor;
 	ht_info->ampdu_density = CFG_HT_MPDU_DENSITY_DEF;
+	if (priv->cfg->ampdu_density)
+		ht_info->ampdu_density = priv->cfg->ampdu_density;
 
 	ht_info->mcs.rx_mask[0] = 0xFF;
 	if (rx_chains_num >= 2)
@@ -491,17 +495,19 @@ static u16 iwl_adjust_beacon_interval(u16 beacon_val, u16 max_beacon_val)
 	return new_val;
 }
 
-void iwl_setup_rxon_timing(struct iwl_priv *priv, struct ieee80211_vif *vif)
+int iwl_send_rxon_timing(struct iwl_priv *priv, struct ieee80211_vif *vif)
 {
 	u64 tsf;
 	s32 interval_tm, rem;
-	unsigned long flags;
 	struct ieee80211_conf *conf = NULL;
 	u16 beacon_int;
 
 	conf = ieee80211_get_hw_conf(priv->hw);
 
-	spin_lock_irqsave(&priv->lock, flags);
+	lockdep_assert_held(&priv->mutex);
+
+	memset(&priv->rxon_timing, 0, sizeof(struct iwl_rxon_time_cmd));
+
 	priv->rxon_timing.timestamp = cpu_to_le64(priv->timestamp);
 	priv->rxon_timing.listen_interval = cpu_to_le16(conf->listen_interval);
 
@@ -524,14 +530,16 @@ void iwl_setup_rxon_timing(struct iwl_priv *priv, struct ieee80211_vif *vif)
 	rem = do_div(tsf, interval_tm);
 	priv->rxon_timing.beacon_init_val = cpu_to_le32(interval_tm - rem);
 
-	spin_unlock_irqrestore(&priv->lock, flags);
 	IWL_DEBUG_ASSOC(priv,
 			"beacon interval %d beacon timer %d beacon tim %d\n",
 			le16_to_cpu(priv->rxon_timing.beacon_interval),
 			le32_to_cpu(priv->rxon_timing.beacon_init_val),
 			le16_to_cpu(priv->rxon_timing.atim_window));
+
+	return iwl_send_cmd_pdu(priv, REPLY_RXON_TIMING,
+				sizeof(priv->rxon_timing), &priv->rxon_timing);
 }
-EXPORT_SYMBOL(iwl_setup_rxon_timing);
+EXPORT_SYMBOL(iwl_send_rxon_timing);
 
 void iwl_set_rxon_hwcrypto(struct iwl_priv *priv, int hw_decrypt)
 {
@@ -904,25 +912,18 @@ u8 iwl_get_single_channel_number(struct iwl_priv *priv,
 EXPORT_SYMBOL(iwl_get_single_channel_number);
 
 /**
- * iwl_set_rxon_channel - Set the phymode and channel values in staging RXON
- * @phymode: MODE_IEEE80211A sets to 5.2GHz; all else set to 2.4GHz
- * @channel: Any channel valid for the requested phymode
+ * iwl_set_rxon_channel - Set the band and channel values in staging RXON
+ * @ch: requested channel as a pointer to struct ieee80211_channel
 
- * In addition to setting the staging RXON, priv->phymode is also set.
+ * In addition to setting the staging RXON, priv->band is also set.
  *
  * NOTE:  Does not commit to the hardware; it sets appropriate bit fields
- * in the staging RXON flag structure based on the phymode
+ * in the staging RXON flag structure based on the ch->band
  */
 int iwl_set_rxon_channel(struct iwl_priv *priv, struct ieee80211_channel *ch)
 {
 	enum ieee80211_band band = ch->band;
-	u16 channel = ieee80211_frequency_to_channel(ch->center_freq);
-
-	if (!iwl_get_channel_info(priv, band, channel)) {
-		IWL_DEBUG_INFO(priv, "Could not set channel to %d [%d]\n",
-			       channel, band);
-		return -EINVAL;
-	}
+	u16 channel = ch->hw_value;
 
 	if ((le16_to_cpu(priv->staging_rxon.channel) == channel) &&
 	    (priv->band == band))
@@ -1469,28 +1470,6 @@ int iwl_send_statistics_request(struct iwl_priv *priv, u8 flags, bool clear)
 }
 EXPORT_SYMBOL(iwl_send_statistics_request);
 
-/*
- * CARD_STATE_CMD
- *
- * Use: Sets the device's internal card state to enable, disable, or halt
- *
- * When in the 'enable' state the card operates as normal.
- * When in the 'disable' state, the card enters into a low power mode.
- * When in the 'halt' state, the card is shut down and must be fully
- * restarted to come back on.
- */
-int iwl_send_card_state(struct iwl_priv *priv, u32 flags, u8 meta_flag)
-{
-	struct iwl_host_cmd cmd = {
-		.id = REPLY_CARD_STATE_CMD,
-		.len = sizeof(u32),
-		.data = &flags,
-		.flags = meta_flag,
-	};
-
-	return iwl_send_cmd(priv, &cmd);
-}
-
 void iwl_rx_pm_sleep_notif(struct iwl_priv *priv,
 			   struct iwl_rx_mem_buffer *rxb)
 {
@@ -1947,6 +1926,7 @@ int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 	struct iwl_priv *priv = hw->priv;
 	const struct iwl_channel_info *ch_info;
 	struct ieee80211_conf *conf = &hw->conf;
+	struct ieee80211_channel *channel = conf->channel;
 	struct iwl_ht_config *ht_conf = &priv->current_ht_config;
 	unsigned long flags = 0;
 	int ret = 0;
@@ -1956,7 +1936,7 @@ int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 	mutex_lock(&priv->mutex);
 
 	IWL_DEBUG_MAC80211(priv, "enter to channel %d changed 0x%X\n",
-					conf->channel->hw_value, changed);
+					channel->hw_value, changed);
 
 	if (unlikely(!priv->cfg->mod_params->disable_hw_scan &&
 			test_bit(STATUS_SCANNING, &priv->status))) {
@@ -1987,8 +1967,8 @@ int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 		if (scan_active)
 			goto set_ch_out;
 
-		ch = ieee80211_frequency_to_channel(conf->channel->center_freq);
-		ch_info = iwl_get_channel_info(priv, conf->channel->band, ch);
+		ch = channel->hw_value;
+		ch_info = iwl_get_channel_info(priv, channel->band, ch);
 		if (!is_channel_valid(ch_info)) {
 			IWL_DEBUG_MAC80211(priv, "leave - invalid channel\n");
 			ret = -EINVAL;
@@ -2019,16 +1999,13 @@ int iwl_mac_config(struct ieee80211_hw *hw, u32 changed)
 		 * from BSS config in iwl_ht_conf */
 		ht_conf->ht_protection = IEEE80211_HT_OP_MODE_PROTECTION_NONE;
 
-		/* if we are switching from ht to 2.4 clear flags
-		 * from any ht related info since 2.4 does not
-		 * support ht */
 		if ((le16_to_cpu(priv->staging_rxon.channel) != ch))
 			priv->staging_rxon.flags = 0;
 
-		iwl_set_rxon_channel(priv, conf->channel);
+		iwl_set_rxon_channel(priv, channel);
 		iwl_set_rxon_ht(priv, ht_conf);
 
-		iwl_set_flags_for_band(priv, conf->channel->band, priv->vif);
+		iwl_set_flags_for_band(priv, channel->band, priv->vif);
 		spin_unlock_irqrestore(&priv->lock, flags);
 
 		if (priv->cfg->ops->lib->update_bcast_station)
