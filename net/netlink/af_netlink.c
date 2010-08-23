@@ -1468,6 +1468,10 @@ static int netlink_recvmsg(struct kiocb *kiocb, struct socket *sock,
 	if (flags & MSG_TRUNC)
 		copied = data_skb->len;
 
+#ifdef CONFIG_COMPAT_NETLINK_MESSAGES
+	skb_shinfo(skb)->frag_list = frag;
+#endif
+
 	skb_free_datagram(sk, skb);
 
 	if (nlk->cb && atomic_read(&sk->sk_rmem_alloc) <= sk->sk_rcvbuf / 2)
