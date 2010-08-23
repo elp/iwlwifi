@@ -358,6 +358,7 @@ struct iwl_hcmd_ops iwlagn_bt_hcmd = {
 	.set_rxon_chain = iwl_set_rxon_chain,
 	.set_tx_ant = iwlagn_send_tx_ant_config,
 	.send_bt_config = iwlagn_send_advance_bt_config,
+	.set_pan_params = iwlagn_set_pan_params,
 };
 
 struct iwl_hcmd_utils_ops iwlagn_hcmd_utils = {
