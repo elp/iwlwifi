@@ -342,10 +342,11 @@ static inline int get_queue_from_ac(u16 ac)
  * handle build REPLY_TX command notification.
  */
 static void iwlagn_tx_cmd_build_basic(struct iwl_priv *priv,
-				  struct iwl_tx_cmd *tx_cmd,
-				  struct ieee80211_tx_info *info,
-				  struct ieee80211_hdr *hdr,
-				  u8 std_id)
+					struct sk_buff *skb,
+					struct iwl_tx_cmd *tx_cmd,
+					struct ieee80211_tx_info *info,
+					struct ieee80211_hdr *hdr,
+					u8 std_id)
 {
 	__le16 fc = hdr->frame_control;
 	__le32 tx_flags = tx_cmd->tx_flags;
@@ -365,6 +366,12 @@ static void iwlagn_tx_cmd_build_basic(struct iwl_priv *priv,
 
 	if (ieee80211_is_back_req(fc))
 		tx_flags |= TX_CMD_FLG_ACK_MSK | TX_CMD_FLG_IMM_BA_RSP_MASK;
+	else if (info->band == IEEE80211_BAND_2GHZ &&
+		 priv->cfg->advanced_bt_coexist &&
+		 (ieee80211_is_auth(fc) || ieee80211_is_assoc_req(fc) ||
+		 ieee80211_is_reassoc_req(fc) ||
+		 skb->protocol == cpu_to_be16(ETH_P_PAE)))
+		tx_flags |= TX_CMD_FLG_IGNORE_BT;
 
 
 	tx_cmd->sta_id = std_id;
@@ -454,7 +461,12 @@ static void iwlagn_tx_cmd_build_rate(struct iwl_priv *priv,
 		rate_flags |= RATE_MCS_CCK_MSK;
 
 	/* Set up antennas */
-	priv->mgmt_tx_ant = iwl_toggle_tx_ant(priv, priv->mgmt_tx_ant,
+	 if (priv->cfg->advanced_bt_coexist && priv->bt_full_concurrent) {
+		/* operated as 1x1 in full concurrency mode */
+		priv->mgmt_tx_ant = iwl_toggle_tx_ant(priv, priv->mgmt_tx_ant,
+				first_antenna(priv->hw_params.valid_tx_ant));
+	} else
+		priv->mgmt_tx_ant = iwl_toggle_tx_ant(priv, priv->mgmt_tx_ant,
 					      priv->hw_params.valid_tx_ant);
 	rate_flags |= iwl_ant_idx_to_flags(priv->mgmt_tx_ant);
 
@@ -655,7 +667,7 @@ int iwlagn_tx_skb(struct iwl_priv *priv, struct sk_buff *skb)
 		iwlagn_tx_cmd_build_hwcrypto(priv, info, tx_cmd, skb, sta_id);
 
 	/* TODO need this for burst mode later on */
-	iwlagn_tx_cmd_build_basic(priv, tx_cmd, info, hdr, sta_id);
+	iwlagn_tx_cmd_build_basic(priv, skb, tx_cmd, info, hdr, sta_id);
 	iwl_dbg_log_tx_data_frame(priv, len, hdr);
 
 	iwlagn_tx_cmd_build_rate(priv, tx_cmd, info, fc);
@@ -1024,7 +1036,7 @@ int iwlagn_tx_agg_start(struct iwl_priv *priv, struct ieee80211_vif *vif,
 int iwlagn_tx_agg_stop(struct iwl_priv *priv, struct ieee80211_vif *vif,
 		       struct ieee80211_sta *sta, u16 tid)
 {
-	int tx_fifo_id, txq_id, sta_id, ssn = -1;
+	int tx_fifo_id, txq_id, sta_id, ssn;
 	struct iwl_tid_data *tid_data;
 	int write_ptr, read_ptr;
 	unsigned long flags;
@@ -1042,21 +1054,26 @@ int iwlagn_tx_agg_stop(struct iwl_priv *priv, struct ieee80211_vif *vif,
 
 	spin_lock_irqsave(&priv->sta_lock, flags);
 
-	if (priv->stations[sta_id].tid[tid].agg.state ==
-				IWL_EMPTYING_HW_QUEUE_ADDBA) {
-		IWL_DEBUG_HT(priv, "AGG stop before setup done\n");
-		ieee80211_stop_tx_ba_cb_irqsafe(vif, sta->addr, tid);
-		priv->stations[sta_id].tid[tid].agg.state = IWL_AGG_OFF;
-		spin_unlock_irqrestore(&priv->sta_lock, flags);
-		return 0;
-	}
-
-	if (priv->stations[sta_id].tid[tid].agg.state != IWL_AGG_ON)
-		IWL_WARN(priv, "Stopping AGG while state not ON or starting\n");
-
 	tid_data = &priv->stations[sta_id].tid[tid];
 	ssn = (tid_data->seq_number & IEEE80211_SCTL_SEQ) >> 4;
 	txq_id = tid_data->agg.txq_id;
+
+	switch (priv->stations[sta_id].tid[tid].agg.state) {
+	case IWL_EMPTYING_HW_QUEUE_ADDBA:
+		/*
+		 * This can happen if the peer stops aggregation
+		 * again before we've had a chance to drain the
+		 * queue we selected previously, i.e. before the
+		 * session was really started completely.
+		 */
+		IWL_DEBUG_HT(priv, "AGG stop before setup done\n");
+		goto turn_off;
+	case IWL_AGG_ON:
+		break;
+	default:
+		IWL_WARN(priv, "Stopping AGG while state not ON or starting\n");
+	}
+
 	write_ptr = priv->txq[txq_id].q.write_ptr;
 	read_ptr = priv->txq[txq_id].q.read_ptr;
 
@@ -1070,6 +1087,7 @@ int iwlagn_tx_agg_stop(struct iwl_priv *priv, struct ieee80211_vif *vif,
 	}
 
 	IWL_DEBUG_HT(priv, "HW queue is empty\n");
+ turn_off:
 	priv->stations[sta_id].tid[tid].agg.state = IWL_AGG_OFF;
 
 	/* do not restore/save irqs */

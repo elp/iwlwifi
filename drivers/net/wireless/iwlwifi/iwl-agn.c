@@ -87,6 +87,9 @@ MODULE_AUTHOR(DRV_COPYRIGHT " " DRV_AUTHOR);
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("iwl4965");
 
+static int iwlagn_ant_coupling;
+static bool iwlagn_bt_ch_announce = 1;
+
 /**
  * iwl_commit_rxon - commit staging_rxon to hardware
  *
@@ -610,6 +613,47 @@ static void iwl_bg_beacon_update(struct work_struct *work)
 	mutex_unlock(&priv->mutex);
 
 	iwl_send_beacon_cmd(priv);
+}
+
+static void iwl_bg_bt_runtime_config(struct work_struct *work)
+{
+	struct iwl_priv *priv =
+		container_of(work, struct iwl_priv, bt_runtime_config);
+
+	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
+		return;
+
+	/* dont send host command if rf-kill is on */
+	if (!iwl_is_ready_rf(priv))
+		return;
+	priv->cfg->ops->hcmd->send_bt_config(priv);
+}
+
+static void iwl_bg_bt_full_concurrency(struct work_struct *work)
+{
+	struct iwl_priv *priv =
+		container_of(work, struct iwl_priv, bt_full_concurrency);
+
+	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
+		return;
+
+	/* dont send host command if rf-kill is on */
+	if (!iwl_is_ready_rf(priv))
+		return;
+
+	IWL_DEBUG_INFO(priv, "BT coex in %s mode\n",
+		       priv->bt_full_concurrent ?
+		       "full concurrency" : "3-wire");
+
+	/*
+	 * LQ & RXON updated cmds must be sent before BT Config cmd
+	 * to avoid 3-wire collisions
+	 */
+	if (priv->cfg->ops->hcmd->set_rxon_chain)
+		priv->cfg->ops->hcmd->set_rxon_chain(priv);
+	iwlcore_commit_rxon(priv);
+
+	priv->cfg->ops->hcmd->send_bt_config(priv);
 }
 
 /**
@@ -2563,6 +2607,9 @@ int iwl_dump_nic_event_log(struct iwl_priv *priv, bool full_log,
 		return pos;
 	}
 
+	/* enable/disable bt channel announcement */
+	priv->bt_ch_announce = iwlagn_bt_ch_announce;
+
 #ifdef CONFIG_IWLWIFI_DEBUG
 	if (!(iwl_get_debug_level(priv) & IWL_DL_FW_ERRORS) && !full_log)
 		size = (size > DEFAULT_DUMP_EVENT_LOG_ENTRIES)
@@ -2725,8 +2772,10 @@ static void iwl_alive_start(struct iwl_priv *priv)
 			priv->cfg->ops->hcmd->set_rxon_chain(priv);
 	}
 
-	/* Configure Bluetooth device coexistence support */
-	priv->cfg->ops->hcmd->send_bt_config(priv);
+	if (!priv->cfg->advanced_bt_coexist) {
+		/* Configure Bluetooth device coexistence support */
+		priv->cfg->ops->hcmd->send_bt_config(priv);
+	}
 
 	iwl_reset_run_time_calib(priv);
 
@@ -2764,9 +2813,21 @@ static void __iwl_down(struct iwl_priv *priv)
 	if (!exit_pending)
 		set_bit(STATUS_EXIT_PENDING, &priv->status);
 
+	/* Stop TX queues watchdog. We need to have STATUS_EXIT_PENDING bit set
+	 * to prevent rearm timer */
+	if (priv->cfg->ops->lib->recover_from_tx_stall)
+		del_timer_sync(&priv->monitor_recover);
+
 	iwl_clear_ucode_stations(priv);
 	iwl_dealloc_bcast_station(priv);
 	iwl_clear_driver_stations(priv);
+
+	/* reset BT coex data */
+	priv->bt_status = 0;
+	priv->bt_traffic_load = priv->cfg->bt_init_traffic_load;
+	priv->bt_sco_active = false;
+	priv->bt_full_concurrent = false;
+	priv->bt_ci_compliance = 0;
 
 	/* Unblock any waiting calls */
 	wake_up_interruptible_all(&priv->wait_command_queue);
@@ -3070,11 +3131,40 @@ static void iwl_bg_restart(struct work_struct *data)
 		return;
 
 	if (test_and_clear_bit(STATUS_FW_ERROR, &priv->status)) {
+		bool bt_sco, bt_full_concurrent;
+		u8 bt_ci_compliance;
+		u8 bt_load;
+		u8 bt_status;
+
 		mutex_lock(&priv->mutex);
 		priv->vif = NULL;
 		priv->is_open = 0;
+
+		/*
+		 * __iwl_down() will clear the BT status variables,
+		 * which is correct, but when we restart we really
+		 * want to keep them so restore them afterwards.
+		 *
+		 * The restart process will later pick them up and
+		 * re-configure the hw when we reconfigure the BT
+		 * command.
+		 */
+		bt_sco = priv->bt_sco_active;
+		bt_full_concurrent = priv->bt_full_concurrent;
+		bt_ci_compliance = priv->bt_ci_compliance;
+		bt_load = priv->bt_traffic_load;
+		bt_status = priv->bt_status;
+
+		__iwl_down(priv);
+
+		priv->bt_sco_active = bt_sco;
+		priv->bt_full_concurrent = bt_full_concurrent;
+		priv->bt_ci_compliance = bt_ci_compliance;
+		priv->bt_traffic_load = bt_load;
+		priv->bt_status = bt_status;
+
 		mutex_unlock(&priv->mutex);
-		iwl_down(priv);
+		iwl_cancel_deferred_work(priv);
 		ieee80211_restart_hw(priv->hw);
 	} else {
 		iwl_down(priv);
@@ -3826,6 +3916,8 @@ static void iwl_setup_deferred_work(struct iwl_priv *priv)
 	INIT_WORK(&priv->beacon_update, iwl_bg_beacon_update);
 	INIT_WORK(&priv->run_time_calib_work, iwl_bg_run_time_calib_work);
 	INIT_WORK(&priv->tx_flush, iwl_bg_tx_flush);
+	INIT_WORK(&priv->bt_full_concurrency, iwl_bg_bt_full_concurrency);
+	INIT_WORK(&priv->bt_runtime_config, iwl_bg_bt_runtime_config);
 	INIT_DELAYED_WORK(&priv->init_alive_start, iwl_bg_init_alive_start);
 	INIT_DELAYED_WORK(&priv->alive_start, iwl_bg_alive_start);
 
@@ -3868,10 +3960,10 @@ static void iwl_cancel_deferred_work(struct iwl_priv *priv)
 	cancel_delayed_work(&priv->alive_start);
 	cancel_work_sync(&priv->run_time_calib_work);
 	cancel_work_sync(&priv->beacon_update);
+	cancel_work_sync(&priv->bt_full_concurrency);
+	cancel_work_sync(&priv->bt_runtime_config);
 	del_timer_sync(&priv->statistics_periodic);
 	del_timer_sync(&priv->ucode_trace);
-	if (priv->cfg->ops->lib->recover_from_tx_stall)
-		del_timer_sync(&priv->monitor_recover);
 }
 
 static void iwl_init_hw_rates(struct iwl_priv *priv,
@@ -3929,6 +4021,17 @@ static int iwl_init_drv(struct iwl_priv *priv)
 		priv->cfg->ops->hcmd->set_rxon_chain(priv);
 
 	iwl_init_scan_params(priv);
+
+	/* init bt coex */
+	if (priv->cfg->advanced_bt_coexist) {
+		priv->kill_ack_mask = IWLAGN_BT_KILL_ACK_MASK_DEFAULT;
+		priv->kill_cts_mask = IWLAGN_BT_KILL_CTS_MASK_DEFAULT;
+		priv->bt_valid = IWLAGN_BT_ALL_VALID_MSK;
+		priv->bt_on_thresh = BT_ON_THRESHOLD_DEF;
+		priv->bt_duration = BT_DURATION_LIMIT_DEF;
+		priv->dynamic_frag_thresh = BT_FRAG_THRESHOLD_DEF;
+		priv->dynamic_agg_thresh = BT_AGG_THRESHOLD_DEF;
+	}
 
 	/* Set the tx_power_user_lmt to the lowest power level
 	 * this value will get overwritten by channel max power avg
@@ -4049,6 +4152,14 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	priv->cfg = cfg;
 	priv->pci_dev = pdev;
 	priv->inta_mask = CSR_INI_SET_MASK;
+
+	/* is antenna coupling more than 35dB ? */
+	priv->bt_ant_couple_ok =
+		(iwlagn_ant_coupling > IWL_BT_ANTENNA_COUPLING_THRESHOLD) ?
+		true : false;
+
+	/* enable/disable bt channel announcement */
+	priv->bt_ch_announce = iwlagn_bt_ch_announce;
 
 	if (iwl_alloc_traffic_mem(priv))
 		IWL_ERR(priv, "Not enough memory to generate traffic log\n");
@@ -4583,3 +4694,11 @@ module_param_named(ucode_alternative, iwlagn_wanted_ucode_alternative, int,
 		   S_IRUGO);
 MODULE_PARM_DESC(ucode_alternative,
 		 "specify ucode alternative to use from ucode file");
+
+module_param_named(antenna_coupling, iwlagn_ant_coupling, int, S_IRUGO);
+MODULE_PARM_DESC(antenna_coupling,
+		 "specify antenna coupling in dB (defualt: 0 dB)");
+
+module_param_named(bt_ch_announce, iwlagn_bt_ch_announce, bool, S_IRUGO);
+MODULE_PARM_DESC(bt_ch_announce,
+		 "Enable BT channel announcement mode (default: enable)");

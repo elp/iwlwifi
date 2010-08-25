@@ -1064,6 +1064,10 @@ struct iwl_event_log {
 #define IWL_DEF_MONITORING_PERIOD	(1000)
 #define IWL_LONG_MONITORING_PERIOD	(5000)
 #define IWL_ONE_HUNDRED_MSECS   (100)
+#define IWL_MAX_MONITORING_PERIOD	(60000)
+
+/* BT Antenna Coupling Threshold (dB) */
+#define IWL_BT_ANTENNA_COUPLING_THRESHOLD	(35)
 
 enum iwl_reset {
 	IWL_RF_RESET = 0,
@@ -1362,6 +1366,23 @@ struct iwl_priv {
 #endif
 	};
 
+	/* bt coex */
+	u8 bt_status;
+	u8 bt_traffic_load, notif_bt_traffic_load;
+	bool bt_ch_announce;
+	bool bt_sco_active;
+	bool bt_full_concurrent;
+	bool bt_ant_couple_ok;
+	__le32 kill_ack_mask;
+	__le32 kill_cts_mask;
+	__le16 bt_valid;
+	u16 bt_on_thresh;
+	u16 bt_duration;
+	u16 dynamic_frag_thresh;
+	u16 dynamic_agg_thresh;
+	u8 bt_ci_compliance;
+	struct work_struct bt_traffic_change_work;
+
 	struct iwl_hw_params hw_params;
 
 	u32 inta_mask;
@@ -1380,6 +1401,8 @@ struct iwl_priv {
 	struct work_struct ct_exit;
 	struct work_struct start_internal_scan;
 	struct work_struct tx_flush;
+	struct work_struct bt_full_concurrency;
+	struct work_struct bt_runtime_config;
 
 	struct tasklet_struct irq_tasklet;
 

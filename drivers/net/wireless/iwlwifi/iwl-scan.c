@@ -206,7 +206,6 @@ static void iwl_rx_scan_results_notif(struct iwl_priv *priv,
 static void iwl_rx_scan_complete_notif(struct iwl_priv *priv,
 				       struct iwl_rx_mem_buffer *rxb)
 {
-#ifdef CONFIG_IWLWIFI_DEBUG
 	struct iwl_rx_packet *pkt = rxb_addr(rxb);
 	struct iwl_scancomplete_notification *scan_notif = (void *)pkt->u.raw;
 
@@ -214,7 +213,6 @@ static void iwl_rx_scan_complete_notif(struct iwl_priv *priv,
 		       scan_notif->scanned_channels,
 		       scan_notif->tsf_low,
 		       scan_notif->tsf_high, scan_notif->status);
-#endif
 
 	/* The HW is no longer scanning */
 	clear_bit(STATUS_SCAN_HW, &priv->status);
@@ -236,6 +234,26 @@ static void iwl_rx_scan_complete_notif(struct iwl_priv *priv,
 
 	clear_bit(STATUS_SCANNING, &priv->status);
 
+	if (priv->iw_mode != NL80211_IFTYPE_ADHOC &&
+	    priv->cfg->advanced_bt_coexist && priv->bt_status !=
+	    scan_notif->bt_status) {
+		if (scan_notif->bt_status) {
+			/* BT on */
+			if (!priv->bt_ch_announce)
+				priv->bt_traffic_load =
+					IWL_BT_COEX_TRAFFIC_LOAD_HIGH;
+			/*
+			 * otherwise, no traffic load information provided
+			 * no changes made
+			 */
+		} else {
+			/* BT off */
+			priv->bt_traffic_load =
+				IWL_BT_COEX_TRAFFIC_LOAD_NONE;
+		}
+		priv->bt_status = scan_notif->bt_status;
+		queue_work(priv->workqueue, &priv->bt_traffic_change_work);
+	}
 	queue_work(priv->workqueue, &priv->scan_completed);
 }
 

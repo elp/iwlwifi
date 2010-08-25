@@ -1527,6 +1527,76 @@ static ssize_t iwl_dbgfs_ucode_bt_stats_read(struct file *file,
 			user_buf, count, ppos);
 }
 
+static ssize_t iwl_dbgfs_monitor_period_write(struct file *file,
+					const char __user *user_buf,
+					size_t count, loff_t *ppos) {
+
+	struct iwl_priv *priv = file->private_data;
+	char buf[8];
+	int buf_size;
+	int period;
+
+	memset(buf, 0, sizeof(buf));
+	buf_size = min(count, sizeof(buf) -  1);
+	if (copy_from_user(buf, user_buf, buf_size))
+		return -EFAULT;
+	if (sscanf(buf, "%d", &period) != 1)
+		return -EINVAL;
+	if (period < 0 || period > IWL_MAX_MONITORING_PERIOD)
+		priv->cfg->monitor_recover_period = IWL_DEF_MONITORING_PERIOD;
+	else
+		priv->cfg->monitor_recover_period = period;
+
+	if (priv->cfg->monitor_recover_period)
+		mod_timer(&priv->monitor_recover, jiffies + msecs_to_jiffies(
+			  priv->cfg->monitor_recover_period));
+	else
+		del_timer_sync(&priv->monitor_recover);
+	return count;
+}
+
+static ssize_t iwl_dbgfs_bt_traffic_read(struct file *file,
+					char __user *user_buf,
+					size_t count, loff_t *ppos) {
+
+	struct iwl_priv *priv = (struct iwl_priv *)file->private_data;
+	int pos = 0;
+	char buf[200];
+	const size_t bufsz = sizeof(buf);
+	ssize_t ret;
+
+	pos += scnprintf(buf + pos, bufsz - pos, "BT in %s mode\n",
+		priv->bt_full_concurrent ? "full concurrency" : "3-wire");
+	pos += scnprintf(buf + pos, bufsz - pos, "BT status: %s, "
+			 "last traffic notif: %d\n",
+		priv->bt_status ? "On" : "Off", priv->notif_bt_traffic_load);
+	pos += scnprintf(buf + pos, bufsz - pos, "ch_announcement: %d, "
+			 "sco_active: %d, kill_ack_mask: %x, "
+			 "kill_cts_mask: %x\n",
+		priv->bt_ch_announce, priv->bt_sco_active,
+		priv->kill_ack_mask, priv->kill_cts_mask);
+
+	pos += scnprintf(buf + pos, bufsz - pos, "bluetooth traffic load: ");
+	switch (priv->bt_traffic_load) {
+	case IWL_BT_COEX_TRAFFIC_LOAD_CONTINUOUS:
+		pos += scnprintf(buf + pos, bufsz - pos, "Continuous\n");
+		break;
+	case IWL_BT_COEX_TRAFFIC_LOAD_HIGH:
+		pos += scnprintf(buf + pos, bufsz - pos, "High\n");
+		break;
+	case IWL_BT_COEX_TRAFFIC_LOAD_LOW:
+		pos += scnprintf(buf + pos, bufsz - pos, "Low\n");
+		break;
+	case IWL_BT_COEX_TRAFFIC_LOAD_NONE:
+	default:
+		pos += scnprintf(buf + pos, bufsz - pos, "None\n");
+		break;
+	}
+
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, pos);
+	return ret;
+}
+
 DEBUGFS_READ_FILE_OPS(rx_statistics);
 DEBUGFS_READ_FILE_OPS(tx_statistics);
 DEBUGFS_READ_WRITE_FILE_OPS(traffic_log);
@@ -1550,6 +1620,8 @@ DEBUGFS_READ_FILE_OPS(rxon_flags);
 DEBUGFS_READ_FILE_OPS(rxon_filter_flags);
 DEBUGFS_WRITE_FILE_OPS(txfifo_flush);
 DEBUGFS_READ_FILE_OPS(ucode_bt_stats);
+DEBUGFS_WRITE_FILE_OPS(monitor_period);
+DEBUGFS_READ_FILE_OPS(bt_traffic);
 
 /*
  * Create the debugfs files and directories
@@ -1621,6 +1693,9 @@ int iwl_dbgfs_register(struct iwl_priv *priv, const char *name)
 		DEBUGFS_ADD_FILE(ucode_bt_stats, dir_debug, S_IRUSR);
 	DEBUGFS_ADD_FILE(rxon_flags, dir_debug, S_IWUSR);
 	DEBUGFS_ADD_FILE(rxon_filter_flags, dir_debug, S_IWUSR);
+	DEBUGFS_ADD_FILE(monitor_period, dir_debug, S_IWUSR);
+	if (priv->cfg->advanced_bt_coexist)
+		DEBUGFS_ADD_FILE(bt_traffic, dir_debug, S_IRUSR);
 	if (priv->cfg->sensitivity_calib_by_driver)
 		DEBUGFS_ADD_BOOL(disable_sensitivity, dir_rf,
 				 &priv->disable_sens_cal);

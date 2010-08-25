@@ -64,7 +64,8 @@ MODULE_LICENSE("GPL");
  *
  * default: bt_coex_active = true (BT_COEX_ENABLE)
  */
-static bool bt_coex_active = true;
+bool bt_coex_active = true;
+EXPORT_SYMBOL_GPL(bt_coex_active);
 module_param(bt_coex_active, bool, S_IRUGO);
 MODULE_PARM_DESC(bt_coex_active, "enable wifi/bluetooth co-exist");
 
@@ -145,6 +146,10 @@ u8 iwl_toggle_tx_ant(struct iwl_priv *priv, u8 ant, u8 valid)
 {
 	int i;
 	u8 ind = ant;
+
+	if (priv->band == IEEE80211_BAND_2GHZ &&
+	    priv->bt_traffic_load >= IWL_BT_COEX_TRAFFIC_LOAD_HIGH)
+		return 0;
 
 	for (i = 0; i < RATE_ANT_NUM - 1; i++) {
 		ind = (ind + 1) < RATE_ANT_NUM ?  ind + 1 : 0;
@@ -775,6 +780,14 @@ EXPORT_SYMBOL(iwl_set_rxon_ht);
  */
 static int iwl_get_active_rx_chain_count(struct iwl_priv *priv)
 {
+	if (priv->cfg->advanced_bt_coexist && (priv->bt_full_concurrent ||
+	    priv->bt_traffic_load >= IWL_BT_COEX_TRAFFIC_LOAD_HIGH)) {
+		/*
+		 * only use chain 'A' in bt high traffic load or
+		 * full concurrency mode
+		 */
+		return IWL_NUM_RX_CHAINS_SINGLE;
+	}
 	/* # of Rx chains to use when expecting MIMO. */
 	if (is_single_rx_stream(priv))
 		return IWL_NUM_RX_CHAINS_SINGLE;
@@ -831,10 +844,19 @@ void iwl_set_rxon_chain(struct iwl_priv *priv)
 	 * Before first association, we assume all antennas are connected.
 	 * Just after first association, iwl_chain_noise_calibration()
 	 *    checks which antennas actually *are* connected. */
-	 if (priv->chain_noise_data.active_chains)
+	if (priv->chain_noise_data.active_chains)
 		active_chains = priv->chain_noise_data.active_chains;
 	else
 		active_chains = priv->hw_params.valid_rx_ant;
+
+	if (priv->cfg->advanced_bt_coexist && (priv->bt_full_concurrent ||
+	    priv->bt_traffic_load >= IWL_BT_COEX_TRAFFIC_LOAD_HIGH)) {
+		/*
+		 * only use chain 'A' in bt high traffic load or
+		 * full concurrency mode
+		 */
+		active_chains = first_antenna(active_chains);
+	}
 
 	rx_chain = active_chains << RXON_RX_CHAIN_VALID_POS;
 
@@ -1871,6 +1893,16 @@ int iwl_mac_add_interface(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 	if (err)
 		goto out_err;
 
+	if (priv->cfg->advanced_bt_coexist &&
+	    vif->type == NL80211_IFTYPE_ADHOC) {
+		/*
+		 * pretend to have high BT traffic as long as we
+		 * are operating in IBSS mode, as this will cause
+		 * the rate scaling etc. to behave as intended.
+		 */
+		priv->bt_traffic_load = IWL_BT_COEX_TRAFFIC_LOAD_HIGH;
+	}
+
 	goto out;
 
  out_err:
@@ -1908,6 +1940,17 @@ void iwl_mac_remove_interface(struct ieee80211_hw *hw,
 		}
 		memset(priv->bssid, 0, ETH_ALEN);
 	}
+
+	/*
+	 * When removing the IBSS interface, overwrite the
+	 * BT traffic load with the stored one from the last
+	 * notification, if any. If this is a device that
+	 * doesn't implement this, this has no effect since
+	 * both values are the same and zero.
+	 */
+	if (vif->type == NL80211_IFTYPE_ADHOC)
+		priv->bt_traffic_load = priv->notif_bt_traffic_load;
+
 	mutex_unlock(&priv->mutex);
 
 	if (scan_completed)
@@ -2624,10 +2667,14 @@ static int iwl_check_stuck_queue(struct iwl_priv *priv, int cnt)
 						"queue %d, not read %d time\n",
 						q->id,
 						q->repeat_same_read_ptr);
-				mod_timer(&priv->monitor_recover, jiffies +
-					msecs_to_jiffies(IWL_ONE_HUNDRED_MSECS));
+				if (!priv->cfg->advanced_bt_coexist) {
+					mod_timer(&priv->monitor_recover,
+						jiffies + msecs_to_jiffies(
+						IWL_ONE_HUNDRED_MSECS));
+					return 1;
+				}
 			}
-			return 1;
+			return 0;
 		} else {
 			q->last_read_ptr = q->read_ptr;
 			q->repeat_same_read_ptr = 0;
@@ -2658,12 +2705,14 @@ void iwl_bg_monitor_recover(unsigned long data)
 				return;
 		}
 	}
-	/*
-	 * Reschedule the timer to occur in
-	 * priv->cfg->monitor_recover_period
-	 */
-	mod_timer(&priv->monitor_recover,
-		jiffies + msecs_to_jiffies(priv->cfg->monitor_recover_period));
+	if (priv->cfg->monitor_recover_period) {
+		/*
+		 * Reschedule the timer to occur in
+		 * priv->cfg->monitor_recover_period
+		 */
+		mod_timer(&priv->monitor_recover, jiffies + msecs_to_jiffies(
+			  priv->cfg->monitor_recover_period));
+	}
 }
 EXPORT_SYMBOL(iwl_bg_monitor_recover);
 
