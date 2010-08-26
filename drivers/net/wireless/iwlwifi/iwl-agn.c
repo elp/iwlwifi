@@ -196,9 +196,11 @@ int iwl_commit_rxon(struct iwl_priv *priv, struct iwl_rxon_context *ctx)
 		}
 	}
 
-	ret = priv->cfg->ops->hcmd->set_pan_params(priv);
-	if (ret)
-		return ret;
+	if (priv->cfg->ops->hcmd->set_pan_params) {
+		ret = priv->cfg->ops->hcmd->set_pan_params(priv);
+		if (ret)
+			return ret;
+	}
 
 	/* Apply the new configuration
 	 * RXON unassoc clears the station table in uCode so restoration of
