@@ -213,8 +213,9 @@ struct channel_info {
 	unsigned int flags;
 #define GEOGRAPHY_ALLOWED	0x00000001
 
-	short tx_power1;
-	short tx_power2;
+	short max_power;
+	short default_power1;
+	short default_power2;
 };
 
 /*
@@ -559,18 +560,15 @@ struct rt2x00lib_ops {
 	/*
 	 * TX control handlers
 	 */
-	void (*write_tx_desc) (struct rt2x00_dev *rt2x00dev,
-			       struct sk_buff *skb,
+	void (*write_tx_desc) (struct queue_entry *entry,
 			       struct txentry_desc *txdesc);
 	void (*write_tx_data) (struct queue_entry *entry,
 			       struct txentry_desc *txdesc);
 	void (*write_beacon) (struct queue_entry *entry,
 			      struct txentry_desc *txdesc);
 	int (*get_tx_data_len) (struct queue_entry *entry);
-	void (*kick_tx_queue) (struct rt2x00_dev *rt2x00dev,
-			       const enum data_queue_qid queue);
-	void (*kill_tx_queue) (struct rt2x00_dev *rt2x00dev,
-			       const enum data_queue_qid queue);
+	void (*kick_tx_queue) (struct data_queue *queue);
+	void (*kill_tx_queue) (struct data_queue *queue);
 
 	/*
 	 * RX control handlers

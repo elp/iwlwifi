@@ -605,10 +605,8 @@ static void ieee80211_sta_reorder_release(struct ieee80211_hw *hw,
 
 #ifdef CONFIG_MAC80211_HT_DEBUG
 			if (net_ratelimit())
-				printk(KERN_DEBUG "%s: release an RX reorder "
-				       "frame due to timeout on earlier "
-				       "frames\n",
-				       wiphy_name(hw->wiphy));
+				wiphy_debug(hw->wiphy,
+					    "release an RX reorder frame due to timeout on earlier frames\n");
 #endif
 			ieee80211_release_reorder_frame(hw, tid_agg_rx,
 							j, frames);
@@ -2481,6 +2479,11 @@ void ieee80211_release_reorder_timeout(struct sta_info *sta, int tid)
 {
 	struct sk_buff_head frames;
 	struct ieee80211_rx_data rx = { };
+	struct tid_ampdu_rx *tid_agg_rx;
+
+	tid_agg_rx = rcu_dereference(sta->ampdu_mlme.tid_rx[tid]);
+	if (!tid_agg_rx)
+		return;
 
 	__skb_queue_head_init(&frames);
 
@@ -2495,10 +2498,9 @@ void ieee80211_release_reorder_timeout(struct sta_info *sta, int tid)
 		     test_bit(SCAN_OFF_CHANNEL, &sta->local->scanning)))
 		rx.flags |= IEEE80211_RX_IN_SCAN;
 
-	spin_lock(&sta->ampdu_mlme.tid_rx[tid]->reorder_lock);
-	ieee80211_sta_reorder_release(&sta->local->hw,
-		sta->ampdu_mlme.tid_rx[tid], &frames);
-	spin_unlock(&sta->ampdu_mlme.tid_rx[tid]->reorder_lock);
+	spin_lock(&tid_agg_rx->reorder_lock);
+	ieee80211_sta_reorder_release(&sta->local->hw, tid_agg_rx, &frames);
+	spin_unlock(&tid_agg_rx->reorder_lock);
 
 	ieee80211_rx_handlers(&rx, &frames);
 }
@@ -2698,10 +2700,9 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 			skb_new = skb_copy(skb, GFP_ATOMIC);
 			if (!skb_new) {
 				if (net_ratelimit())
-					printk(KERN_DEBUG "%s: failed to copy "
-					       "multicast frame for %s\n",
-					       wiphy_name(local->hw.wiphy),
-					       prev->name);
+					wiphy_debug(local->hw.wiphy,
+						    "failed to copy multicast frame for %s\n",
+						    prev->name);
 				goto next;
 			}
 			ieee80211_invoke_rx_handlers(prev, &rx, skb_new);

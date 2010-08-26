@@ -2578,6 +2578,11 @@ static void __iwl3945_down(struct iwl_priv *priv)
 	if (!exit_pending)
 		set_bit(STATUS_EXIT_PENDING, &priv->status);
 
+	/* Stop TX queues watchdog. We need to have STATUS_EXIT_PENDING bit set
+	 * to prevent rearm timer */
+	if (priv->cfg->ops->lib->recover_from_tx_stall)
+		del_timer_sync(&priv->monitor_recover);
+
 	/* Station information will now be cleared in device */
 	iwl_clear_ucode_stations(priv, NULL);
 	iwl_dealloc_bcast_stations(priv);
@@ -3830,8 +3835,6 @@ static void iwl3945_cancel_deferred_work(struct iwl_priv *priv)
 	cancel_delayed_work(&priv->alive_start);
 	cancel_work_sync(&priv->start_internal_scan);
 	cancel_work_sync(&priv->beacon_update);
-	if (priv->cfg->ops->lib->recover_from_tx_stall)
-		del_timer_sync(&priv->monitor_recover);
 }
 
 static struct attribute *iwl3945_sysfs_entries[] = {
