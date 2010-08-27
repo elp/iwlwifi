@@ -50,12 +50,6 @@ struct ieee80211_local;
  * increased memory use (about 2 kB of RAM per entry). */
 #define IEEE80211_FRAGMENT_MAX 4
 
-/*
- * Time after which we ignore scan results and no longer report/use
- * them in any way.
- */
-#define IEEE80211_SCAN_RESULT_EXPIRE (10 * HZ)
-
 #define TU_TO_EXP_TIME(x)	(jiffies + usecs_to_jiffies((x) * 1024))
 
 #define IEEE80211_DEFAULT_UAPSD_QUEUES \
@@ -478,6 +472,19 @@ enum ieee80211_sub_if_data_flags {
 	IEEE80211_SDATA_DONT_BRIDGE_PACKETS	= BIT(3),
 };
 
+/**
+ * enum ieee80211_sdata_state_bits - virtual interface state bits
+ * @SDATA_STATE_RUNNING: virtual interface is up & running; this
+ *	mirrors netif_running() but is separate for interface type
+ *	change handling while the interface is up
+ * @SDATA_STATE_OFFCHANNEL: This interface is currently in offchannel
+ *	mode, so queues are stopped
+ */
+enum ieee80211_sdata_state_bits {
+	SDATA_STATE_RUNNING,
+	SDATA_STATE_OFFCHANNEL,
+};
+
 struct ieee80211_sub_if_data {
 	struct list_head list;
 
@@ -490,6 +497,8 @@ struct ieee80211_sub_if_data {
 	struct ieee80211_local *local;
 
 	unsigned int flags;
+
+	unsigned long state;
 
 	int drop_unencrypted;
 
@@ -515,6 +524,8 @@ struct ieee80211_sub_if_data {
 	struct ieee80211_key *default_mgmt_key;
 
 	u16 sequence_number;
+	__be16 control_port_protocol;
+	bool control_port_no_encrypt;
 
 	struct work_struct work;
 	struct sk_buff_head skb_queue;
@@ -602,11 +613,17 @@ enum queue_stop_reason {
  *	determine if we are on the operating channel or not
  * @SCAN_OFF_CHANNEL: We're off our operating channel for scanning,
  *	gets only set in conjunction with SCAN_SW_SCANNING
+ * @SCAN_COMPLETED: Set for our scan work function when the driver reported
+ *	that the scan completed.
+ * @SCAN_ABORTED: Set for our scan work function when the driver reported
+ *	a scan complete for an aborted scan.
  */
 enum {
 	SCAN_SW_SCANNING,
 	SCAN_HW_SCANNING,
 	SCAN_OFF_CHANNEL,
+	SCAN_COMPLETED,
+	SCAN_ABORTED,
 };
 
 /**
@@ -661,6 +678,8 @@ struct ieee80211_local {
 	/* number of interfaces with corresponding FIF_ flags */
 	int fif_fcsfail, fif_plcpfail, fif_control, fif_other_bss, fif_pspoll;
 	unsigned int filter_flags; /* FIF_* */
+
+	bool wiphy_ciphers_allocated;
 
 	/* protects the aggregated multicast list and filter calls */
 	spinlock_t filter_lock;
@@ -1083,7 +1102,7 @@ void ieee80211_recalc_idle(struct ieee80211_local *local);
 
 static inline bool ieee80211_sdata_running(struct ieee80211_sub_if_data *sdata)
 {
-	return netif_running(sdata->dev);
+	return test_bit(SDATA_STATE_RUNNING, &sdata->state);
 }
 
 /* tx handling */

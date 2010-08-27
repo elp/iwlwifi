@@ -991,6 +991,11 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 
 	if (remove_sta)
 		sta_info_destroy_addr(sdata, bssid);
+
+	del_timer_sync(&sdata->u.mgd.conn_mon_timer);
+	del_timer_sync(&sdata->u.mgd.bcn_mon_timer);
+	del_timer_sync(&sdata->u.mgd.timer);
+	del_timer_sync(&sdata->u.mgd.chswitch_timer);
 }
 
 void ieee80211_sta_rx_notify(struct ieee80211_sub_if_data *sdata,
@@ -2261,6 +2266,9 @@ int ieee80211_mgd_assoc(struct ieee80211_sub_if_data *sdata,
 		ifmgd->flags |= IEEE80211_STA_CONTROL_PORT;
 	else
 		ifmgd->flags &= ~IEEE80211_STA_CONTROL_PORT;
+
+	sdata->control_port_protocol = req->crypto.control_port_ethertype;
+	sdata->control_port_no_encrypt = req->crypto.control_port_no_encrypt;
 
 	ieee80211_add_work(wk);
 	return 0;
