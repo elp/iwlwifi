@@ -1463,7 +1463,7 @@ static void rt73usb_write_tx_desc(struct queue_entry *entry,
 	rt2x00_desc_write(txd, 0, word);
 
 	rt2x00_desc_read(txd, 1, &word);
-	rt2x00_set_field32(&word, TXD_W1_HOST_Q_ID, txdesc->queue);
+	rt2x00_set_field32(&word, TXD_W1_HOST_Q_ID, txdesc->qid);
 	rt2x00_set_field32(&word, TXD_W1_AIFSN, txdesc->aifs);
 	rt2x00_set_field32(&word, TXD_W1_CWMIN, txdesc->cw_min);
 	rt2x00_set_field32(&word, TXD_W1_CWMAX, txdesc->cw_max);
@@ -1571,6 +1571,14 @@ static int rt73usb_get_tx_data_len(struct queue_entry *entry)
 	length += (4 * !(length % entry->queue->usb_maxpacket));
 
 	return length;
+}
+
+static void rt73usb_kill_tx_queue(struct data_queue *queue)
+{
+	if (queue->qid == QID_BEACON)
+		rt2x00usb_register_write(queue->rt2x00dev, TXRX_CSR9, 0);
+
+	rt2x00usb_kill_tx_queue(queue);
 }
 
 /*
@@ -2262,7 +2270,7 @@ static const struct rt2x00lib_ops rt73usb_rt2x00_ops = {
 	.write_beacon		= rt73usb_write_beacon,
 	.get_tx_data_len	= rt73usb_get_tx_data_len,
 	.kick_tx_queue		= rt2x00usb_kick_tx_queue,
-	.kill_tx_queue		= rt2x00usb_kill_tx_queue,
+	.kill_tx_queue		= rt73usb_kill_tx_queue,
 	.fill_rxdone		= rt73usb_fill_rxdone,
 	.config_shared_key	= rt73usb_config_shared_key,
 	.config_pairwise_key	= rt73usb_config_pairwise_key,
