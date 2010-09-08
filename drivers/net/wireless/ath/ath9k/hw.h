@@ -204,6 +204,7 @@ enum ath9k_hw_caps {
 	ATH9K_HW_CAP_FASTCLOCK			= BIT(20),
 	ATH9K_HW_CAP_SGI_20			= BIT(21),
 	ATH9K_HW_CAP_PAPRD			= BIT(22),
+	ATH9K_HW_CAP_ANT_DIV_COMB		= BIT(23),
 };
 
 struct ath9k_hw_capabilities {
@@ -493,6 +494,12 @@ struct ath_gen_timer_table {
 		unsigned long timer_bits;
 		u16 val;
 	} timer_mask;
+};
+
+struct ath_hw_antcomb_conf {
+	u8 main_lna_conf;
+	u8 alt_lna_conf;
+	u8 fast_div_bias;
 };
 
 /**
@@ -888,6 +895,10 @@ void ath9k_hw_cfg_output(struct ath_hw *ah, u32 gpio,
 void ath9k_hw_set_gpio(struct ath_hw *ah, u32 gpio, u32 val);
 u32 ath9k_hw_getdefantenna(struct ath_hw *ah);
 void ath9k_hw_setantenna(struct ath_hw *ah, u32 antenna);
+void ath9k_hw_antdiv_comb_conf_get(struct ath_hw *ah,
+				   struct ath_hw_antcomb_conf *antconf);
+void ath9k_hw_antdiv_comb_conf_set(struct ath_hw *ah,
+				   struct ath_hw_antcomb_conf *antconf);
 
 /* General Operation */
 bool ath9k_hw_wait(struct ath_hw *ah, u32 reg, u32 mask, u32 val, u32 timeout);
@@ -985,6 +996,7 @@ void ar9003_hw_attach_calib_ops(struct ath_hw *ah);
 void ar9002_hw_attach_ops(struct ath_hw *ah);
 void ar9003_hw_attach_ops(struct ath_hw *ah);
 
+void ar9002_hw_load_ani_reg(struct ath_hw *ah, struct ath9k_channel *chan);
 /*
  * ANI work can be shared between all families but a next
  * generation implementation of ANI will be used only for AR9003 only
