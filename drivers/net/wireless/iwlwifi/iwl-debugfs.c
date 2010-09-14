@@ -1648,6 +1648,7 @@ static ssize_t iwl_dbgfs_reply_tx_error_read(struct file *file,
 	else
 		return -ENODATA;
 }
+
 DEBUGFS_READ_FILE_OPS(rx_statistics);
 DEBUGFS_READ_FILE_OPS(tx_statistics);
 DEBUGFS_READ_WRITE_FILE_OPS(traffic_log);
