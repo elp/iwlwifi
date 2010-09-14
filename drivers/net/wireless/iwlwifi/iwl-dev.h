@@ -945,7 +945,7 @@ enum iwl_pa_type {
 struct isr_statistics {
 	u32 hw;
 	u32 sw;
-	u32 sw_err;
+	u32 err_code;
 	u32 sch;
 	u32 alive;
 	u32 rfkill;
@@ -1115,6 +1115,13 @@ struct iwl_rxon_context {
 	const u8 *ac_to_fifo;
 	const u8 *ac_to_queue;
 	u8 mcast_queue;
+
+	/*
+	 * We could use the vif to indicate active, but we
+	 * also need it to be active during disabling when
+	 * we already removed the vif for type setting.
+	 */
+	bool always_active, is_active;
 
 	enum iwl_rxon_context_id ctxid;
 

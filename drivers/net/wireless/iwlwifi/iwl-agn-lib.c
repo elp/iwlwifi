@@ -46,6 +46,28 @@ static inline u32 iwlagn_get_scd_ssn(struct iwl5000_tx_resp *tx_resp)
 			    tx_resp->frame_count) & MAX_SN;
 }
 
+static void iwlagn_set_tx_status(struct iwl_priv *priv,
+				 struct ieee80211_tx_info *info,
+				 struct iwl5000_tx_resp *tx_resp,
+				 int txq_id, bool is_agg)
+{
+	u16  status = le16_to_cpu(tx_resp->status.status);
+
+	info->status.rates[0].count = tx_resp->failure_frame + 1;
+	if (is_agg)
+		info->flags &= ~IEEE80211_TX_CTL_AMPDU;
+	info->flags |= iwl_tx_status_to_mac80211(status);
+	iwlagn_hwrate_to_tx_control(priv, le32_to_cpu(tx_resp->rate_n_flags),
+				    info);
+
+	IWL_DEBUG_TX_REPLY(priv, "TXQ %d status %s (0x%08x) rate_n_flags "
+			   "0x%x retries %d\n",
+			   txq_id,
+			   iwl_get_tx_fail_reason(status), status,
+			   le32_to_cpu(tx_resp->rate_n_flags),
+			   tx_resp->failure_frame);
+}
+
 static int iwlagn_tx_status_reply_tx(struct iwl_priv *priv,
 				      struct iwl_ht_agg *agg,
 				      struct iwl5000_tx_resp *tx_resp,
@@ -53,9 +75,7 @@ static int iwlagn_tx_status_reply_tx(struct iwl_priv *priv,
 {
 	u16 status;
 	struct agg_tx_status *frame_status = &tx_resp->status;
-	struct ieee80211_tx_info *info = NULL;
 	struct ieee80211_hdr *hdr = NULL;
-	u32 rate_n_flags = le32_to_cpu(tx_resp->rate_n_flags);
 	int i, sh, idx;
 	u16 seq;
 
@@ -64,31 +84,20 @@ static int iwlagn_tx_status_reply_tx(struct iwl_priv *priv,
 
 	agg->frame_count = tx_resp->frame_count;
 	agg->start_idx = start_idx;
-	agg->rate_n_flags = rate_n_flags;
+	agg->rate_n_flags = le32_to_cpu(tx_resp->rate_n_flags);
 	agg->bitmap = 0;
 
 	/* # frames attempted by Tx command */
 	if (agg->frame_count == 1) {
 		/* Only one frame was attempted; no block-ack will arrive */
-		status = le16_to_cpu(frame_status[0].status);
 		idx = start_idx;
 
-		/* FIXME: code repetition */
 		IWL_DEBUG_TX_REPLY(priv, "FrameCnt = %d, StartIdx=%d idx=%d\n",
 				   agg->frame_count, agg->start_idx, idx);
-
-		info = IEEE80211_SKB_CB(priv->txq[txq_id].txb[idx].skb);
-		info->status.rates[0].count = tx_resp->failure_frame + 1;
-		info->flags &= ~IEEE80211_TX_CTL_AMPDU;
-		info->flags |= iwl_tx_status_to_mac80211(status);
-		iwlagn_hwrate_to_tx_control(priv, rate_n_flags, info);
-
-		/* FIXME: code repetition end */
-
-		IWL_DEBUG_TX_REPLY(priv, "1 Frame 0x%x failure :%d\n",
-				    status & 0xff, tx_resp->failure_frame);
-		IWL_DEBUG_TX_REPLY(priv, "Rate Info rate_n_flags=%x\n", rate_n_flags);
-
+		iwlagn_set_tx_status(priv,
+				     IEEE80211_SKB_CB(
+					priv->txq[txq_id].txb[idx].skb),
+				     tx_resp, txq_id, true);
 		agg->wait_for_ba = 0;
 	} else {
 		/* Two or more frames were attempted; expect block-ack */
@@ -281,20 +290,7 @@ static void iwlagn_rx_reply_tx(struct iwl_priv *priv,
 		}
 	} else {
 		BUG_ON(txq_id != txq->swq_id);
-
-		info->status.rates[0].count = tx_resp->failure_frame + 1;
-		info->flags |= iwl_tx_status_to_mac80211(status);
-		iwlagn_hwrate_to_tx_control(priv,
-					le32_to_cpu(tx_resp->rate_n_flags),
-					info);
-
-		IWL_DEBUG_TX_REPLY(priv, "TXQ %d status %s (0x%08x) rate_n_flags "
-				   "0x%x retries %d\n",
-				   txq_id,
-				   iwl_get_tx_fail_reason(status), status,
-				   le32_to_cpu(tx_resp->rate_n_flags),
-				   tx_resp->failure_frame);
-
+		iwlagn_set_tx_status(priv, info, tx_resp, txq_id, false);
 		freed = iwlagn_tx_queue_reclaim(priv, txq_id, index);
 		iwl_free_tfds_in_queue(priv, sta_id, tid, freed);
 
@@ -1154,7 +1150,7 @@ static int iwl_get_channels_for_scan(struct iwl_priv *priv,
 	return added;
 }
 
-void iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
+int iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 {
 	struct iwl_host_cmd cmd = {
 		.id = REPLY_SCAN_CMD,
@@ -1162,7 +1158,6 @@ void iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 		.flags = CMD_SIZE_HUGE,
 	};
 	struct iwl_scan_cmd *scan;
-	struct ieee80211_conf *conf = NULL;
 	struct iwl_rxon_context *ctx = &priv->contexts[IWL_RXON_CTX_BSS];
 	u32 rate_flags = 0;
 	u16 cmd_len;
@@ -1175,51 +1170,12 @@ void iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 	int  chan_mod;
 	u8 active_chains;
 	u8 scan_tx_antennas = priv->hw_params.valid_tx_ant;
+	int ret;
+
+	lockdep_assert_held(&priv->mutex);
 
 	if (vif)
 		ctx = iwl_rxon_ctx_from_vif(vif);
-
-	conf = ieee80211_get_hw_conf(priv->hw);
-
-	cancel_delayed_work(&priv->scan_check);
-
-	if (!iwl_is_ready(priv)) {
-		IWL_WARN(priv, "request scan called when driver not ready.\n");
-		goto done;
-	}
-
-	/* Make sure the scan wasn't canceled before this queued work
-	 * was given the chance to run... */
-	if (!test_bit(STATUS_SCANNING, &priv->status))
-		goto done;
-
-	/* This should never be called or scheduled if there is currently
-	 * a scan active in the hardware. */
-	if (test_bit(STATUS_SCAN_HW, &priv->status)) {
-		IWL_DEBUG_INFO(priv, "Multiple concurrent scan requests in parallel. "
-			       "Ignoring second request.\n");
-		goto done;
-	}
-
-	if (test_bit(STATUS_EXIT_PENDING, &priv->status)) {
-		IWL_DEBUG_SCAN(priv, "Aborting scan due to device shutdown\n");
-		goto done;
-	}
-
-	if (test_bit(STATUS_SCAN_ABORTING, &priv->status)) {
-		IWL_DEBUG_HC(priv, "Scan request while abort pending.  Queuing.\n");
-		goto done;
-	}
-
-	if (iwl_is_rfkill(priv)) {
-		IWL_DEBUG_HC(priv, "Aborting scan due to RF Kill activation\n");
-		goto done;
-	}
-
-	if (!test_bit(STATUS_READY, &priv->status)) {
-		IWL_DEBUG_HC(priv, "Scan request while uninitialized.  Queuing.\n");
-		goto done;
-	}
 
 	if (!priv->scan_cmd) {
 		priv->scan_cmd = kmalloc(sizeof(struct iwl_scan_cmd) +
@@ -1227,7 +1183,7 @@ void iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 		if (!priv->scan_cmd) {
 			IWL_DEBUG_SCAN(priv,
 				       "fail to allocate memory for scan\n");
-			goto done;
+			return -ENOMEM;
 		}
 	}
 	scan = priv->scan_cmd;
@@ -1334,8 +1290,8 @@ void iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 						IWL_GOOD_CRC_TH_NEVER;
 		break;
 	default:
-		IWL_WARN(priv, "Invalid scan band count\n");
-		goto done;
+		IWL_WARN(priv, "Invalid scan band\n");
+		return -EIO;
 	}
 
 	band = priv->scan_band;
@@ -1415,7 +1371,7 @@ void iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 	}
 	if (scan->channel_count == 0) {
 		IWL_DEBUG_SCAN(priv, "channel count %d\n", scan->channel_count);
-		goto done;
+		return -EIO;
 	}
 
 	cmd.len += le16_to_cpu(scan->tx_cmd.len) +
@@ -1423,30 +1379,21 @@ void iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 	cmd.data = scan;
 	scan->len = cpu_to_le16(cmd.len);
 
+	if (priv->cfg->ops->hcmd->set_pan_params) {
+		ret = priv->cfg->ops->hcmd->set_pan_params(priv);
+		if (ret)
+			return ret;
+	}
+
 	set_bit(STATUS_SCAN_HW, &priv->status);
+	ret = iwl_send_cmd_sync(priv, &cmd);
+	if (ret) {
+		clear_bit(STATUS_SCAN_HW, &priv->status);
+		if (priv->cfg->ops->hcmd->set_pan_params)
+			priv->cfg->ops->hcmd->set_pan_params(priv);
+	}
 
-	if (priv->cfg->ops->hcmd->set_pan_params &&
-	    priv->cfg->ops->hcmd->set_pan_params(priv))
-		goto done;
-
-	if (iwl_send_cmd_sync(priv, &cmd))
-		goto done;
-
-	queue_delayed_work(priv->workqueue, &priv->scan_check,
-			   IWL_SCAN_CHECK_WATCHDOG);
-
-	return;
-
- done:
-	/* Cannot perform scan. Make sure we clear scanning
-	* bits from status so next scan request can be performed.
-	* If we don't clear scanning status bit here all next scan
-	* will fail
-	*/
-	clear_bit(STATUS_SCAN_HW, &priv->status);
-	clear_bit(STATUS_SCANNING, &priv->status);
-	/* inform mac80211 scan aborted */
-	queue_work(priv->workqueue, &priv->scan_completed);
+	return ret;
 }
 
 int iwlagn_manage_ibss_station(struct iwl_priv *priv,
