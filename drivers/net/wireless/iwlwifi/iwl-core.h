@@ -291,6 +291,7 @@ struct iwl_mod_params {
  * @bt_init_traffic_load: specify initial bt traffic load
  * @bt_prio_boost: default bt priority boost value
  * @need_dc_calib: need to perform init dc calibration
+ * @need_temp_offset_calib: need to perform temperature offset calibration
  * @bt_statistics: use BT version of statistics notification
  * @agg_time_limit: maximum number of uSec in aggregation
  * @ampdu_factor: Maximum A-MPDU length factor
@@ -367,6 +368,7 @@ struct iwl_cfg {
 	u8 bt_init_traffic_load;
 	u8 bt_prio_boost;
 	const bool need_dc_calib;
+	const bool need_temp_offset_calib;
 	const bool bt_statistics;
 	u16 agg_time_limit;
 	u8 ampdu_factor;

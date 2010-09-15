@@ -200,6 +200,8 @@ static int iwl6000_hw_set_hw_params(struct iwl_priv *priv)
 		BIT(IWL_CALIB_BASE_BAND);
 	if (priv->cfg->need_dc_calib)
 		priv->hw_params.calib_rt_cfg |= BIT(IWL_CALIB_CFG_DC_IDX);
+	if (priv->cfg->need_temp_offset_calib)
+		priv->hw_params.calib_init_cfg |= BIT(IWL_CALIB_TEMP_OFFSET);
 
 	priv->hw_params.beacon_time_tsf_bits = IWLAGN_EXT_BEACON_TIME_POS;
 
@@ -502,6 +504,7 @@ struct iwl_cfg iwl6000g2a_2agn_cfg = {
 	.sensitivity_calib_by_driver = true,
 	.chain_noise_calib_by_driver = true,
 	.need_dc_calib = true,
+	.need_temp_offset_calib = true,
 };
 
 struct iwl_cfg iwl6000g2a_2abg_cfg = {
@@ -537,6 +540,7 @@ struct iwl_cfg iwl6000g2a_2abg_cfg = {
 	.sensitivity_calib_by_driver = true,
 	.chain_noise_calib_by_driver = true,
 	.need_dc_calib = true,
+	.need_temp_offset_calib = true,
 };
 
 struct iwl_cfg iwl6000g2a_2bg_cfg = {
@@ -572,6 +576,7 @@ struct iwl_cfg iwl6000g2a_2bg_cfg = {
 	.sensitivity_calib_by_driver = true,
 	.chain_noise_calib_by_driver = true,
 	.need_dc_calib = true,
+	.need_temp_offset_calib = true,
 };
 
 struct iwl_cfg iwl6000g2b_2agn_cfg = {
@@ -609,6 +614,7 @@ struct iwl_cfg iwl6000g2b_2agn_cfg = {
 	.sensitivity_calib_by_driver = true,
 	.chain_noise_calib_by_driver = true,
 	.need_dc_calib = true,
+	.need_temp_offset_calib = true,
 	.bt_statistics = true,
 	/* Due to bluetooth, we transmit 2.4 GHz probes only on antenna A */
 	.scan_tx_antennas[IEEE80211_BAND_2GHZ] = ANT_A,
@@ -650,6 +656,7 @@ struct iwl_cfg iwl6000g2b_2abg_cfg = {
 	.sensitivity_calib_by_driver = true,
 	.chain_noise_calib_by_driver = true,
 	.need_dc_calib = true,
+	.need_temp_offset_calib = true,
 	.bt_statistics = true,
 	/* Due to bluetooth, we transmit 2.4 GHz probes only on antenna A */
 	.scan_tx_antennas[IEEE80211_BAND_2GHZ] = ANT_A,
@@ -693,6 +700,7 @@ struct iwl_cfg iwl6000g2b_2bgn_cfg = {
 	.sensitivity_calib_by_driver = true,
 	.chain_noise_calib_by_driver = true,
 	.need_dc_calib = true,
+	.need_temp_offset_calib = true,
 	.bt_statistics = true,
 	/* Due to bluetooth, we transmit 2.4 GHz probes only on antenna A */
 	.scan_tx_antennas[IEEE80211_BAND_2GHZ] = ANT_A,
@@ -734,6 +742,7 @@ struct iwl_cfg iwl6000g2b_2bg_cfg = {
 	.sensitivity_calib_by_driver = true,
 	.chain_noise_calib_by_driver = true,
 	.need_dc_calib = true,
+	.need_temp_offset_calib = true,
 	.bt_statistics = true,
 	/* Due to bluetooth, we transmit 2.4 GHz probes only on antenna A */
 	.scan_tx_antennas[IEEE80211_BAND_2GHZ] = ANT_A,
@@ -777,6 +786,7 @@ struct iwl_cfg iwl6000g2b_bgn_cfg = {
 	.sensitivity_calib_by_driver = true,
 	.chain_noise_calib_by_driver = true,
 	.need_dc_calib = true,
+	.need_temp_offset_calib = true,
 	.bt_statistics = true,
 	/* Due to bluetooth, we transmit 2.4 GHz probes only on antenna A */
 	.scan_tx_antennas[IEEE80211_BAND_2GHZ] = ANT_A,
@@ -819,6 +829,7 @@ struct iwl_cfg iwl6000g2b_bg_cfg = {
 	.chain_noise_calib_by_driver = true,
 	.need_dc_calib = true,
 	.bt_statistics = true,
+	.need_temp_offset_calib = true,
 	/* Due to bluetooth, we transmit 2.4 GHz probes only on antenna A */
 	.scan_tx_antennas[IEEE80211_BAND_2GHZ] = ANT_A,
 	.advanced_bt_coexist = true,
