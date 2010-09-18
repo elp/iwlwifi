@@ -250,7 +250,7 @@ static const struct iwl_ops iwl1000_ops = {
 	.led = &iwlagn_led_ops,
 };
 
-struct iwl_base_params iwl1000_base_params = {
+static struct iwl_base_params iwl1000_base_params = {
 	.num_of_queues = IWLAGN_NUM_QUEUES,
 	.num_of_ampdu_queues = IWLAGN_NUM_AMPDU_QUEUES,
 	.eeprom_size = OTP_LOW_IMAGE_SIZE,
@@ -270,7 +270,7 @@ struct iwl_base_params iwl1000_base_params = {
 	.sensitivity_calib_by_driver = true,
 	.chain_noise_calib_by_driver = true,
 };
-struct iwl_ht_params iwl1000_ht_params = {
+static struct iwl_ht_params iwl1000_ht_params = {
 	.ht_greenfield_support = true,
 	.use_rts_for_aggregation = true, /* use rts/cts protection */
 };
