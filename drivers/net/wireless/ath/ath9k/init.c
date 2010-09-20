@@ -381,7 +381,7 @@ static void ath9k_init_crypto(struct ath_softc *sc)
 	 * reset the contents on initial power up.
 	 */
 	for (i = 0; i < common->keymax; i++)
-		ath9k_hw_keyreset(sc->sc_ah, (u16) i);
+		ath_hw_keyreset(common, (u16) i);
 
 	/*
 	 * Check whether the separate key cache entries
@@ -389,8 +389,8 @@ static void ath9k_init_crypto(struct ath_softc *sc)
 	 * With split mic keys the number of stations is limited
 	 * to 27 otherwise 59.
 	 */
-	if (!(sc->sc_ah->misc_mode & AR_PCU_MIC_NEW_LOC_ENA))
-		common->splitmic = 1;
+	if (sc->sc_ah->misc_mode & AR_PCU_MIC_NEW_LOC_ENA)
+		common->crypt_caps |= ATH_CRYPT_CAP_MIC_COMBINED;
 }
 
 static int ath9k_init_btcoex(struct ath_softc *sc)
@@ -643,7 +643,8 @@ void ath9k_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw)
 		BIT(NL80211_IFTYPE_ADHOC) |
 		BIT(NL80211_IFTYPE_MESH_POINT);
 
-	hw->wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
+	if (AR_SREV_5416(sc->sc_ah))
+		hw->wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
 
 	hw->queues = 4;
 	hw->max_rates = 4;

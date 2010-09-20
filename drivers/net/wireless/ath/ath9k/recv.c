@@ -300,7 +300,7 @@ static void ath_edma_start_recv(struct ath_softc *sc)
 
 	ath_opmode_init(sc);
 
-	ath9k_hw_startpcureceive(sc->sc_ah, (sc->sc_flags & SC_OP_SCANNING));
+	ath9k_hw_startpcureceive(sc->sc_ah, (sc->sc_flags & SC_OP_OFFCHANNEL));
 }
 
 static void ath_edma_stop_recv(struct ath_softc *sc)
@@ -448,6 +448,7 @@ u32 ath_calcrxfilter(struct ath_softc *sc)
 		rfilt |= ATH9K_RX_FILTER_CONTROL;
 
 	if ((sc->sc_ah->opmode == NL80211_IFTYPE_STATION) &&
+	    (sc->nvifs <= 1) &&
 	    !(sc->rx.rxfilter & FIF_BCN_PRBRESP_PROMISC))
 		rfilt |= ATH9K_RX_FILTER_MYBEACON;
 	else
@@ -462,9 +463,8 @@ u32 ath_calcrxfilter(struct ath_softc *sc)
 	if (conf_is_ht(&sc->hw->conf))
 		rfilt |= ATH9K_RX_FILTER_COMP_BAR;
 
-	if (sc->sec_wiphy || (sc->rx.rxfilter & FIF_OTHER_BSS)) {
-		/* TODO: only needed if more than one BSSID is in use in
-		 * station/adhoc mode */
+	if (sc->sec_wiphy || (sc->nvifs > 1) ||
+	    (sc->rx.rxfilter & FIF_OTHER_BSS)) {
 		/* The following may also be needed for other older chips */
 		if (sc->sc_ah->hw_version.macVersion == AR_SREV_VERSION_9160)
 			rfilt |= ATH9K_RX_FILTER_PROM;
@@ -506,7 +506,7 @@ int ath_startrecv(struct ath_softc *sc)
 start_recv:
 	spin_unlock_bh(&sc->rx.rxbuflock);
 	ath_opmode_init(sc);
-	ath9k_hw_startpcureceive(ah, (sc->sc_flags & SC_OP_SCANNING));
+	ath9k_hw_startpcureceive(ah, (sc->sc_flags & SC_OP_OFFCHANNEL));
 
 	return 0;
 }
@@ -639,7 +639,7 @@ static void ath_rx_ps(struct ath_softc *sc, struct sk_buff *skb)
 		 * No more broadcast/multicast frames to be received at this
 		 * point.
 		 */
-		sc->ps_flags &= ~PS_WAIT_FOR_CAB;
+		sc->ps_flags &= ~(PS_WAIT_FOR_CAB | PS_WAIT_FOR_BEACON);
 		ath_print(common, ATH_DBG_PS,
 			  "All PS CAB frames received, back to sleep\n");
 	} else if ((sc->ps_flags & PS_WAIT_FOR_PSPOLL_DATA) &&
@@ -1338,7 +1338,7 @@ static void ath_select_ant_div_from_quick_scan(struct ath_ant_comb *antcomb,
 	}
 }
 
-void ath_ant_div_conf_fast_divbias(struct ath_hw_antcomb_conf *ant_conf)
+static void ath_ant_div_conf_fast_divbias(struct ath_hw_antcomb_conf *ant_conf)
 {
 	/* Adjust the fast_div_bias based on main and alt lna conf */
 	switch ((ant_conf->main_lna_conf << 4) | ant_conf->alt_lna_conf) {
@@ -1640,6 +1640,7 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush, bool hp)
 	u8 rx_status_len = ah->caps.rx_status_len;
 	u64 tsf = 0;
 	u32 tsf_lower = 0;
+	unsigned long flags;
 
 	if (edma)
 		dma_type = DMA_BIDIRECTIONAL;
@@ -1748,11 +1749,13 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush, bool hp)
 			sc->rx.rxotherant = 0;
 		}
 
+		spin_lock_irqsave(&sc->sc_pm_lock, flags);
 		if (unlikely(ath9k_check_auto_sleep(sc) ||
 			     (sc->ps_flags & (PS_WAIT_FOR_BEACON |
 					      PS_WAIT_FOR_CAB |
 					      PS_WAIT_FOR_PSPOLL_DATA))))
 			ath_rx_ps(sc, skb);
+		spin_unlock_irqrestore(&sc->sc_pm_lock, flags);
 
 		if (ah->caps.hw_caps & ATH9K_HW_CAP_ANT_DIV_COMB)
 			ath_ant_comb_scan(sc, &rs);
