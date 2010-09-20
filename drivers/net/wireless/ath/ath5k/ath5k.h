@@ -1028,8 +1028,6 @@ struct ath5k_hw {
 	bool			ah_turbo;
 	bool			ah_calibration;
 	bool			ah_single_chip;
-	bool			ah_aes_support;
-	bool			ah_combined_mic;
 
 	enum ath5k_version	ah_version;
 	enum ath5k_radio	ah_radio;
@@ -1207,11 +1205,6 @@ void ath5k_hw_set_ack_bitrate_high(struct ath5k_hw *ah, bool high);
 unsigned int ath5k_hw_htoclock(struct ath5k_hw *ah, unsigned int usec);
 unsigned int ath5k_hw_clocktoh(struct ath5k_hw *ah, unsigned int clock);
 unsigned int ath5k_hw_get_clockrate(struct ath5k_hw *ah);
-/* Key table (WEP) functions */
-int ath5k_hw_reset_key(struct ath5k_hw *ah, u16 entry);
-int ath5k_hw_set_key(struct ath5k_hw *ah, u16 entry,
-		     const struct ieee80211_key_conf *key, const u8 *mac);
-int ath5k_hw_set_key_lladdr(struct ath5k_hw *ah, u16 entry, const u8 *mac);
 
 /* Queue Control Unit, DFS Control Unit Functions */
 int ath5k_hw_get_tx_queueprops(struct ath5k_hw *ah, int queue,
