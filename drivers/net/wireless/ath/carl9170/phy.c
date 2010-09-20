@@ -85,11 +85,12 @@ static struct carl9170_phy_init ar5416_phy_init[] = {
 	{ 0x1c5844, 0x1372161e, 0x13721c1e, 0x13721c24, 0x137216a4, },
 	{ 0x1c5848, 0x001a6a65, 0x001a6a65, 0x00197a68, 0x00197a68, },
 	{ 0x1c584c, 0x1284233c, 0x1284233c, 0x1284233c, 0x1284233c, },
-	{ 0x1c5850, 0x6c48b4e4, 0x6c48b4e4, 0x6c48b0e4, 0x6c48b0e4, },
+	{ 0x1c5850, 0x6c48b4e4, 0x6d48b4e4, 0x6d48b0e4, 0x6c48b0e4, },
 	{ 0x1c5854, 0x00000859, 0x00000859, 0x00000859, 0x00000859, },
 	{ 0x1c5858, 0x7ec80d2e, 0x7ec80d2e, 0x7ec80d2e, 0x7ec80d2e, },
-	{ 0x1c585c, 0x31395c5e, 0x31395c5e, 0x31395c5e, 0x31395c5e, },
+	{ 0x1c585c, 0x31395c5e, 0x3139605e, 0x3139605e, 0x31395c5e, },
 	{ 0x1c5860, 0x0004dd10, 0x0004dd10, 0x0004dd20, 0x0004dd20, },
+	{ 0x1c5864, 0x0001c600, 0x0001c600, 0x0001c600, 0x0001c600, },
 	{ 0x1c5868, 0x409a4190, 0x409a4190, 0x409a4190, 0x409a4190, },
 	{ 0x1c586c, 0x050cb081, 0x050cb081, 0x050cb081, 0x050cb081, },
 	{ 0x1c5900, 0x00000000, 0x00000000, 0x00000000, 0x00000000, },
@@ -131,9 +132,10 @@ static struct carl9170_phy_init ar5416_phy_init[] = {
 	{ 0x1c59ac, 0x006f00c4, 0x006f00c4, 0x006f00c4, 0x006f00c4, },
 	{ 0x1c59b0, 0x03051000, 0x03051000, 0x03051000, 0x03051000, },
 	{ 0x1c59b4, 0x00000820, 0x00000820, 0x00000820, 0x00000820, },
+	{ 0x1c59bc, 0x00181400, 0x00181400, 0x00181400, 0x00181400, },
 	{ 0x1c59c0, 0x038919be, 0x038919be, 0x038919be, 0x038919be, },
 	{ 0x1c59c4, 0x06336f77, 0x06336f77, 0x06336f77, 0x06336f77, },
-	{ 0x1c59c8, 0x60f6532c, 0x60f6532c, 0x60f6532c, 0x60f6532c, },
+	{ 0x1c59c8, 0x6af6532c, 0x6af6532c, 0x6af6532c, 0x6af6532c, },
 	{ 0x1c59cc, 0x08f186c8, 0x08f186c8, 0x08f186c8, 0x08f186c8, },
 	{ 0x1c59d0, 0x00046384, 0x00046384, 0x00046384, 0x00046384, },
 	{ 0x1c59d4, 0x00000000, 0x00000000, 0x00000000, 0x00000000, },
@@ -530,8 +532,11 @@ static int carl9170_init_phy_from_eeprom(struct ar9170 *ar,
 	SET_VAL(AR9170_PHY_TPCRG1_PD_GAIN_2, val,
 		xpd2pd[m->xpdGain & 0xf] >> 2);
 	carl9170_regwrite(AR9170_PHY_REG_TPCRG1, val);
-	carl9170_regwrite_finish();
 
+	carl9170_regwrite(AR9170_PHY_REG_RX_CHAINMASK, ar->eeprom.rx_mask);
+	carl9170_regwrite(AR9170_PHY_REG_CAL_CHAINMASK, ar->eeprom.rx_mask);
+
+	carl9170_regwrite_finish();
 	return carl9170_regwrite_result();
 }
 
@@ -1553,17 +1558,16 @@ static int carl9170_set_power_cal(struct ar9170 *ar, u32 freq,
 static int carl9170_calc_noise_dbm(u32 raw_noise)
 {
 	if (raw_noise & 0x100)
-		return ~((raw_noise & 0x0ff) >> 1);
+		return ~0x1ff | raw_noise;
 	else
-		return (raw_noise & 0xff) >> 1;
+		return raw_noise;
 }
 
 int carl9170_get_noisefloor(struct ar9170 *ar)
 {
 	static const u32 phy_regs[] = {
-		AR9170_PHY_REG_CCA, AR9170_PHY_REG_CH1_CCA,
-		AR9170_PHY_REG_CH2_CCA, AR9170_PHY_REG_EXT_CCA,
-		AR9170_PHY_REG_CH1_EXT_CCA, AR9170_PHY_REG_CH2_EXT_CCA };
+		AR9170_PHY_REG_CCA, AR9170_PHY_REG_CH2_CCA,
+		AR9170_PHY_REG_EXT_CCA, AR9170_PHY_REG_CH2_EXT_CCA };
 	u32 phy_res[ARRAY_SIZE(phy_regs)];
 	int err, i;
 
@@ -1573,12 +1577,12 @@ int carl9170_get_noisefloor(struct ar9170 *ar)
 	if (err)
 		return err;
 
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < 2; i++) {
 		ar->noise[i] = carl9170_calc_noise_dbm(
 			(phy_res[i] >> 19) & 0x1ff);
 
-		ar->noise[i + 3] = carl9170_calc_noise_dbm(
-			(phy_res[i + 3] >> 23) & 0x1ff);
+		ar->noise[i + 2] = carl9170_calc_noise_dbm(
+			(phy_res[i + 2] >> 23) & 0x1ff);
 	}
 
 	return 0;
@@ -1606,7 +1610,7 @@ int carl9170_set_channel(struct ar9170 *ar, struct ieee80211_channel *channel,
 	const struct carl9170_phy_freq_params *freqpar;
 	struct carl9170_rf_init_result rf_res;
 	struct carl9170_rf_init rf;
-	u32 cmd, tmp, offs = 0;
+	u32 cmd, tmp, offs = 0, new_ht = 0;
 	int err;
 	enum carl9170_bw bw;
 	bool warm_reset;
@@ -1614,12 +1618,19 @@ int carl9170_set_channel(struct ar9170 *ar, struct ieee80211_channel *channel,
 
 	bw = nl80211_to_carl(_bw);
 
+	if (conf_is_ht(&ar->hw->conf))
+		new_ht |= CARL9170FW_PHY_HT_ENABLE;
+
+	if (conf_is_ht40(&ar->hw->conf))
+		new_ht |= CARL9170FW_PHY_HT_DYN2040;
+
 	/* may be NULL at first setup */
 	if (ar->channel) {
 		old_channel = ar->channel;
 		warm_reset = (old_channel->band != channel->band) ||
 			     (old_channel->center_freq ==
-			      channel->center_freq);
+			      channel->center_freq) ||
+			     (ar->ht_settings != new_ht);
 
 		ar->channel = NULL;
 	} else {
@@ -1720,16 +1731,9 @@ int carl9170_set_channel(struct ar9170 *ar, struct ieee80211_channel *channel,
 
 	freqpar = carl9170_get_hw_dyn_params(channel, bw);
 
-	rf.ht_settings = 0;
-	if (conf_is_ht(&ar->hw->conf)) {
-		rf.ht_settings |= CARL9170FW_PHY_HT_ENABLE;
-
-		if (conf_is_ht40(&ar->hw->conf)) {
-			rf.ht_settings |= CARL9170FW_PHY_HT_DYN2040;
-			SET_VAL(CARL9170FW_PHY_HT_EXT_CHAN_OFF,
-				rf.ht_settings, offs);
-		}
-	}
+	rf.ht_settings = new_ht;
+	if (conf_is_ht40(&ar->hw->conf))
+		SET_VAL(CARL9170FW_PHY_HT_EXT_CHAN_OFF, rf.ht_settings, offs);
 
 	rf.freq = cpu_to_le32(channel->center_freq * 1000);
 	rf.delta_slope_coeff_exp = cpu_to_le32(freqpar->coeff_exp);
@@ -1801,5 +1805,6 @@ int carl9170_set_channel(struct ar9170 *ar, struct ieee80211_channel *channel,
 		ar->ps.off_override &= ~PS_OFF_5GHZ;
 
 	ar->channel = channel;
+	ar->ht_settings = new_ht;
 	return 0;
 }

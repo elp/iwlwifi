@@ -957,6 +957,50 @@ struct isr_statistics {
 	u32 unhandled;
 };
 
+/* reply_tx_statistics (for _agn devices) */
+struct reply_tx_error_statistics {
+	u32 pp_delay;
+	u32 pp_few_bytes;
+	u32 pp_bt_prio;
+	u32 pp_quiet_period;
+	u32 pp_calc_ttak;
+	u32 int_crossed_retry;
+	u32 short_limit;
+	u32 long_limit;
+	u32 fifo_underrun;
+	u32 drain_flow;
+	u32 rfkill_flush;
+	u32 life_expire;
+	u32 dest_ps;
+	u32 host_abort;
+	u32 bt_retry;
+	u32 sta_invalid;
+	u32 frag_drop;
+	u32 tid_disable;
+	u32 fifo_flush;
+	u32 insuff_cf_poll;
+	u32 fail_hw_drop;
+	u32 sta_color_mismatch;
+	u32 unknown;
+};
+
+/* reply_agg_tx_statistics (for _agn devices) */
+struct reply_agg_tx_error_statistics {
+	u32 underrun;
+	u32 bt_prio;
+	u32 few_bytes;
+	u32 abort;
+	u32 last_sent_ttl;
+	u32 last_sent_try;
+	u32 last_sent_bt_kill;
+	u32 scd_query;
+	u32 bad_crc32;
+	u32 response;
+	u32 dump_tx;
+	u32 delay_tx;
+	u32 unknown;
+};
+
 #ifdef CONFIG_IWLWIFI_DEBUGFS
 /* management statistics */
 enum iwl_mgmt_stats {
@@ -1415,6 +1459,9 @@ struct iwl_priv {
 
 			struct iwl_notif_statistics statistics;
 			struct iwl_bt_notif_statistics statistics_bt;
+			/* counts reply_tx error */
+			struct reply_tx_error_statistics reply_tx_stats;
+			struct reply_agg_tx_error_statistics reply_agg_tx_stats;
 #ifdef CONFIG_IWLWIFI_DEBUGFS
 			struct iwl_notif_statistics accum_statistics;
 			struct iwl_notif_statistics delta_statistics;

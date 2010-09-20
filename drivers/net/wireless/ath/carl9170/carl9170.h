@@ -321,10 +321,11 @@ struct ar9170 {
 
 	/* PHY */
 	struct ieee80211_channel *channel;
-	int noise[6];
+	int noise[4];
 	unsigned int chan_fail;
 	unsigned int total_chan_fail;
 	u8 heavy_clip;
+	u8 ht_settings;
 
 	/* power calibration data */
 	u8 power_5G_leg[4];
