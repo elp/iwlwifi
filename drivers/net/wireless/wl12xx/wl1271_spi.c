@@ -312,12 +312,10 @@ static irqreturn_t wl1271_irq(int irq, void *cookie)
 	return IRQ_HANDLED;
 }
 
-static int wl1271_spi_set_power(struct wl1271 *wl, bool enable)
+static void wl1271_spi_set_power(struct wl1271 *wl, bool enable)
 {
 	if (wl->set_power)
 		wl->set_power(enable);
-
-	return 0;
 }
 
 static struct wl1271_if_operations spi_ops = {
