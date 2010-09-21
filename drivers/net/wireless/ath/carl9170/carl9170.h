@@ -321,7 +321,7 @@ struct ar9170 {
 
 	/* PHY */
 	struct ieee80211_channel *channel;
-	int noise[4];
+	int noise[6];
 	unsigned int chan_fail;
 	unsigned int total_chan_fail;
 	u8 heavy_clip;
