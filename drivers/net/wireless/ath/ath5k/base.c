@@ -733,7 +733,6 @@ ath5k_txbuf_setup(struct ath5k_softc *sc, struct ath5k_buf *bf,
 
 	spin_lock_bh(&txq->lock);
 	list_add_tail(&bf->list, &txq->q);
-	txq->txq_len++;
 	if (txq->link == NULL) /* is this first packet? */
 		ath5k_hw_set_txdp(ah, txq->qnum, bf->daddr);
 	else /* no, so only link it */
@@ -890,7 +889,6 @@ ath5k_txq_setup(struct ath5k_softc *sc,
 		INIT_LIST_HEAD(&txq->q);
 		spin_lock_init(&txq->lock);
 		txq->setup = true;
-		txq->txq_len = 0;
 	}
 	return &sc->txqs[qnum];
 }
@@ -985,7 +983,6 @@ ath5k_txq_drainq(struct ath5k_softc *sc, struct ath5k_txq *txq)
 		spin_lock_bh(&sc->txbuflock);
 		list_move_tail(&bf->list, &sc->txbuf);
 		sc->txbuf_len++;
-		txq->txq_len--;
 		spin_unlock_bh(&sc->txbuflock);
 	}
 	txq->link = NULL;
@@ -1482,9 +1479,6 @@ static int ath5k_tx_queue(struct ieee80211_hw *hw, struct sk_buff *skb,
 		goto drop_packet;
 	}
 
-	if (txq->txq_len >= ATH5K_TXQ_LEN_MAX)
-		ieee80211_stop_queue(hw, txq->qnum);
-
 	spin_lock_irqsave(&sc->txbuflock, flags);
 	if (list_empty(&sc->txbuf)) {
 		ATH5K_ERR(sc, "no further txbuf available, dropping packet\n");
@@ -1607,14 +1601,13 @@ ath5k_tx_processq(struct ath5k_softc *sc, struct ath5k_txq *txq)
 		spin_lock(&sc->txbuflock);
 		list_move_tail(&bf->list, &sc->txbuf);
 		sc->txbuf_len++;
-		txq->txq_len--;
 		spin_unlock(&sc->txbuflock);
 	}
 	if (likely(list_empty(&txq->q)))
 		txq->link = NULL;
 	spin_unlock(&txq->lock);
-	if (txq->txq_len < ATH5K_TXQ_LEN_LOW)
-		ieee80211_wake_queue(sc->hw, txq->qnum);
+	if (sc->txbuf_len > ATH_TXBUF / 5)
+		ieee80211_wake_queues(sc->hw);
 }
 
 static void
@@ -2398,7 +2391,6 @@ ath5k_attach(struct pci_dev *pdev, struct ieee80211_hw *hw)
 	struct ath5k_softc *sc = hw->priv;
 	struct ath5k_hw *ah = sc->ah;
 	struct ath_regulatory *regulatory = ath5k_hw_regulatory(ah);
-	struct ath5k_txq *txq;
 	u8 mac[ETH_ALEN] = {};
 	int ret;
 
@@ -2464,33 +2456,12 @@ ath5k_attach(struct pci_dev *pdev, struct ieee80211_hw *hw)
 		goto err_bhal;
 	}
 
-	/* This order matches mac80211's queue priority, so we can
-	 * directly use the mac80211 queue number without any mapping */
-	txq = ath5k_txq_setup(sc, AR5K_TX_QUEUE_DATA, AR5K_WME_AC_VO);
-	if (IS_ERR(txq)) {
+	sc->txq = ath5k_txq_setup(sc, AR5K_TX_QUEUE_DATA, AR5K_WME_AC_BK);
+	if (IS_ERR(sc->txq)) {
 		ATH5K_ERR(sc, "can't setup xmit queue\n");
-		ret = PTR_ERR(txq);
+		ret = PTR_ERR(sc->txq);
 		goto err_queues;
 	}
-	txq = ath5k_txq_setup(sc, AR5K_TX_QUEUE_DATA, AR5K_WME_AC_VI);
-	if (IS_ERR(txq)) {
-		ATH5K_ERR(sc, "can't setup xmit queue\n");
-		ret = PTR_ERR(txq);
-		goto err_queues;
-	}
-	txq = ath5k_txq_setup(sc, AR5K_TX_QUEUE_DATA, AR5K_WME_AC_BE);
-	if (IS_ERR(txq)) {
-		ATH5K_ERR(sc, "can't setup xmit queue\n");
-		ret = PTR_ERR(txq);
-		goto err_queues;
-	}
-	txq = ath5k_txq_setup(sc, AR5K_TX_QUEUE_DATA, AR5K_WME_AC_BK);
-	if (IS_ERR(txq)) {
-		ATH5K_ERR(sc, "can't setup xmit queue\n");
-		ret = PTR_ERR(txq);
-		goto err_queues;
-	}
-	hw->queues = 4;
 
 	tasklet_init(&sc->rxtq, ath5k_tasklet_rx, (unsigned long)sc);
 	tasklet_init(&sc->txtq, ath5k_tasklet_tx, (unsigned long)sc);
@@ -2583,14 +2554,8 @@ static int
 ath5k_tx(struct ieee80211_hw *hw, struct sk_buff *skb)
 {
 	struct ath5k_softc *sc = hw->priv;
-	u16 qnum = skb_get_queue_mapping(skb);
 
-	if (WARN_ON(qnum >= sc->ah->ah_capabilities.cap_queues.q_tx_num)) {
-		dev_kfree_skb_any(skb);
-		return 0;
-	}
-
-	return ath5k_tx_queue(hw, skb, &sc->txqs[qnum]);
+	return ath5k_tx_queue(hw, skb, sc->txq);
 }
 
 static int ath5k_start(struct ieee80211_hw *hw)
