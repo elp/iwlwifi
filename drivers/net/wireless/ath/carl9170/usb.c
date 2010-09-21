@@ -367,6 +367,9 @@ static void carl9170_usb_tasklet(unsigned long data)
 {
 	struct ar9170 *ar = (struct ar9170 *) data;
 
+	if (!IS_INITIALIZED(ar))
+		return;
+
 	carl9170_usb_rx_work(ar);
 
 	/*
@@ -842,8 +845,6 @@ int carl9170_usb_restart(struct ar9170 *ar)
 	err = carl9170_reboot(ar);
 
 	carl9170_usb_stop(ar);
-
-	carl9170_set_state(ar, CARL9170_UNKNOWN_STATE);
 
 	if (err)
 		goto err_out;
