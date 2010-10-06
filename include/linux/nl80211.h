@@ -315,8 +315,8 @@
  *	channel for the specified amount of time. This can be used to do
  *	off-channel operations like transmit a Public Action frame and wait for
  *	a response while being associated to an AP on another channel.
- *	%NL80211_ATTR_WIPHY or %NL80211_ATTR_IFINDEX is used to specify which
- *	radio is used. %NL80211_ATTR_WIPHY_FREQ is used to specify the
+ *	%NL80211_ATTR_IFINDEX is used to specify which interface (and thus
+ *	radio) is used. %NL80211_ATTR_WIPHY_FREQ is used to specify the
  *	frequency for the operation and %NL80211_ATTR_WIPHY_CHANNEL_TYPE may be
  *	optionally used to specify additional channel parameters.
  *	%NL80211_ATTR_DURATION is used to specify the duration in milliseconds
@@ -386,6 +386,8 @@
  *	no other interfaces are operating to avoid disturbing the operation
  *	of any other interfaces, and other interfaces will again take
  *	precedence when they are used.
+ *
+ * @NL80211_CMD_SET_WDS_PEER: Set the MAC address of the peer on a WDS interface.
  *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
@@ -489,6 +491,7 @@ enum nl80211_commands {
 	NL80211_CMD_NOTIFY_CQM,
 
 	NL80211_CMD_SET_CHANNEL,
+	NL80211_CMD_SET_WDS_PEER,
 
 	/* add new commands above here */
 
@@ -1400,6 +1403,7 @@ enum nl80211_reg_rule_flags {
  * @__NL80211_SURVEY_INFO_INVALID: attribute number 0 is reserved
  * @NL80211_SURVEY_INFO_FREQUENCY: center frequency of channel
  * @NL80211_SURVEY_INFO_NOISE: noise level of channel (u8, dBm)
+ * @NL80211_SURVEY_INFO_IN_USE: channel is currently being used
  * @NL80211_SURVEY_INFO_MAX: highest survey info attribute number
  *	currently defined
  * @__NL80211_SURVEY_INFO_AFTER_LAST: internal use
@@ -1408,6 +1412,7 @@ enum nl80211_survey_info {
 	__NL80211_SURVEY_INFO_INVALID,
 	NL80211_SURVEY_INFO_FREQUENCY,
 	NL80211_SURVEY_INFO_NOISE,
+	NL80211_SURVEY_INFO_IN_USE,
 
 	/* keep last */
 	__NL80211_SURVEY_INFO_AFTER_LAST,
