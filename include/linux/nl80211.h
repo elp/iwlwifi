@@ -801,6 +801,9 @@ enum nl80211_commands {
  *      This is used in association with @NL80211_ATTR_WIPHY_TX_POWER_SETTING
  *      for non-automatic settings.
  *
+ * @NL80211_ATTR_SUPPORT_IBSS_RSN: The device supports IBSS RSN, which mostly
+ *	means support for per-station GTKs.
+ *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
  */
@@ -968,6 +971,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_CONTROL_PORT_ETHERTYPE,
 	NL80211_ATTR_CONTROL_PORT_NO_ENCRYPT,
 
+	NL80211_ATTR_SUPPORT_IBSS_RSN,
+
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,
@@ -1132,6 +1137,8 @@ enum nl80211_rate_info {
  * @NL80211_STA_INFO_RX_PACKETS: total received packet (u32, from this station)
  * @NL80211_STA_INFO_TX_PACKETS: total transmitted packets (u32, to this
  *	station)
+ * @NL80211_STA_INFO_TX_RETRIES: total retries (u32, to this station)
+ * @NL80211_STA_INFO_TX_FAILED: total failed packets (u32, to this station)
  */
 enum nl80211_sta_info {
 	__NL80211_STA_INFO_INVALID,
@@ -1145,6 +1152,8 @@ enum nl80211_sta_info {
 	NL80211_STA_INFO_TX_BITRATE,
 	NL80211_STA_INFO_RX_PACKETS,
 	NL80211_STA_INFO_TX_PACKETS,
+	NL80211_STA_INFO_TX_RETRIES,
+	NL80211_STA_INFO_TX_FAILED,
 
 	/* keep last */
 	__NL80211_STA_INFO_AFTER_LAST,
@@ -1659,11 +1668,14 @@ enum nl80211_auth_type {
  * @NL80211_KEYTYPE_GROUP: Group (broadcast/multicast) key
  * @NL80211_KEYTYPE_PAIRWISE: Pairwise (unicast/individual) key
  * @NL80211_KEYTYPE_PEERKEY: PeerKey (DLS)
+ * @NUM_NL80211_KEYTYPES: number of defined key types
  */
 enum nl80211_key_type {
 	NL80211_KEYTYPE_GROUP,
 	NL80211_KEYTYPE_PAIRWISE,
 	NL80211_KEYTYPE_PEERKEY,
+
+	NUM_NL80211_KEYTYPES
 };
 
 /**
@@ -1694,6 +1706,9 @@ enum nl80211_wpa_versions {
  *	CCMP keys, each six bytes in little endian
  * @NL80211_KEY_DEFAULT: flag indicating default key
  * @NL80211_KEY_DEFAULT_MGMT: flag indicating default management key
+ * @NL80211_KEY_TYPE: the key type from enum nl80211_key_type, if not
+ *	specified the default depends on whether a MAC address was
+ *	given with the command using the key or not (u32)
  * @__NL80211_KEY_AFTER_LAST: internal
  * @NL80211_KEY_MAX: highest key attribute
  */
@@ -1705,6 +1720,7 @@ enum nl80211_key_attributes {
 	NL80211_KEY_SEQ,
 	NL80211_KEY_DEFAULT,
 	NL80211_KEY_DEFAULT_MGMT,
+	NL80211_KEY_TYPE,
 
 	/* keep last */
 	__NL80211_KEY_AFTER_LAST,

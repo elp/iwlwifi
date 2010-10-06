@@ -713,7 +713,7 @@ irqreturn_t ath_isr(int irq, void *dev)
 		 * it will clear whatever condition caused
 		 * the interrupt.
 		 */
-		ath9k_hw_procmibevent(ah);
+		ath9k_hw_proc_mib_event(ah);
 		ath9k_hw_set_interrupts(ah, ah->imask);
 	}
 
@@ -1484,7 +1484,7 @@ static void ath9k_remove_interface(struct ieee80211_hw *hw,
 	mutex_unlock(&sc->mutex);
 }
 
-void ath9k_enable_ps(struct ath_softc *sc)
+static void ath9k_enable_ps(struct ath_softc *sc)
 {
 	struct ath_hw *ah = sc->sc_ah;
 
@@ -1498,13 +1498,32 @@ void ath9k_enable_ps(struct ath_softc *sc)
 	}
 }
 
+static void ath9k_disable_ps(struct ath_softc *sc)
+{
+	struct ath_hw *ah = sc->sc_ah;
+
+	sc->ps_enabled = false;
+	ath9k_hw_setpower(ah, ATH9K_PM_AWAKE);
+	if (!(ah->caps.hw_caps & ATH9K_HW_CAP_AUTOSLEEP)) {
+		ath9k_hw_setrxabort(ah, 0);
+		sc->ps_flags &= ~(PS_WAIT_FOR_BEACON |
+				  PS_WAIT_FOR_CAB |
+				  PS_WAIT_FOR_PSPOLL_DATA |
+				  PS_WAIT_FOR_TX_ACK);
+		if (ah->imask & ATH9K_INT_TIM_TIMER) {
+			ah->imask &= ~ATH9K_INT_TIM_TIMER;
+			ath9k_hw_set_interrupts(ah, ah->imask);
+		}
+	}
+
+}
+
 static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 {
 	struct ath_wiphy *aphy = hw->priv;
 	struct ath_softc *sc = aphy->sc;
 	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
 	struct ieee80211_conf *conf = &hw->conf;
-	struct ath_hw *ah = sc->sc_ah;
 	bool disable_radio;
 
 	mutex_lock(&sc->mutex);
@@ -1551,35 +1570,10 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	if (changed & IEEE80211_CONF_CHANGE_PS) {
 		unsigned long flags;
 		spin_lock_irqsave(&sc->sc_pm_lock, flags);
-		if (conf->flags & IEEE80211_CONF_PS) {
-			sc->ps_flags |= PS_ENABLED;
-			/*
-			 * At this point we know hardware has received an ACK
-			 * of a previously sent null data frame.
-			 */
-			if ((sc->ps_flags & PS_NULLFUNC_COMPLETED)) {
-				sc->ps_flags &= ~PS_NULLFUNC_COMPLETED;
-				ath9k_enable_ps(sc);
-                        }
-		} else {
-			sc->ps_enabled = false;
-			sc->ps_flags &= ~(PS_ENABLED |
-					  PS_NULLFUNC_COMPLETED);
-			ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_AWAKE);
-			if (!(ah->caps.hw_caps &
-			      ATH9K_HW_CAP_AUTOSLEEP)) {
-				ath9k_hw_setrxabort(sc->sc_ah, 0);
-				sc->ps_flags &= ~(PS_WAIT_FOR_BEACON |
-						  PS_WAIT_FOR_CAB |
-						  PS_WAIT_FOR_PSPOLL_DATA |
-						  PS_WAIT_FOR_TX_ACK);
-				if (ah->imask & ATH9K_INT_TIM_TIMER) {
-					ah->imask &= ~ATH9K_INT_TIM_TIMER;
-					ath9k_hw_set_interrupts(sc->sc_ah,
-							ah->imask);
-				}
-			}
-		}
+		if (conf->flags & IEEE80211_CONF_PS)
+			ath9k_enable_ps(sc);
+		else
+			ath9k_disable_ps(sc);
 		spin_unlock_irqrestore(&sc->sc_pm_lock, flags);
 	}
 
