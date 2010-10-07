@@ -486,6 +486,7 @@ static struct iwl_base_params iwl6000_base_params = {
 	.sensitivity_calib_by_driver = true,
 	.chain_noise_calib_by_driver = true,
 };
+
 static struct iwl_base_params iwl6050_base_params = {
 	.eeprom_size = OTP_LOW_IMAGE_SIZE,
 	.num_of_queues = IWLAGN_NUM_QUEUES,
