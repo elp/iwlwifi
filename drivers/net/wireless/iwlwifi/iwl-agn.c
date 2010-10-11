@@ -57,7 +57,7 @@
 #include "iwl-io.h"
 #include "iwl-helpers.h"
 #include "iwl-sta.h"
-#include "iwl-calib.h"
+#include "iwl-agn-calib.h"
 #include "iwl-agn.h"
 
 
@@ -91,14 +91,14 @@ static int iwlagn_ant_coupling;
 static bool iwlagn_bt_ch_announce = 1;
 
 /**
- * iwl_commit_rxon - commit staging_rxon to hardware
+ * iwlagn_commit_rxon - commit staging_rxon to hardware
  *
  * The RXON command in staging_rxon is committed to the hardware and
  * the active_rxon structure is updated with the new data.  This
  * function correctly transitions out of the RXON_ASSOC_MSK state if
  * a HW tune is required based on the RXON structure changes.
  */
-int iwl_commit_rxon(struct iwl_priv *priv, struct iwl_rxon_context *ctx)
+int iwlagn_commit_rxon(struct iwl_priv *priv, struct iwl_rxon_context *ctx)
 {
 	/* cast away the const for active_rxon in this function */
 	struct iwl_rxon_cmd *active_rxon = (void *)&ctx->active;
@@ -933,22 +933,6 @@ static void iwl_rx_card_state_notif(struct iwl_priv *priv,
 			test_bit(STATUS_RF_KILL_HW, &priv->status));
 	else
 		wake_up_interruptible(&priv->wait_command_queue);
-}
-
-int iwl_set_pwr_src(struct iwl_priv *priv, enum iwl_pwr_src src)
-{
-	if (src == IWL_PWR_SRC_VAUX) {
-		if (pci_pme_capable(priv->pci_dev, PCI_D3cold))
-			iwl_set_bits_mask_prph(priv, APMG_PS_CTRL_REG,
-					       APMG_PS_CTRL_VAL_PWR_SRC_VAUX,
-					       ~APMG_PS_CTRL_MSK_PWR_SRC);
-	} else {
-		iwl_set_bits_mask_prph(priv, APMG_PS_CTRL_REG,
-				       APMG_PS_CTRL_VAL_PWR_SRC_VMAIN,
-				       ~APMG_PS_CTRL_MSK_PWR_SRC);
-	}
-
-	return 0;
 }
 
 static void iwl_bg_tx_flush(struct work_struct *work)
@@ -2078,7 +2062,7 @@ static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context)
 	struct iwlagn_ucode_capabilities ucode_capa = {
 		.max_probe_length = 200,
 		.standard_phy_calibration_size =
-			IWL_MAX_STANDARD_PHY_CALIBRATE_TBL_SIZE,
+			IWL_DEFAULT_STANDARD_PHY_CALIBRATE_TBL_SIZE,
 	};
 
 	memset(&pieces, 0, sizeof(pieces));
@@ -2120,18 +2104,23 @@ static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context)
 	 * firmware filename ... but we don't check for that and only rely
 	 * on the API version read from firmware header from here on forward
 	 */
-	if (api_ver < api_min || api_ver > api_max) {
-		IWL_ERR(priv, "Driver unable to support your firmware API. "
-			  "Driver supports v%u, firmware is v%u.\n",
-			  api_max, api_ver);
-		goto try_again;
-	}
+	/* no api version check required for experimental uCode */
+	if (priv->fw_index != UCODE_EXPERIMENTAL_INDEX) {
+		if (api_ver < api_min || api_ver > api_max) {
+			IWL_ERR(priv,
+				"Driver unable to support your firmware API. "
+				"Driver supports v%u, firmware is v%u.\n",
+				api_max, api_ver);
+			goto try_again;
+		}
 
-	if (api_ver != api_max)
-		IWL_ERR(priv, "Firmware has old API version. Expected v%u, "
-			  "got v%u. New firmware can be obtained "
-			  "from http://www.intellinuxwireless.org.\n",
-			  api_max, api_ver);
+		if (api_ver != api_max)
+			IWL_ERR(priv,
+				"Firmware has old API version. Expected v%u, "
+				"got v%u. New firmware can be obtained "
+				"from http://www.intellinuxwireless.org.\n",
+				api_max, api_ver);
+	}
 
 	if (build)
 		sprintf(buildstr, " build %u%s", build,
@@ -2999,7 +2988,7 @@ static void __iwl_down(struct iwl_priv *priv)
 	iwl_clear_bit(priv, CSR_GP_CNTRL, CSR_GP_CNTRL_REG_FLAG_MAC_ACCESS_REQ);
 
 	/* Stop the device, and put it in low power state */
-	priv->cfg->ops->lib->apm_ops.stop(priv);
+	iwl_apm_stop(priv);
 
  exit:
 	memset(&priv->card_alive, 0, sizeof(struct iwl_alive_resp));
@@ -3089,7 +3078,7 @@ static int __iwl_up(struct iwl_priv *priv)
 	}
 
 	for_each_context(priv, ctx) {
-		ret = iwl_alloc_bcast_station(priv, ctx, true);
+		ret = iwlagn_alloc_bcast_station(priv, ctx);
 		if (ret) {
 			iwl_dealloc_bcast_stations(priv);
 			return ret;
@@ -4613,7 +4602,7 @@ static void __devexit iwl_pci_remove(struct pci_dev *pdev)
 	 * paths to avoid running iwl_down() at all before leaving driver.
 	 * This (inexpensive) call *makes sure* device is reset.
 	 */
-	priv->cfg->ops->lib->apm_ops.stop(priv);
+	iwl_apm_stop(priv);
 
 	iwl_tt_exit(priv);
 

@@ -61,6 +61,8 @@
 
 #define ATH9K_RSSI_BAD			-128
 
+#define ATH9K_NUM_CHANNELS	38
+
 /* Register read/write primitives */
 #define REG_WRITE(_ah, _reg, _val) \
 	ath9k_hw_common(_ah)->ops->write((_ah), (_val), (_reg))
@@ -618,7 +620,7 @@ struct ath_hw {
 	struct ath9k_hw_version hw_version;
 	struct ath9k_ops_config config;
 	struct ath9k_hw_capabilities caps;
-	struct ath9k_channel channels[38];
+	struct ath9k_channel channels[ATH9K_NUM_CHANNELS];
 	struct ath9k_channel *curchan;
 
 	union {
@@ -740,8 +742,6 @@ struct ath_hw {
 	int coarse_low[5];
 	int firpwr[5];
 	enum ath9k_ani_cmd ani_function;
-	struct ath_cycle_counters cc, cc_delta;
-	int32_t listen_time;
 
 	/* Bluetooth coexistance */
 	struct ath_btcoex_hw btcoex_hw;

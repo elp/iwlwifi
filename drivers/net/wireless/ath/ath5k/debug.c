@@ -60,6 +60,7 @@
 
 #include "base.h"
 #include "debug.h"
+#include "../debug.h"
 
 static unsigned int ath5k_debug;
 module_param_named(debug, ath5k_debug, uint, 0);
@@ -492,6 +493,7 @@ static ssize_t read_file_misc(struct file *file, char __user *user_buf,
 	char buf[700];
 	unsigned int len = 0;
 	u32 filt = ath5k_hw_get_rx_filter(sc->ah);
+	const char *tmp;
 
 	len += snprintf(buf+len, sizeof(buf)-len, "bssid-mask: %pM\n",
 			sc->bssidmask);
@@ -523,6 +525,14 @@ static ssize_t read_file_misc(struct file *file, char __user *user_buf,
 		len += snprintf(buf+len, sizeof(buf)-len, " RADARERR-5211\n");
 	else
 		len += snprintf(buf+len, sizeof(buf)-len, "\n");
+
+	tmp = ath_opmode_to_string(sc->opmode);
+	if (tmp)
+		len += snprintf(buf+len, sizeof(buf)-len, "opmode: %s\n",
+				tmp);
+	else
+		len += snprintf(buf+len, sizeof(buf)-len,
+				"opmode: UNKNOWN-%i\n", sc->opmode);
 
 	if (len > sizeof(buf))
 		len = sizeof(buf);
@@ -715,20 +725,21 @@ static ssize_t read_file_ani(struct file *file, char __user *user_buf,
 	len += snprintf(buf+len, sizeof(buf)-len,
 			"beacon RSSI average:\t%d\n",
 			sc->ah->ah_beacon_rssi_avg.avg);
+
+#define CC_PRINT(_struct, _field) \
+	_struct._field, \
+	_struct.cycles > 0 ? \
+	_struct._field*100/_struct.cycles : 0
+
 	len += snprintf(buf+len, sizeof(buf)-len, "profcnt tx\t\t%u\t(%d%%)\n",
-			as->pfc_tx,
-			as->pfc_cycles > 0 ?
-			as->pfc_tx*100/as->pfc_cycles : 0);
+			CC_PRINT(as->last_cc, tx_frame));
 	len += snprintf(buf+len, sizeof(buf)-len, "profcnt rx\t\t%u\t(%d%%)\n",
-			as->pfc_rx,
-			as->pfc_cycles > 0 ?
-			as->pfc_rx*100/as->pfc_cycles : 0);
+			CC_PRINT(as->last_cc, rx_frame));
 	len += snprintf(buf+len, sizeof(buf)-len, "profcnt busy\t\t%u\t(%d%%)\n",
-			as->pfc_busy,
-			as->pfc_cycles > 0 ?
-			as->pfc_busy*100/as->pfc_cycles : 0);
+			CC_PRINT(as->last_cc, rx_busy));
+#undef CC_PRINT
 	len += snprintf(buf+len, sizeof(buf)-len, "profcnt cycles\t\t%u\n",
-			as->pfc_cycles);
+			as->last_cc.cycles);
 	len += snprintf(buf+len, sizeof(buf)-len,
 			"listen time\t\t%d\tlast: %d\n",
 			as->listen_time, as->last_listen);
