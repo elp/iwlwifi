@@ -183,7 +183,6 @@ out:
 	mutex_unlock(&priv->mutex);
 	return ret;
 }
-EXPORT_SYMBOL(iwl_legacy_mac_config);
 
 void iwl_legacy_mac_reset_tsf(struct ieee80211_hw *hw)
 {
@@ -233,7 +232,6 @@ void iwl_legacy_mac_reset_tsf(struct ieee80211_hw *hw)
 
 	IWL_DEBUG_MAC80211(priv, "leave\n");
 }
-EXPORT_SYMBOL(iwl_legacy_mac_reset_tsf);
 
 static void iwl_ht_conf(struct iwl_priv *priv,
 			struct ieee80211_vif *vif)
@@ -557,4 +555,3 @@ void iwl_legacy_mac_bss_info_changed(struct ieee80211_hw *hw,
 
 	IWL_DEBUG_MAC80211(priv, "leave\n");
 }
-EXPORT_SYMBOL(iwl_legacy_mac_bss_info_changed);

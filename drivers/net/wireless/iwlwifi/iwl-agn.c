@@ -3473,36 +3473,6 @@ int iwlagn_mac_ampdu_action(struct ieee80211_hw *hw,
 	return ret;
 }
 
-static void iwlagn_mac_sta_notify(struct ieee80211_hw *hw,
-				  struct ieee80211_vif *vif,
-				  enum sta_notify_cmd cmd,
-				  struct ieee80211_sta *sta)
-{
-	struct iwl_priv *priv = hw->priv;
-	struct iwl_station_priv *sta_priv = (void *)sta->drv_priv;
-	int sta_id;
-
-	switch (cmd) {
-	case STA_NOTIFY_SLEEP:
-		WARN_ON(!sta_priv->client);
-		sta_priv->asleep = true;
-		if (atomic_read(&sta_priv->pending_frames) > 0)
-			ieee80211_sta_block_awake(hw, sta, true);
-		break;
-	case STA_NOTIFY_AWAKE:
-		WARN_ON(!sta_priv->client);
-		if (!sta_priv->asleep)
-			break;
-		sta_priv->asleep = false;
-		sta_id = iwl_sta_id(sta);
-		if (sta_id != IWL_INVALID_STATION)
-			iwl_sta_modify_ps_wake(priv, sta_id);
-		break;
-	default:
-		break;
-	}
-}
-
 int iwlagn_mac_sta_add(struct ieee80211_hw *hw,
 		       struct ieee80211_vif *vif,
 		       struct ieee80211_sta *sta)
@@ -3897,29 +3867,6 @@ static void iwl_uninit_drv(struct iwl_priv *priv)
 	kfree(priv->scan_cmd);
 }
 
-struct ieee80211_ops iwlagn_hw_ops = {
-	.tx = iwlagn_mac_tx,
-	.start = iwlagn_mac_start,
-	.stop = iwlagn_mac_stop,
-	.add_interface = iwl_mac_add_interface,
-	.remove_interface = iwl_mac_remove_interface,
-	.change_interface = iwl_mac_change_interface,
-	.config = iwlagn_mac_config,
-	.configure_filter = iwlagn_configure_filter,
-	.set_key = iwlagn_mac_set_key,
-	.update_tkip_key = iwlagn_mac_update_tkip_key,
-	.conf_tx = iwl_mac_conf_tx,
-	.bss_info_changed = iwlagn_bss_info_changed,
-	.ampdu_action = iwlagn_mac_ampdu_action,
-	.hw_scan = iwl_mac_hw_scan,
-	.sta_notify = iwlagn_mac_sta_notify,
-	.sta_add = iwlagn_mac_sta_add,
-	.sta_remove = iwl_mac_sta_remove,
-	.channel_switch = iwlagn_mac_channel_switch,
-	.flush = iwlagn_mac_flush,
-	.tx_last_beacon = iwl_mac_tx_last_beacon,
-};
-
 static void iwl_hw_detect(struct iwl_priv *priv)
 {
 	priv->hw_rev = _iwl_read32(priv, CSR_HW_REV);
@@ -3986,7 +3933,9 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	if (cfg->mod_params->disable_hw_scan) {
 		dev_printk(KERN_DEBUG, &(pdev->dev),
 			"sw scan support is deprecated\n");
+#ifdef CONFIG_IWL5000
 		iwlagn_hw_ops.hw_scan = NULL;
+#endif
 #ifdef CONFIG_IWL4965
 		iwl4965_hw_ops.hw_scan = NULL;
 #endif
