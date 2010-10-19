@@ -268,6 +268,7 @@ static int ath_rx_edma_init(struct ath_softc *sc, int nbufs)
 						bf->bf_buf_addr))) {
 				dev_kfree_skb_any(skb);
 				bf->bf_mpdu = NULL;
+				bf->bf_buf_addr = 0;
 				ath_print(common, ATH_DBG_FATAL,
 					"dma_mapping_error() on RX init\n");
 				error = -ENOMEM;
@@ -358,12 +359,12 @@ int ath_rx_init(struct ath_softc *sc, int nbufs)
 							bf->bf_buf_addr))) {
 				dev_kfree_skb_any(skb);
 				bf->bf_mpdu = NULL;
+				bf->bf_buf_addr = 0;
 				ath_print(common, ATH_DBG_FATAL,
 					  "dma_mapping_error() on RX init\n");
 				error = -ENOMEM;
 				goto err;
 			}
-			bf->bf_dmacontext = bf->bf_buf_addr;
 		}
 		sc->rx.rxlink = NULL;
 	}
@@ -393,6 +394,8 @@ void ath_rx_cleanup(struct ath_softc *sc)
 						common->rx_bufsize,
 						DMA_FROM_DEVICE);
 				dev_kfree_skb(skb);
+				bf->bf_buf_addr = 0;
+				bf->bf_mpdu = NULL;
 			}
 		}
 
@@ -960,36 +963,23 @@ static void ath9k_process_rssi(struct ath_common *common,
 			       struct ieee80211_hdr *hdr,
 			       struct ath_rx_status *rx_stats)
 {
+	struct ath_wiphy *aphy = hw->priv;
 	struct ath_hw *ah = common->ah;
-	struct ieee80211_sta *sta;
-	struct ath_node *an;
-	int last_rssi = ATH_RSSI_DUMMY_MARKER;
+	int last_rssi;
 	__le16 fc;
 
+	if (ah->opmode != NL80211_IFTYPE_STATION)
+		return;
+
 	fc = hdr->frame_control;
+	if (!ieee80211_is_beacon(fc) ||
+	    compare_ether_addr(hdr->addr3, common->curbssid))
+		return;
 
-	rcu_read_lock();
-	/*
-	 * XXX: use ieee80211_find_sta! This requires quite a bit of work
-	 * under the current ath9k virtual wiphy implementation as we have
-	 * no way of tying a vif to wiphy. Typically vifs are attached to
-	 * at least one sdata of a wiphy on mac80211 but with ath9k virtual
-	 * wiphy you'd have to iterate over every wiphy and each sdata.
-	 */
-	if (is_multicast_ether_addr(hdr->addr1))
-		sta = ieee80211_find_sta_by_ifaddr(hw, hdr->addr2, NULL);
-	else
-		sta = ieee80211_find_sta_by_ifaddr(hw, hdr->addr2, hdr->addr1);
+	if (rx_stats->rs_rssi != ATH9K_RSSI_BAD && !rx_stats->rs_moreaggr)
+		ATH_RSSI_LPF(aphy->last_rssi, rx_stats->rs_rssi);
 
-	if (sta) {
-		an = (struct ath_node *) sta->drv_priv;
-		if (rx_stats->rs_rssi != ATH9K_RSSI_BAD &&
-		   !rx_stats->rs_moreaggr)
-			ATH_RSSI_LPF(an->last_rssi, rx_stats->rs_rssi);
-		last_rssi = an->last_rssi;
-	}
-	rcu_read_unlock();
-
+	last_rssi = aphy->last_rssi;
 	if (likely(last_rssi != ATH_RSSI_DUMMY_MARKER))
 		rx_stats->rs_rssi = ATH_EP_RND(last_rssi,
 					      ATH_RSSI_EP_MULTIPLIER);
@@ -997,8 +987,7 @@ static void ath9k_process_rssi(struct ath_common *common,
 		rx_stats->rs_rssi = 0;
 
 	/* Update Beacon RSSI, this is used by ANI. */
-	if (ieee80211_is_beacon(fc))
-		ah->stats.avgbrssi = rx_stats->rs_rssi;
+	ah->stats.avgbrssi = rx_stats->rs_rssi;
 }
 
 /*
@@ -1734,12 +1723,12 @@ int ath_rx_tasklet(struct ath_softc *sc, int flush, bool hp)
 			  bf->bf_buf_addr))) {
 			dev_kfree_skb_any(requeue_skb);
 			bf->bf_mpdu = NULL;
+			bf->bf_buf_addr = 0;
 			ath_print(common, ATH_DBG_FATAL,
 				  "dma_mapping_error() on RX\n");
 			ath_rx_send_to_mac80211(hw, sc, skb, rxs);
 			break;
 		}
-		bf->bf_dmacontext = bf->bf_buf_addr;
 
 		/*
 		 * change the default rx antenna if rx diversity chooses the

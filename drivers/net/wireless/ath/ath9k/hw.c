@@ -1800,37 +1800,11 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah)
 		return -EINVAL;
 	}
 
-	bitmap_zero(pCap->wireless_modes, ATH9K_MODE_MAX);
+	if (eeval & AR5416_OPFLAGS_11A)
+		pCap->hw_caps |= ATH9K_HW_CAP_5GHZ;
 
-	if (eeval & AR5416_OPFLAGS_11A) {
-		set_bit(ATH9K_MODE_11A, pCap->wireless_modes);
-		if (ah->config.ht_enable) {
-			if (!(eeval & AR5416_OPFLAGS_N_5G_HT20))
-				set_bit(ATH9K_MODE_11NA_HT20,
-					pCap->wireless_modes);
-			if (!(eeval & AR5416_OPFLAGS_N_5G_HT40)) {
-				set_bit(ATH9K_MODE_11NA_HT40PLUS,
-					pCap->wireless_modes);
-				set_bit(ATH9K_MODE_11NA_HT40MINUS,
-					pCap->wireless_modes);
-			}
-		}
-	}
-
-	if (eeval & AR5416_OPFLAGS_11G) {
-		set_bit(ATH9K_MODE_11G, pCap->wireless_modes);
-		if (ah->config.ht_enable) {
-			if (!(eeval & AR5416_OPFLAGS_N_2G_HT20))
-				set_bit(ATH9K_MODE_11NG_HT20,
-					pCap->wireless_modes);
-			if (!(eeval & AR5416_OPFLAGS_N_2G_HT40)) {
-				set_bit(ATH9K_MODE_11NG_HT40PLUS,
-					pCap->wireless_modes);
-				set_bit(ATH9K_MODE_11NG_HT40MINUS,
-					pCap->wireless_modes);
-			}
-		}
-	}
+	if (eeval & AR5416_OPFLAGS_11G)
+		pCap->hw_caps |= ATH9K_HW_CAP_2GHZ;
 
 	pCap->tx_chainmask = ah->eep_ops->get_eeprom(ah, EEP_TX_MASK);
 	/*
@@ -2338,11 +2312,10 @@ static u32 rightmost_index(struct ath_gen_timer_table *timer_table, u32 *mask)
 	return timer_table->gen_timer_index[b];
 }
 
-u32 ath9k_hw_gettsf32(struct ath_hw *ah)
+static u32 ath9k_hw_gettsf32(struct ath_hw *ah)
 {
 	return REG_READ(ah, AR_TSF_L32);
 }
-EXPORT_SYMBOL(ath9k_hw_gettsf32);
 
 struct ath_gen_timer *ath_gen_timer_alloc(struct ath_hw *ah,
 					  void (*trigger)(void *),

@@ -164,18 +164,6 @@ enum ath_ini_subsys {
 	ATH_INI_NUM_SPLIT,
 };
 
-enum wireless_mode {
-	ATH9K_MODE_11A = 0,
-	ATH9K_MODE_11G,
-	ATH9K_MODE_11NA_HT20,
-	ATH9K_MODE_11NG_HT20,
-	ATH9K_MODE_11NA_HT40PLUS,
-	ATH9K_MODE_11NA_HT40MINUS,
-	ATH9K_MODE_11NG_HT40PLUS,
-	ATH9K_MODE_11NG_HT40MINUS,
-	ATH9K_MODE_MAX,
-};
-
 enum ath9k_hw_caps {
 	ATH9K_HW_CAP_HT                         = BIT(0),
 	ATH9K_HW_CAP_RFSILENT                   = BIT(1),
@@ -190,11 +178,12 @@ enum ath9k_hw_caps {
 	ATH9K_HW_CAP_SGI_20			= BIT(10),
 	ATH9K_HW_CAP_PAPRD			= BIT(11),
 	ATH9K_HW_CAP_ANT_DIV_COMB		= BIT(12),
+	ATH9K_HW_CAP_2GHZ			= BIT(13),
+	ATH9K_HW_CAP_5GHZ			= BIT(14),
 };
 
 struct ath9k_hw_capabilities {
 	u32 hw_caps; /* ATH9K_HW_CAP_* from ath9k_hw_caps */
-	DECLARE_BITMAP(wireless_modes, ATH9K_MODE_MAX); /* ATH9K_MODE_* */
 	u16 total_queues;
 	u16 keycache_size;
 	u16 low_5ghz_chan, high_5ghz_chan;
@@ -903,7 +892,6 @@ void ath9k_hw_gen_timer_stop(struct ath_hw *ah, struct ath_gen_timer *timer);
 
 void ath_gen_timer_free(struct ath_hw *ah, struct ath_gen_timer *timer);
 void ath_gen_timer_isr(struct ath_hw *hw);
-u32 ath9k_hw_gettsf32(struct ath_hw *ah);
 
 void ath9k_hw_name(struct ath_hw *ah, char *hw_name, size_t len);
 

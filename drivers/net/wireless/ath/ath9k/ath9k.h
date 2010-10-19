@@ -239,12 +239,11 @@ struct ath_buf {
 	struct sk_buff *bf_mpdu;	/* enclosing frame structure */
 	void *bf_desc;			/* virtual addr of desc */
 	dma_addr_t bf_daddr;		/* physical addr of desc */
-	dma_addr_t bf_buf_addr;		/* physical addr of data buffer */
+	dma_addr_t bf_buf_addr;	/* physical addr of data buffer, for DMA */
 	bool bf_stale;
 	bool bf_tx_aborted;
 	u16 bf_flags;
 	struct ath_buf_state bf_state;
-	dma_addr_t bf_dmacontext;
 	struct ath_wiphy *aphy;
 };
 
@@ -271,7 +270,6 @@ struct ath_node {
 	struct ath_atx_ac ac[WME_NUM_AC];
 	u16 maxampdu;
 	u8 mpdudensity;
-	int last_rssi;
 };
 
 #define AGGR_CLEANUP         BIT(1)
@@ -623,8 +621,6 @@ struct ath_softc {
 	struct ath_rx rx;
 	struct ath_tx tx;
 	struct ath_beacon beacon;
-	const struct ath_rate_table *cur_rate_table;
-	enum wireless_mode cur_rate_mode;
 	struct ieee80211_supported_band sbands[IEEE80211_NUM_BANDS];
 
 	struct ath_led radio_led;
@@ -665,6 +661,7 @@ struct ath_wiphy {
 	bool idle;
 	int chan_idx;
 	int chan_is_ht;
+	int last_rssi;
 };
 
 void ath9k_tasklet(unsigned long data);

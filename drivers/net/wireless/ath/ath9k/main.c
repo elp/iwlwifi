@@ -18,36 +18,6 @@
 #include "ath9k.h"
 #include "btcoex.h"
 
-static void ath_cache_conf_rate(struct ath_softc *sc,
-				struct ieee80211_conf *conf)
-{
-	switch (conf->channel->band) {
-	case IEEE80211_BAND_2GHZ:
-		if (conf_is_ht20(conf))
-			sc->cur_rate_mode = ATH9K_MODE_11NG_HT20;
-		else if (conf_is_ht40_minus(conf))
-			sc->cur_rate_mode = ATH9K_MODE_11NG_HT40MINUS;
-		else if (conf_is_ht40_plus(conf))
-			sc->cur_rate_mode = ATH9K_MODE_11NG_HT40PLUS;
-		else
-			sc->cur_rate_mode = ATH9K_MODE_11G;
-		break;
-	case IEEE80211_BAND_5GHZ:
-		if (conf_is_ht20(conf))
-			sc->cur_rate_mode = ATH9K_MODE_11NA_HT20;
-		else if (conf_is_ht40_minus(conf))
-			sc->cur_rate_mode = ATH9K_MODE_11NA_HT40MINUS;
-		else if (conf_is_ht40_plus(conf))
-			sc->cur_rate_mode = ATH9K_MODE_11NA_HT40PLUS;
-		else
-			sc->cur_rate_mode = ATH9K_MODE_11A;
-		break;
-	default:
-		BUG_ON(1);
-		break;
-	}
-}
-
 static void ath_update_txpow(struct ath_softc *sc)
 {
 	struct ath_hw *ah = sc->sc_ah;
@@ -121,6 +91,7 @@ bool ath9k_setpower(struct ath_softc *sc, enum ath9k_power_mode mode)
 
 void ath9k_ps_wakeup(struct ath_softc *sc)
 {
+	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
 	unsigned long flags;
 
 	spin_lock_irqsave(&sc->sc_pm_lock, flags);
@@ -129,17 +100,32 @@ void ath9k_ps_wakeup(struct ath_softc *sc)
 
 	ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_AWAKE);
 
+	/*
+	 * While the hardware is asleep, the cycle counters contain no
+	 * useful data. Better clear them now so that they don't mess up
+	 * survey data results.
+	 */
+	spin_lock(&common->cc_lock);
+	ath_hw_cycle_counters_update(common);
+	memset(&common->cc_survey, 0, sizeof(common->cc_survey));
+	spin_unlock(&common->cc_lock);
+
  unlock:
 	spin_unlock_irqrestore(&sc->sc_pm_lock, flags);
 }
 
 void ath9k_ps_restore(struct ath_softc *sc)
 {
+	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
 	unsigned long flags;
 
 	spin_lock_irqsave(&sc->sc_pm_lock, flags);
 	if (--sc->ps_usecount != 0)
 		goto unlock;
+
+	spin_lock(&common->cc_lock);
+	ath_hw_cycle_counters_update(common);
+	spin_unlock(&common->cc_lock);
 
 	if (sc->ps_idle)
 		ath9k_hw_setpower(sc->sc_ah, ATH9K_PM_FULL_SLEEP);
@@ -196,7 +182,8 @@ static void ath_update_survey_stats(struct ath_softc *sc)
 	struct ath_cycle_counters *cc = &common->cc_survey;
 	unsigned int div = common->clockrate * 1000;
 
-	ath_hw_cycle_counters_update(common);
+	if (ah->power_mode == ATH9K_PM_AWAKE)
+		ath_hw_cycle_counters_update(common);
 
 	if (cc->cycles > 0) {
 		survey->filled |= SURVEY_INFO_CHANNEL_TIME |
@@ -249,7 +236,7 @@ int ath_set_channel(struct ath_softc *sc, struct ieee80211_hw *hw,
 	 * hardware at the new frequency, and then re-enable
 	 * the relevant bits of the h/w.
 	 */
-	ath9k_hw_set_interrupts(ah, 0);
+	ath9k_hw_disable_interrupts(ah);
 	ath_drain_all_txq(sc, false);
 	stopped = ath_stoprecv(sc);
 
@@ -289,7 +276,6 @@ int ath_set_channel(struct ath_softc *sc, struct ieee80211_hw *hw,
 		goto ps_restore;
 	}
 
-	ath_cache_conf_rate(sc, &hw->conf);
 	ath_update_txpow(sc);
 	ath9k_hw_set_interrupts(ah, ah->imask);
 
@@ -566,7 +552,6 @@ static void ath_node_attach(struct ath_softc *sc, struct ieee80211_sta *sta)
 		an->maxampdu = 1 << (IEEE80211_HT_MAX_AMPDU_FACTOR +
 				     sta->ht_cap.ampdu_factor);
 		an->mpdudensity = parse_mpdudensity(sta->ht_cap.ampdu_density);
-		an->last_rssi = ATH_RSSI_DUMMY_MARKER;
 	}
 }
 
@@ -657,7 +642,7 @@ void ath9k_tasklet(unsigned long data)
 			ath_gen_timer_isr(sc->sc_ah);
 
 	/* re-enable hardware interrupt */
-	ath9k_hw_set_interrupts(ah, ah->imask);
+	ath9k_hw_enable_interrupts(ah);
 	ath9k_ps_restore(sc);
 }
 
@@ -756,14 +741,16 @@ irqreturn_t ath_isr(int irq, void *dev)
 		 * interrupt; otherwise it will continue to
 		 * fire.
 		 */
-		ath9k_hw_set_interrupts(ah, 0);
+		ath9k_hw_disable_interrupts(ah);
 		/*
 		 * Let the hal handle the event. We assume
 		 * it will clear whatever condition caused
 		 * the interrupt.
 		 */
+		spin_lock(&common->cc_lock);
 		ath9k_hw_proc_mib_event(ah);
-		ath9k_hw_set_interrupts(ah, ah->imask);
+		spin_unlock(&common->cc_lock);
+		ath9k_hw_enable_interrupts(ah);
 	}
 
 	if (!(ah->caps.hw_caps & ATH9K_HW_CAP_AUTOSLEEP))
@@ -780,8 +767,8 @@ chip_reset:
 	ath_debug_stat_interrupt(sc, status);
 
 	if (sched) {
-		/* turn off every interrupt except SWBA */
-		ath9k_hw_set_interrupts(ah, (ah->imask & ATH9K_INT_SWBA));
+		/* turn off every interrupt */
+		ath9k_hw_disable_interrupts(ah);
 		tasklet_schedule(&sc->intr_tq);
 	}
 
@@ -833,9 +820,11 @@ static u32 ath_get_extchanmode(struct ath_softc *sc,
 }
 
 static void ath9k_bss_assoc_info(struct ath_softc *sc,
+				 struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_bss_conf *bss_conf)
 {
+	struct ath_wiphy *aphy = hw->priv;
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_common *common = ath9k_hw_common(ah);
 
@@ -859,6 +848,7 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 		ath_beacon_config(sc, vif);
 
 		/* Reset rssi stats */
+		aphy->last_rssi = ATH_RSSI_DUMMY_MARKER;
 		sc->sc_ah->stats.avgbrssi = ATH_RSSI_DUMMY_MARKER;
 
 		sc->sc_flags |= SC_OP_ANI_RUN;
@@ -936,7 +926,7 @@ void ath_radio_disable(struct ath_softc *sc, struct ieee80211_hw *hw)
 	}
 
 	/* Disable interrupts */
-	ath9k_hw_set_interrupts(ah, 0);
+	ath9k_hw_disable_interrupts(ah);
 
 	ath_drain_all_txq(sc, false);	/* clear pending tx frames */
 	ath_stoprecv(sc);		/* turn off frame recv */
@@ -973,7 +963,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 
 	ieee80211_stop_queues(hw);
 
-	ath9k_hw_set_interrupts(ah, 0);
+	ath9k_hw_disable_interrupts(ah);
 	ath_drain_all_txq(sc, retry_tx);
 	ath_stoprecv(sc);
 	ath_flushrecv(sc);
@@ -994,8 +984,6 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 	 * that changes the channel so update any state that
 	 * might change as a result.
 	 */
-	ath_cache_conf_rate(sc, &hw->conf);
-
 	ath_update_txpow(sc);
 
 	if ((sc->sc_flags & SC_OP_BEACONS) || !(sc->sc_flags & (SC_OP_OFFCHANNEL)))
@@ -1202,8 +1190,6 @@ static int ath9k_start(struct ieee80211_hw *hw)
 	if (ah->caps.hw_caps & ATH9K_HW_CAP_HT)
 		ah->imask |= ATH9K_INT_CST;
 
-	ath_cache_conf_rate(sc, &hw->conf);
-
 	sc->sc_flags &= ~SC_OP_INVALID;
 
 	/* Disable BMISS interrupt when we're not associated */
@@ -1382,7 +1368,7 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 
 	/* make sure h/w will not generate any interrupt
 	 * before setting the invalid flag. */
-	ath9k_hw_set_interrupts(ah, 0);
+	ath9k_hw_disable_interrupts(ah);
 
 	if (!(sc->sc_flags & SC_OP_INVALID)) {
 		ath_drain_all_txq(sc, false);
@@ -1984,7 +1970,7 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 	if (changed & BSS_CHANGED_ASSOC) {
 		ath_print(common, ATH_DBG_CONFIG, "BSS Changed ASSOC %d\n",
 			bss_conf->assoc);
-		ath9k_bss_assoc_info(sc, vif, bss_conf);
+		ath9k_bss_assoc_info(sc, hw, vif, bss_conf);
 	}
 
 	mutex_unlock(&sc->mutex);
