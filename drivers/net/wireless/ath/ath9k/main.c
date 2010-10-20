@@ -23,7 +23,7 @@ static void ath_update_txpow(struct ath_softc *sc)
 	struct ath_hw *ah = sc->sc_ah;
 
 	if (sc->curtxpow != sc->config.txpowlimit) {
-		ath9k_hw_set_txpowerlimit(ah, sc->config.txpowlimit);
+		ath9k_hw_set_txpowerlimit(ah, sc->config.txpowlimit, false);
 		/* read back in case value is clamped */
 		sc->curtxpow = ath9k_hw_regulatory(ah)->power_limit;
 	}
@@ -181,6 +181,9 @@ static void ath_update_survey_stats(struct ath_softc *sc)
 	struct survey_info *survey = &sc->survey[pos];
 	struct ath_cycle_counters *cc = &common->cc_survey;
 	unsigned int div = common->clockrate * 1000;
+
+	if (!ah->curchan)
+		return;
 
 	if (ah->power_mode == ATH9K_PM_AWAKE)
 		ath_hw_cycle_counters_update(common);
