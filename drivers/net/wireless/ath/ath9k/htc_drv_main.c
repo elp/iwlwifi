@@ -1397,9 +1397,7 @@ static int ath9k_htc_config(struct ieee80211_hw *hw, u32 changed)
 		ath_print(common, ATH_DBG_CONFIG, "Set channel: %d MHz\n",
 			  curchan->center_freq);
 
-		ath9k_cmn_update_ichannel(&priv->ah->channels[pos],
-					  hw->conf.channel,
-					  hw->conf.channel_type);
+		ath9k_cmn_update_ichannel(hw, &priv->ah->channels[pos]);
 
 		if (ath9k_htc_set_channel(priv, hw, &priv->ah->channels[pos]) < 0) {
 			ath_print(common, ATH_DBG_FATAL,
