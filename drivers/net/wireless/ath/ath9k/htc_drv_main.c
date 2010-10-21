@@ -29,7 +29,7 @@ static void ath_update_txpow(struct ath9k_htc_priv *priv)
 	struct ath_hw *ah = priv->ah;
 
 	if (priv->curtxpow != priv->txpowlimit) {
-		ath9k_hw_set_txpowerlimit(ah, priv->txpowlimit);
+		ath9k_hw_set_txpowerlimit(ah, priv->txpowlimit, false);
 		/* read back in case value is clamped */
 		priv->curtxpow = ath9k_hw_regulatory(ah)->power_limit;
 	}
@@ -1397,7 +1397,9 @@ static int ath9k_htc_config(struct ieee80211_hw *hw, u32 changed)
 		ath_print(common, ATH_DBG_CONFIG, "Set channel: %d MHz\n",
 			  curchan->center_freq);
 
-		ath9k_cmn_update_ichannel(hw, &priv->ah->channels[pos]);
+		ath9k_cmn_update_ichannel(&priv->ah->channels[pos],
+					  hw->conf.channel,
+					  hw->conf.channel_type);
 
 		if (ath9k_htc_set_channel(priv, hw, &priv->ah->channels[pos]) < 0) {
 			ath_print(common, ATH_DBG_FATAL,
