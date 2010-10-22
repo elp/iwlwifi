@@ -23,7 +23,7 @@ static void ath_update_txpow(struct ath_softc *sc)
 	struct ath_hw *ah = sc->sc_ah;
 
 	if (sc->curtxpow != sc->config.txpowlimit) {
-		ath9k_hw_set_txpowerlimit(ah, sc->config.txpowlimit, false);
+		ath9k_hw_set_txpowerlimit(ah, sc->config.txpowlimit);
 		/* read back in case value is clamped */
 		sc->curtxpow = ath9k_hw_regulatory(ah)->power_limit;
 	}
@@ -182,9 +182,6 @@ static void ath_update_survey_stats(struct ath_softc *sc)
 	struct ath_cycle_counters *cc = &common->cc_survey;
 	unsigned int div = common->clockrate * 1000;
 
-	if (!ah->curchan)
-		return;
-
 	if (ah->power_mode == ATH9K_PM_AWAKE)
 		ath_hw_cycle_counters_update(common);
 
@@ -239,7 +236,7 @@ int ath_set_channel(struct ath_softc *sc, struct ieee80211_hw *hw,
 	 * hardware at the new frequency, and then re-enable
 	 * the relevant bits of the h/w.
 	 */
-	ath9k_hw_disable_interrupts(ah);
+	ath9k_hw_set_interrupts(ah, 0);
 	ath_drain_all_txq(sc, false);
 	stopped = ath_stoprecv(sc);
 
@@ -555,6 +552,7 @@ static void ath_node_attach(struct ath_softc *sc, struct ieee80211_sta *sta)
 		an->maxampdu = 1 << (IEEE80211_HT_MAX_AMPDU_FACTOR +
 				     sta->ht_cap.ampdu_factor);
 		an->mpdudensity = parse_mpdudensity(sta->ht_cap.ampdu_density);
+		an->last_rssi = ATH_RSSI_DUMMY_MARKER;
 	}
 }
 
@@ -645,7 +643,7 @@ void ath9k_tasklet(unsigned long data)
 			ath_gen_timer_isr(sc->sc_ah);
 
 	/* re-enable hardware interrupt */
-	ath9k_hw_enable_interrupts(ah);
+	ath9k_hw_set_interrupts(ah, ah->imask);
 	ath9k_ps_restore(sc);
 }
 
@@ -744,7 +742,7 @@ irqreturn_t ath_isr(int irq, void *dev)
 		 * interrupt; otherwise it will continue to
 		 * fire.
 		 */
-		ath9k_hw_disable_interrupts(ah);
+		ath9k_hw_set_interrupts(ah, 0);
 		/*
 		 * Let the hal handle the event. We assume
 		 * it will clear whatever condition caused
@@ -753,7 +751,7 @@ irqreturn_t ath_isr(int irq, void *dev)
 		spin_lock(&common->cc_lock);
 		ath9k_hw_proc_mib_event(ah);
 		spin_unlock(&common->cc_lock);
-		ath9k_hw_enable_interrupts(ah);
+		ath9k_hw_set_interrupts(ah, ah->imask);
 	}
 
 	if (!(ah->caps.hw_caps & ATH9K_HW_CAP_AUTOSLEEP))
@@ -770,8 +768,8 @@ chip_reset:
 	ath_debug_stat_interrupt(sc, status);
 
 	if (sched) {
-		/* turn off every interrupt */
-		ath9k_hw_disable_interrupts(ah);
+		/* turn off every interrupt except SWBA */
+		ath9k_hw_set_interrupts(ah, (ah->imask & ATH9K_INT_SWBA));
 		tasklet_schedule(&sc->intr_tq);
 	}
 
@@ -823,11 +821,9 @@ static u32 ath_get_extchanmode(struct ath_softc *sc,
 }
 
 static void ath9k_bss_assoc_info(struct ath_softc *sc,
-				 struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_bss_conf *bss_conf)
 {
-	struct ath_wiphy *aphy = hw->priv;
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_common *common = ath9k_hw_common(ah);
 
@@ -851,7 +847,6 @@ static void ath9k_bss_assoc_info(struct ath_softc *sc,
 		ath_beacon_config(sc, vif);
 
 		/* Reset rssi stats */
-		aphy->last_rssi = ATH_RSSI_DUMMY_MARKER;
 		sc->sc_ah->stats.avgbrssi = ATH_RSSI_DUMMY_MARKER;
 
 		sc->sc_flags |= SC_OP_ANI_RUN;
@@ -929,7 +924,7 @@ void ath_radio_disable(struct ath_softc *sc, struct ieee80211_hw *hw)
 	}
 
 	/* Disable interrupts */
-	ath9k_hw_disable_interrupts(ah);
+	ath9k_hw_set_interrupts(ah, 0);
 
 	ath_drain_all_txq(sc, false);	/* clear pending tx frames */
 	ath_stoprecv(sc);		/* turn off frame recv */
@@ -966,7 +961,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 
 	ieee80211_stop_queues(hw);
 
-	ath9k_hw_disable_interrupts(ah);
+	ath9k_hw_set_interrupts(ah, 0);
 	ath_drain_all_txq(sc, retry_tx);
 	ath_stoprecv(sc);
 	ath_flushrecv(sc);
@@ -1371,7 +1366,7 @@ static void ath9k_stop(struct ieee80211_hw *hw)
 
 	/* make sure h/w will not generate any interrupt
 	 * before setting the invalid flag. */
-	ath9k_hw_disable_interrupts(ah);
+	ath9k_hw_set_interrupts(ah, 0);
 
 	if (!(sc->sc_flags & SC_OP_INVALID)) {
 		ath_drain_all_txq(sc, false);
@@ -1973,7 +1968,7 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 	if (changed & BSS_CHANGED_ASSOC) {
 		ath_print(common, ATH_DBG_CONFIG, "BSS Changed ASSOC %d\n",
 			bss_conf->assoc);
-		ath9k_bss_assoc_info(sc, hw, vif, bss_conf);
+		ath9k_bss_assoc_info(sc, vif, bss_conf);
 	}
 
 	mutex_unlock(&sc->mutex);

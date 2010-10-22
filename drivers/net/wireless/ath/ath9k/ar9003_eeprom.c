@@ -2131,9 +2131,8 @@ static void ath9k_hw_ar9300_set_txpower(struct ath_hw *ah,
 					struct ath9k_channel *chan, u16 cfgCtl,
 					u8 twiceAntennaReduction,
 					u8 twiceMaxRegulatoryPower,
-					u8 powerLimit, bool test)
+					u8 powerLimit)
 {
-	struct ath_regulatory *regulatory = ath9k_hw_regulatory(ah);
 	struct ath_common *common = ath9k_hw_common(ah);
 	u8 targetPowerValT2[ar9300RateSize];
 	unsigned int i = 0;
@@ -2145,16 +2144,7 @@ static void ath9k_hw_ar9300_set_txpower(struct ath_hw *ah,
 					   twiceMaxRegulatoryPower,
 					   powerLimit);
 
-	regulatory->max_power_level = 0;
-	for (i = 0; i < ar9300RateSize; i++) {
-		if (targetPowerValT2[i] > regulatory->max_power_level)
-			regulatory->max_power_level = targetPowerValT2[i];
-	}
-
-	if (test)
-		return;
-
-	for (i = 0; i < ar9300RateSize; i++) {
+	while (i < ar9300RateSize) {
 		ath_print(common, ATH_DBG_EEPROM,
 			  "TPC[%02d] 0x%08x ", i, targetPowerValT2[i]);
 		i++;
@@ -2168,6 +2158,9 @@ static void ath9k_hw_ar9300_set_txpower(struct ath_hw *ah,
 			  "TPC[%02d] 0x%08x\n\n", i, targetPowerValT2[i]);
 		i++;
 	}
+
+	/* Write target power array to registers */
+	ar9003_hw_tx_power_regwrite(ah, targetPowerValT2);
 
 	/*
 	 * This is the TX power we send back to driver core,
@@ -2187,10 +2180,7 @@ static void ath9k_hw_ar9300_set_txpower(struct ath_hw *ah,
 		i = ALL_TARGET_HT20_0_8_16; /* ht20 */
 
 	ah->txpower_limit = targetPowerValT2[i];
-	regulatory->max_power_level = targetPowerValT2[i];
 
-	/* Write target power array to registers */
-	ar9003_hw_tx_power_regwrite(ah, targetPowerValT2);
 	ar9003_hw_calibration_apply(ah, chan->channel);
 }
 
