@@ -51,7 +51,6 @@
 #include "iwl-led.h"
 #include "iwl-3945-led.h"
 #include "iwl-3945-debugfs.h"
-#include "iwl-legacy.h"
 
 #define IWL_DECLARE_RATE_INFO(r, ip, in, rp, rn, pp, np)    \
 	[IWL_RATE_##r##M_INDEX] = { IWL_RATE_##r##M_PLCP,   \
