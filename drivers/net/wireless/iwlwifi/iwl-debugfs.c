@@ -86,6 +86,7 @@ static int iwl_dbgfs_open_file_generic(struct inode *inode, struct file *file)
 static const struct file_operations iwl_dbgfs_##name##_ops = {          \
 	.read = iwl_dbgfs_##name##_read,                       		\
 	.open = iwl_dbgfs_open_file_generic,                    	\
+	.llseek = generic_file_llseek,					\
 };
 
 #define DEBUGFS_WRITE_FILE_OPS(name)                                    \
@@ -93,6 +94,7 @@ static const struct file_operations iwl_dbgfs_##name##_ops = {          \
 static const struct file_operations iwl_dbgfs_##name##_ops = {          \
 	.write = iwl_dbgfs_##name##_write,                              \
 	.open = iwl_dbgfs_open_file_generic,                    	\
+	.llseek = generic_file_llseek,					\
 };
 
 
@@ -103,6 +105,7 @@ static const struct file_operations iwl_dbgfs_##name##_ops = {          \
 	.write = iwl_dbgfs_##name##_write,                              \
 	.read = iwl_dbgfs_##name##_read,                                \
 	.open = iwl_dbgfs_open_file_generic,                            \
+	.llseek = generic_file_llseek,					\
 };
 
 static ssize_t iwl_dbgfs_tx_statistics_read(struct file *file,
