@@ -70,8 +70,5 @@ void iwl_legacy_mac_bss_info_changed(struct ieee80211_hw *hw,
 				     struct ieee80211_vif *vif,
 				     struct ieee80211_bss_conf *bss_conf,
 				     u32 changes);
-void iwl_legacy_tx_cmd_protection(struct iwl_priv *priv,
-				struct ieee80211_tx_info *info,
-				__le16 fc, __le32 *tx_flags);
 
 #endif /* __iwl_legacy_h__ */
