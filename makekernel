@@ -1,0 +1,32 @@
+#sudo make clean
+#if test $? -ne 0 ; then 
+#  echo make clean failed.
+#  exit
+#fi
+
+sudo make -j4
+if test $? -ne 0 ; then 
+  echo make failed.
+  exit
+fi
+
+sudo make install
+if test $? -ne 0 ; then 
+  echo make install failed.
+  exit
+fi
+
+sudo make modules_install
+if test $? -ne 0 ; then 
+  echo make modules_isntall failed.
+  exit
+fi
+
+sudo mkinitramfs -o /boot/initrd.img-`cat include/config/kernel.release` `cat include/config/kernel.release`
+
+if test $? -ne 0 ; then 
+  echo make mkinitramfs failed.
+  exit
+fi
+
+echo Done.
