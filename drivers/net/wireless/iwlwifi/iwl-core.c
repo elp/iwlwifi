@@ -1143,8 +1143,16 @@ EXPORT_SYMBOL(iwl_apm_init);
 
 int iwl_set_tx_power(struct iwl_priv *priv, s8 tx_power, bool force)
 {
-	int ret = 0;
-	s8 prev_tx_power = priv->tx_power_user_lmt;
+	int ret;
+	s8 prev_tx_power;
+
+	lockdep_assert_held(&priv->mutex);
+
+	if (priv->tx_power_user_lmt == tx_power && !force)
+		return 0;
+
+	if (!priv->cfg->ops->lib->send_tx_power)
+		return -EOPNOTSUPP;
 
 	if (tx_power < IWLAGN_TX_POWER_TARGET_POWER_MIN) {
 		IWL_WARN(priv,
@@ -1161,30 +1169,26 @@ int iwl_set_tx_power(struct iwl_priv *priv, s8 tx_power, bool force)
 		return -EINVAL;
 	}
 
-	if (priv->tx_power_user_lmt != tx_power)
-		force = true;
+	if (!iwl_is_ready_rf(priv))
+		return -EIO;
 
-	/* if nic is not up don't send command */
-	if (iwl_is_ready_rf(priv)) {
-		priv->tx_power_user_lmt = tx_power;
-		if (force && priv->cfg->ops->lib->send_tx_power)
-			ret = priv->cfg->ops->lib->send_tx_power(priv);
-		else if (!priv->cfg->ops->lib->send_tx_power)
-			ret = -EOPNOTSUPP;
-		/*
-		 * if fail to set tx_power, restore the orig. tx power
-		 */
-		if (ret)
-			priv->tx_power_user_lmt = prev_tx_power;
+	/* scan complete use tx_power_next, need to be updated */
+	priv->tx_power_next = tx_power;
+	if (test_bit(STATUS_SCANNING, &priv->status) && !force) {
+		IWL_DEBUG_INFO(priv, "Deferring tx power set while scanning\n");
+		return 0;
 	}
 
-	/*
-	 * Even this is an async host command, the command
-	 * will always report success from uCode
-	 * So once driver can placing the command into the queue
-	 * successfully, driver can use priv->tx_power_user_lmt
-	 * to reflect the current tx power
-	 */
+	prev_tx_power = priv->tx_power_user_lmt;
+	priv->tx_power_user_lmt = tx_power;
+
+	ret = priv->cfg->ops->lib->send_tx_power(priv);
+
+	/* if fail to set tx_power, restore the orig. tx power */
+	if (ret) {
+		priv->tx_power_user_lmt = prev_tx_power;
+		priv->tx_power_next = prev_tx_power;
+	}
 	return ret;
 }
 EXPORT_SYMBOL(iwl_set_tx_power);
@@ -2043,8 +2047,9 @@ EXPORT_SYMBOL(iwl_add_beacon_time);
 
 #ifdef CONFIG_PM
 
-int iwl_pci_suspend(struct pci_dev *pdev, pm_message_t state)
+int iwl_pci_suspend(struct device *device)
 {
+	struct pci_dev *pdev = to_pci_dev(device);
 	struct iwl_priv *priv = pci_get_drvdata(pdev);
 
 	/*
@@ -2056,18 +2061,14 @@ int iwl_pci_suspend(struct pci_dev *pdev, pm_message_t state)
 	 */
 	iwl_apm_stop(priv);
 
-	pci_save_state(pdev);
-	pci_disable_device(pdev);
-	pci_set_power_state(pdev, PCI_D3hot);
-
 	return 0;
 }
 EXPORT_SYMBOL(iwl_pci_suspend);
 
-int iwl_pci_resume(struct pci_dev *pdev)
+int iwl_pci_resume(struct device *device)
 {
+	struct pci_dev *pdev = to_pci_dev(device);
 	struct iwl_priv *priv = pci_get_drvdata(pdev);
-	int ret;
 	bool hw_rfkill = false;
 
 	/*
@@ -2076,11 +2077,6 @@ int iwl_pci_resume(struct pci_dev *pdev)
 	 */
 	pci_write_config_byte(pdev, PCI_CFG_RETRY_TIMEOUT, 0x00);
 
-	pci_set_power_state(pdev, PCI_D0);
-	ret = pci_enable_device(pdev);
-	if (ret)
-		return ret;
-	pci_restore_state(pdev);
 	iwl_enable_interrupts(priv);
 
 	if (!(iwl_read32(priv, CSR_GP_CNTRL) &
@@ -2097,5 +2093,15 @@ int iwl_pci_resume(struct pci_dev *pdev)
 	return 0;
 }
 EXPORT_SYMBOL(iwl_pci_resume);
+
+const struct dev_pm_ops iwl_pm_ops = {
+	.suspend = iwl_pci_suspend,
+	.resume = iwl_pci_resume,
+	.freeze = iwl_pci_suspend,
+	.thaw = iwl_pci_resume,
+	.poweroff = iwl_pci_suspend,
+	.restore = iwl_pci_resume,
+};
+EXPORT_SYMBOL(iwl_pm_ops);
 
 #endif /* CONFIG_PM */

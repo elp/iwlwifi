@@ -3409,9 +3409,9 @@ static void iwl3945_configure_filter(struct ieee80211_hw *hw,
 	ctx->staging.filter_flags |= filter_or;
 
 	/*
-	 * Committing directly here breaks for some reason,
-	 * but we'll eventually commit the filter flags
-	 * change anyway.
+	 * Not committing directly because hardware can perform a scan,
+	 * but even if hw is ready, committing here breaks for some reason,
+	 * we'll eventually commit the filter flags change anyway.
 	 */
 
 	mutex_unlock(&priv->mutex);
@@ -3869,6 +3869,7 @@ static int iwl3945_init_drv(struct iwl_priv *priv)
 	priv->missed_beacon_threshold = IWL_MISSED_BEACON_THRESHOLD_DEF;
 
 	priv->tx_power_user_lmt = IWL_DEFAULT_TX_POWER;
+	priv->tx_power_next = IWL_DEFAULT_TX_POWER;
 
 	if (eeprom->version < EEPROM_3945_EEPROM_VERSION) {
 		IWL_WARN(priv, "Unsupported EEPROM version: 0x%04X\n",
@@ -4278,10 +4279,7 @@ static struct pci_driver iwl3945_driver = {
 	.id_table = iwl3945_hw_card_ids,
 	.probe = iwl3945_pci_probe,
 	.remove = __devexit_p(iwl3945_pci_remove),
-#ifdef CONFIG_PM
-	.suspend = iwl_pci_suspend,
-	.resume = iwl_pci_resume,
-#endif
+	.driver.pm = IWL_PM_OPS,
 };
 
 static int __init iwl3945_init(void)

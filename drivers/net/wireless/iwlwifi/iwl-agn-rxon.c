@@ -617,3 +617,4 @@ void iwlagn_post_scan(struct iwl_priv *priv)
 	if (priv->cfg->ops->hcmd->set_pan_params)
 		priv->cfg->ops->hcmd->set_pan_params(priv);
 }
+
