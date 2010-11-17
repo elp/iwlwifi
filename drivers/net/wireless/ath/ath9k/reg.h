@@ -866,7 +866,13 @@
 #define AR_DEVID_7010(_ah) \
 	(((_ah)->hw_version.devid == 0x7010) || \
 	 ((_ah)->hw_version.devid == 0x7015) || \
-	 ((_ah)->hw_version.devid == 0x9018))
+	 ((_ah)->hw_version.devid == 0x9018) || \
+	 ((_ah)->hw_version.devid == 0xA704) || \
+	 ((_ah)->hw_version.devid == 0x1200))
+
+#define AR9287_HTC_DEVID(_ah) \
+	(((_ah)->hw_version.devid == 0x7015) || \
+	 ((_ah)->hw_version.devid == 0x1200))
 
 #define AR_RADIO_SREV_MAJOR                   0xf0
 #define AR_RAD5133_SREV_MAJOR                 0xc0
@@ -1066,6 +1072,9 @@ enum {
 #define AR_INTR_PRIO_ASYNC_MASK   0x40c8
 #define AR_INTR_PRIO_SYNC_MASK    0x40cc
 #define AR_INTR_PRIO_ASYNC_ENABLE 0x40d4
+#define AR_ENT_OTP		  0x40d8
+#define AR_ENT_OTP_CHAIN2_DISABLE               0x00020000
+#define AR_ENT_OTP_MPSD		0x00800000
 
 #define AR_RTC_9300_PLL_DIV          0x000003ff
 #define AR_RTC_9300_PLL_DIV_S        0
