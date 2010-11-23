@@ -2290,7 +2290,7 @@ static const char *get_csr_string(int cmd)
 void iwl_dump_csr(struct iwl_priv *priv)
 {
 	int i;
-	u32 csr_tbl[] = {
+	static const u32 csr_tbl[] = {
 		CSR_HW_IF_CONFIG_REG,
 		CSR_INT_COALESCING,
 		CSR_INT,
@@ -2349,7 +2349,7 @@ int iwl_dump_fh(struct iwl_priv *priv, char **buf, bool display)
 	int pos = 0;
 	size_t bufsz = 0;
 #endif
-	u32 fh_tbl[] = {
+	static const u32 fh_tbl[] = {
 		FH_RSCSR_CHNL0_STTS_WPTR_REG,
 		FH_RSCSR_CHNL0_RBDCB_BASE_REG,
 		FH_RSCSR_CHNL0_WPTR,
