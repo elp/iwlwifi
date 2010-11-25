@@ -424,7 +424,6 @@ struct station_parameters {
  * @STATION_INFO_TX_RETRIES: @tx_retries filled
  * @STATION_INFO_TX_FAILED: @tx_failed filled
  * @STATION_INFO_RX_DROP_MISC: @rx_dropped_misc filled
- * @STATION_INFO_SIGNAL_AVG: @signal_avg filled
  */
 enum station_info_flags {
 	STATION_INFO_INACTIVE_TIME	= 1<<0,
@@ -440,7 +439,6 @@ enum station_info_flags {
 	STATION_INFO_TX_RETRIES		= 1<<10,
 	STATION_INFO_TX_FAILED		= 1<<11,
 	STATION_INFO_RX_DROP_MISC	= 1<<12,
-	STATION_INFO_SIGNAL_AVG		= 1<<13,
 };
 
 /**
@@ -487,7 +485,6 @@ struct rate_info {
  * @plid: mesh peer link id
  * @plink_state: mesh peer link state
  * @signal: signal strength of last received packet in dBm
- * @signal_avg: signal strength average in dBm
  * @txrate: current unicast bitrate to this station
  * @rx_packets: packets received from this station
  * @tx_packets: packets transmitted to this station
@@ -508,7 +505,6 @@ struct station_info {
 	u16 plid;
 	u8 plink_state;
 	s8 signal;
-	s8 signal_avg;
 	struct rate_info txrate;
 	u32 rx_packets;
 	u32 tx_packets;
@@ -927,7 +923,7 @@ struct cfg80211_disassoc_request {
  * @privacy: this is a protected network, keys will be configured
  *	after joining
  * @basic_rates: bitmap of basic rates to use when creating the IBSS
- * @mcast_rate: multicast tx rate (in 100 kbps)
+ * @mcast_rate: per-band multicast rate index + 1 (0: disabled)
  */
 struct cfg80211_ibss_params {
 	u8 *ssid;
@@ -939,7 +935,7 @@ struct cfg80211_ibss_params {
 	u32 basic_rates;
 	bool channel_fixed;
 	bool privacy;
-	int mcast_rate;
+	int mcast_rate[IEEE80211_NUM_BANDS];
 };
 
 /**
@@ -2604,6 +2600,18 @@ void cfg80211_mgmt_tx_status(struct net_device *dev, u64 cookie,
 void cfg80211_cqm_rssi_notify(struct net_device *dev,
 			      enum nl80211_cqm_rssi_threshold_event rssi_event,
 			      gfp_t gfp);
+
+/**
+ * cfg80211_cqm_pktloss_notify - notify userspace about packetloss to peer
+ * @dev: network device
+ * @peer: peer's MAC address
+ * @num_packets: how many packets were lost -- should be a fixed threshold
+ *	but probably no less than maybe 50, or maybe a throughput dependent
+ *	threshold (to account for temporary interference)
+ * @gfp: context flags
+ */
+void cfg80211_cqm_pktloss_notify(struct net_device *dev,
+				 const u8 *peer, u32 num_packets, gfp_t gfp);
 
 /* Logging, debugging and troubleshooting/diagnostic helpers. */
 
