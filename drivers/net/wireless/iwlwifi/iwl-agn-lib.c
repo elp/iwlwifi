@@ -2001,15 +2001,16 @@ static void iwlagn_set_kill_msk(struct iwl_priv *priv,
 				     struct iwl_bt_uart_msg *uart_msg)
 {
 	u8 kill_msk;
-	__le32 bt_kill_ack_msg[2] = {
+	static const __le32 bt_kill_ack_msg[2] = {
 			IWLAGN_BT_KILL_ACK_MASK_DEFAULT,
 			IWLAGN_BT_KILL_ACK_CTS_MASK_SCO };
-	__le32 bt_kill_cts_msg[2] = {
+	static const __le32 bt_kill_cts_msg[2] = {
 			IWLAGN_BT_KILL_CTS_MASK_DEFAULT,
 			IWLAGN_BT_KILL_ACK_CTS_MASK_SCO };
 
 	kill_msk = (BT_UART_MSG_FRAME3SCOESCO_MSK & uart_msg->frame3)
 		 ? 1 : 0;
+
 	if (priv->kill_ack_mask != bt_kill_ack_msg[kill_msk] ||
 	    priv->kill_cts_mask != bt_kill_cts_msg[kill_msk]) {
 		priv->bt_valid |= IWLAGN_BT_VALID_KILL_ACK_MASK;
