@@ -147,11 +147,7 @@ static int iwl1000_hw_set_hw_params(struct iwl_priv *priv)
 	priv->hw_params.rx_wrt_ptr_reg = FH_RSCSR_CHNL0_WPTR;
 
 	priv->hw_params.tx_chains_num = num_of_ant(priv->cfg->valid_tx_ant);
-	if (priv->cfg->rx_with_siso_diversity)
-		priv->hw_params.rx_chains_num = 1;
-	else
-		priv->hw_params.rx_chains_num =
-			num_of_ant(priv->cfg->valid_rx_ant);
+	priv->hw_params.rx_chains_num = num_of_ant(priv->cfg->valid_rx_ant);
 	priv->hw_params.valid_tx_ant = priv->cfg->valid_tx_ant;
 	priv->hw_params.valid_rx_ant = priv->cfg->valid_rx_ant;
 
@@ -316,7 +312,6 @@ struct iwl_cfg iwl100_bgn_cfg = {
 	.base_params = &iwl1000_base_params,
 	.ht_params = &iwl1000_ht_params,
 	.led_mode = IWL_LED_RF_STATE,
-	.rx_with_siso_diversity = true,
 };
 
 struct iwl_cfg iwl100_bg_cfg = {
@@ -330,7 +325,6 @@ struct iwl_cfg iwl100_bg_cfg = {
 	.mod_params = &iwlagn_mod_params,
 	.base_params = &iwl1000_base_params,
 	.led_mode = IWL_LED_RF_STATE,
-	.rx_with_siso_diversity = true,
 };
 
 MODULE_FIRMWARE(IWL1000_MODULE_FIRMWARE(IWL1000_UCODE_API_MAX));
