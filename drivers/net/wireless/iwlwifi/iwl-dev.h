@@ -34,6 +34,7 @@
 
 #include <linux/pci.h> /* for struct pci_device_id */
 #include <linux/kernel.h>
+#include <linux/leds.h>
 #include <net/ieee80211_radiotap.h>
 
 #include "iwl-eeprom.h"
@@ -995,7 +996,6 @@ struct reply_agg_tx_error_statistics {
 	u32 unknown;
 };
 
-#ifdef CONFIG_IWLWIFI_DEBUGFS
 /* management statistics */
 enum iwl_mgmt_stats {
 	MANAGEMENT_ASSOC_REQ = 0,
@@ -1026,16 +1026,13 @@ enum iwl_ctrl_stats {
 };
 
 struct traffic_stats {
+#ifdef CONFIG_IWLWIFI_DEBUGFS
 	u32 mgmt[MANAGEMENT_MAX];
 	u32 ctrl[CONTROL_MAX];
 	u32 data_cnt;
 	u64 data_bytes;
-};
-#else
-struct traffic_stats {
-	u64 data_bytes;
-};
 #endif
+};
 
 /*
  * iwl_switch_rxon: "channel switch" structure
@@ -1310,11 +1307,6 @@ struct iwl_priv {
 	struct iwl_init_alive_resp card_alive_init;
 	struct iwl_alive_resp card_alive;
 
-	unsigned long last_blink_time;
-	u8 last_blink_rate;
-	u8 allow_blinking;
-	u64 led_tpt;
-
 	u16 active_rate;
 
 	u8 start_calib;
@@ -1547,6 +1539,10 @@ struct iwl_priv {
 	bool hw_ready;
 
 	struct iwl_event_log event_log;
+
+	struct led_classdev led;
+	unsigned long blink_on, blink_off;
+	bool led_registered;
 }; /*iwl_priv */
 
 static inline void iwl_txq_ctx_activate(struct iwl_priv *priv, int txq_id)
