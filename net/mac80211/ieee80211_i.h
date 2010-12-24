@@ -631,6 +631,7 @@ enum queue_stop_reason {
 	IEEE80211_QUEUE_STOP_REASON_SKB_ADD,
 };
 
+#ifdef CONFIG_MAC80211_LEDS
 struct tpt_led_trigger {
 	struct led_trigger trig;
 	char name[32];
@@ -642,6 +643,7 @@ struct tpt_led_trigger {
 	unsigned int active, want;
 	bool running;
 };
+#endif
 
 /**
  * mac80211 scan flags - currently active scan mode
@@ -938,6 +940,15 @@ struct ieee80211_local {
 	} debugfs;
 #endif
 
+	struct ieee80211_channel *hw_roc_channel;
+	struct net_device *hw_roc_dev;
+	struct sk_buff *hw_roc_skb;
+	struct work_struct hw_roc_start, hw_roc_done;
+	enum nl80211_channel_type hw_roc_channel_type;
+	unsigned int hw_roc_duration;
+	u32 hw_roc_cookie;
+	bool hw_roc_for_tx;
+
 	/* dummy netdev for use w/ NAPI */
 	struct net_device napi_dev;
 
@@ -1129,6 +1140,7 @@ void ieee80211_offchannel_stop_beaconing(struct ieee80211_local *local);
 void ieee80211_offchannel_stop_station(struct ieee80211_local *local);
 void ieee80211_offchannel_return(struct ieee80211_local *local,
 				 bool enable_beaconing);
+void ieee80211_hw_roc_setup(struct ieee80211_local *local);
 
 /* interface handling */
 int ieee80211_iface_init(void);
