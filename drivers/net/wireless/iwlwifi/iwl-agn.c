@@ -444,7 +444,7 @@ static void iwl_rx_reply_alive(struct iwl_priv *priv,
 		       palive->is_valid, palive->ver_type,
 		       palive->ver_subtype);
 
-	if (palive->ver_subtype == INITIALIZE_SUBTYPE) {
+	if (palive->ver_subtype != RUNTIME_SUBTYPE) {
 		IWL_DEBUG_INFO(priv, "Initialization Alive received.\n");
 		memcpy(&priv->card_alive_init,
 		       &pkt->u.alive_frame,

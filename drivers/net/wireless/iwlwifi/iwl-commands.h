@@ -450,7 +450,7 @@ struct iwl_tx_ant_config_cmd {
  *****************************************************************************/
 
 #define UCODE_VALID_OK	cpu_to_le32(0x1)
-#define INITIALIZE_SUBTYPE    (9)
+#define RUNTIME_SUBTYPE (1)
 
 /*
  * ("Initialize") REPLY_ALIVE = 0x1 (response only, not a command)
