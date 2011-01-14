@@ -169,7 +169,7 @@ static void ath_tx_flush_tid(struct ath_softc *sc, struct ath_atx_tid *tid)
 			ath_tx_update_baw(sc, tid, fi->seqno);
 			ath_tx_complete_buf(sc, bf, txq, &bf_head, &ts, 0, 0);
 		} else {
-			ath_tx_send_normal(sc, txq, tid, &bf_head);
+			ath_tx_send_normal(sc, txq, NULL, &bf_head);
 		}
 		spin_lock_bh(&txq->axq_lock);
 	}
@@ -856,7 +856,10 @@ int ath_tx_aggr_start(struct ath_softc *sc, struct ieee80211_sta *sta,
 
 	txtid->state |= AGGR_ADDBA_PROGRESS;
 	txtid->paused = true;
-	*ssn = txtid->seq_start;
+	*ssn = txtid->seq_start = txtid->seq_next;
+
+	memset(txtid->tx_buf, 0, sizeof(txtid->tx_buf));
+	txtid->baw_head = txtid->baw_tail = 0;
 
 	return 0;
 }
