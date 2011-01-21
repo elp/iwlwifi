@@ -548,6 +548,12 @@ static void ath_node_attach(struct ath_softc *sc, struct ieee80211_sta *sta)
 	struct ath_hw *ah = sc->sc_ah;
 	an = (struct ath_node *)sta->drv_priv;
 
+#ifdef CONFIG_ATH9K_DEBUGFS
+	spin_lock(&sc->nodes_lock);
+	list_add(&an->list, &sc->nodes);
+	spin_unlock(&sc->nodes_lock);
+	an->sta = sta;
+#endif
 	if ((ah->caps.hw_caps) & ATH9K_HW_CAP_APM)
 		sc->sc_flags |= SC_OP_ENABLE_APM;
 
@@ -562,6 +568,13 @@ static void ath_node_attach(struct ath_softc *sc, struct ieee80211_sta *sta)
 static void ath_node_detach(struct ath_softc *sc, struct ieee80211_sta *sta)
 {
 	struct ath_node *an = (struct ath_node *)sta->drv_priv;
+
+#ifdef CONFIG_ATH9K_DEBUGFS
+	spin_lock(&sc->nodes_lock);
+	list_del(&an->list);
+	spin_unlock(&sc->nodes_lock);
+	an->sta = NULL;
+#endif
 
 	if (sc->sc_flags & SC_OP_TXAGGR)
 		ath_tx_node_cleanup(sc, an);
@@ -595,14 +608,12 @@ void ath9k_tasklet(unsigned long data)
 	u32 status = sc->intrstatus;
 	u32 rxmask;
 
-	ath9k_ps_wakeup(sc);
-
 	if (status & ATH9K_INT_FATAL) {
 		ath_reset(sc, true);
-		ath9k_ps_restore(sc);
 		return;
 	}
 
+	ath9k_ps_wakeup(sc);
 	spin_lock(&sc->sc_pcu_lock);
 
 	/*
@@ -980,6 +991,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 	/* Stop ANI */
 	del_timer_sync(&common->ani.timer);
 
+	ath9k_ps_wakeup(sc);
 	spin_lock_bh(&sc->sc_pcu_lock);
 
 	ieee80211_stop_queues(hw);
@@ -1026,6 +1038,7 @@ int ath_reset(struct ath_softc *sc, bool retry_tx)
 
 	/* Start ANI */
 	ath_start_ani(common);
+	ath9k_ps_restore(sc);
 
 	return r;
 }
@@ -1848,7 +1861,9 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 skip_chan_change:
 	if (changed & IEEE80211_CONF_CHANGE_POWER) {
 		sc->config.txpowlimit = 2 * conf->power_level;
+		ath9k_ps_wakeup(sc);
 		ath_update_txpow(sc);
+		ath9k_ps_restore(sc);
 	}
 
 	spin_lock_bh(&sc->wiphy_lock);
