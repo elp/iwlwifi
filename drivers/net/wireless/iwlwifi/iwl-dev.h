@@ -36,6 +36,7 @@
 #include <linux/kernel.h>
 #include <linux/leds.h>
 #include <linux/wait.h>
+#include <linux/leds.h>
 #include <net/ieee80211_radiotap.h>
 
 #include "iwl-eeprom.h"
