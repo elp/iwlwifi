@@ -1111,11 +1111,6 @@ struct iwl_event_log {
 /* BT Antenna Coupling Threshold (dB) */
 #define IWL_BT_ANTENNA_COUPLING_THRESHOLD	(35)
 
-/* Firmware reload counter and Timestamp */
-#define IWL_MIN_RELOAD_DURATION		1000 /* 1000 ms */
-#define IWL_MAX_CONTINUE_RELOAD_CNT	4
-
-
 enum iwl_reset {
 	IWL_RF_RESET = 0,
 	IWL_FW_RESET,
@@ -1267,10 +1262,6 @@ struct iwl_priv {
 
 	/* force reset */
 	struct iwl_force_reset force_reset[IWL_MAX_FORCE_RESET];
-
-	/* firmware reload counter and timestamp */
-	unsigned long reload_jiffies;
-	int reload_count;
 
 	/* we allocate array of iwl_channel_info for NIC's valid channels.
 	 *    Access via channel # using indirect index array */
