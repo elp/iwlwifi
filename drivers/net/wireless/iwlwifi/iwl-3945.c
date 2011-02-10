@@ -408,7 +408,7 @@ static void iwl3945_accumulative_statistics(struct iwl_priv *priv,
  * When the plcp error is exceeding the thresholds, reset the radio
  * to improve the throughput.
  */
-static bool iwl3945_good_plcp_health(struct iwl_priv *priv,
+static bool __maybe_unused iwl3945_good_plcp_health(struct iwl_priv *priv,
 				struct iwl_rx_packet *pkt)
 {
 	bool rc = true;
