@@ -2995,7 +2995,7 @@ static int iwl_mac_offchannel_tx(struct ieee80211_hw *hw, struct sk_buff *skb,
  out:
 	mutex_unlock(&priv->mutex);
  free:
-	if (ret)
+	if (ret < 0)
 		kfree_skb(skb);
 
 	return ret;
