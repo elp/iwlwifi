@@ -410,6 +410,8 @@ static void ath9k_hw_init_defaults(struct ath_hw *ah)
 	ah->sta_id1_defaults =
 		AR_STA_ID1_CRPT_MIC_ENABLE |
 		AR_STA_ID1_MCAST_KSRCH;
+	if (AR_SREV_9100(ah))
+		ah->sta_id1_defaults |= AR_STA_ID1_AR9100_BA_FIX;
 	ah->enable_32kHz_clock = DONT_USE_32KHZ;
 	ah->slottime = 20;
 	ah->globaltxtimeout = (u32) -1;
@@ -1212,6 +1214,20 @@ static bool ath9k_hw_channel_change(struct ath_hw *ah,
 	return true;
 }
 
+static void ath9k_hw_apply_gpio_override(struct ath_hw *ah)
+{
+	u32 gpio_mask = ah->gpio_mask;
+	int i;
+
+	for (i = 0; gpio_mask; i++, gpio_mask >>= 1) {
+		if (!(gpio_mask & 1))
+			continue;
+
+		ath9k_hw_cfg_output(ah, i, AR_GPIO_OUTPUT_MUX_AS_OUTPUT);
+		ath9k_hw_set_gpio(ah, i, !!(ah->gpio_val & BIT(i)));
+	}
+}
+
 bool ath9k_hw_check_alive(struct ath_hw *ah)
 {
 	int count = 50;
@@ -1499,6 +1515,8 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 
 	if (AR_SREV_9300_20_OR_LATER(ah))
 		ar9003_hw_bb_watchdog_config(ah);
+
+	ath9k_hw_apply_gpio_override(ah);
 
 	return 0;
 }
@@ -1851,6 +1869,8 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah)
 	    !(AR_SREV_9271(ah)))
 		/* CB71: GPIO 0 is pulled down to indicate 3 rx chains */
 		pCap->rx_chainmask = ath9k_hw_gpio_get(ah, 0) ? 0x5 : 0x7;
+	else if (AR_SREV_9100(ah))
+		pCap->rx_chainmask = 0x7;
 	else
 		/* Use rx_chainmask from EEPROM. */
 		pCap->rx_chainmask = ah->eep_ops->get_eeprom(ah, EEP_RX_MASK);

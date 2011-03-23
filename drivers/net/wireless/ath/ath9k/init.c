@@ -15,6 +15,7 @@
  */
 
 #include <linux/slab.h>
+#include <linux/ath9k_platform.h>
 
 #include "ath9k.h"
 
@@ -537,6 +538,7 @@ static void ath9k_init_misc(struct ath_softc *sc)
 static int ath9k_init_softc(u16 devid, struct ath_softc *sc, u16 subsysid,
 			    const struct ath_bus_ops *bus_ops)
 {
+	struct ath9k_platform_data *pdata = sc->dev->platform_data;
 	struct ath_hw *ah = NULL;
 	struct ath_common *common;
 	int ret = 0, i;
@@ -551,8 +553,14 @@ static int ath9k_init_softc(u16 devid, struct ath_softc *sc, u16 subsysid,
 	ah->hw_version.subsysid = subsysid;
 	sc->sc_ah = ah;
 
-	if (!sc->dev->platform_data)
+	if (!pdata) {
 		ah->ah_flags |= AH_USE_EEPROM;
+		sc->sc_ah->led_pin = -1;
+	} else {
+		sc->sc_ah->gpio_mask = pdata->gpio_mask;
+		sc->sc_ah->gpio_val = pdata->gpio_val;
+		sc->sc_ah->led_pin = pdata->led_pin;
+	}
 
 	common = ath9k_hw_common(ah);
 	common->ops = &ath9k_common_ops;
@@ -586,6 +594,9 @@ static int ath9k_init_softc(u16 devid, struct ath_softc *sc, u16 subsysid,
 	ret = ath9k_hw_init(ah);
 	if (ret)
 		goto err_hw;
+
+	if (pdata && pdata->macaddr)
+		memcpy(common->macaddr, pdata->macaddr, ETH_ALEN);
 
 	ret = ath9k_init_queues(sc);
 	if (ret)

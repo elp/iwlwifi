@@ -1725,8 +1725,8 @@ static void ath_tx_start_dma(struct ath_softc *sc, struct ath_buf *bf,
 	u8 tidno;
 
 	spin_lock_bh(&txctl->txq->axq_lock);
-
-	if (ieee80211_is_data_qos(hdr->frame_control) && txctl->an) {
+	if ((sc->sc_flags & SC_OP_TXAGGR) && txctl->an &&
+		ieee80211_is_data_qos(hdr->frame_control)) {
 		tidno = ieee80211_get_qos_ctl(hdr)[0] &
 			IEEE80211_QOS_CTL_TID_MASK;
 		tid = ATH_AN_2_TID(txctl->an, tidno);
@@ -2143,33 +2143,6 @@ static void ath_tx_complete_poll_work(struct work_struct *work)
 					break;
 				} else {
 					txq->axq_tx_inprogress = true;
-				}
-			} else {
-				/* If the queue has pending buffers, then it
-				 * should be doing tx work (and have axq_depth).
-				 * Shouldn't get to this state I think..but
-				 * we do.
-				 */
-				if (!(sc->sc_flags & (SC_OP_OFFCHANNEL)) &&
-				    (txq->pending_frames > 0 ||
-				     !list_empty(&txq->axq_acq) ||
-				     txq->stopped)) {
-					ath_err(ath9k_hw_common(sc->sc_ah),
-						"txq: %p axq_qnum: %u,"
-						" mac80211_qnum: %i"
-						" axq_link: %p"
-						" pending frames: %i"
-						" axq_acq empty: %i"
-						" stopped: %i"
-						" axq_depth: 0  Attempting to"
-						" restart tx logic.\n",
-						txq, txq->axq_qnum,
-						txq->mac80211_qnum,
-						txq->axq_link,
-						txq->pending_frames,
-						list_empty(&txq->axq_acq),
-						txq->stopped);
-					ath_txq_schedule(sc, txq);
 				}
 			}
 			spin_unlock_bh(&txq->axq_lock);

@@ -731,6 +731,7 @@ static int ar5008_hw_process_ini(struct ath_hw *ah,
 				 struct ath9k_channel *chan)
 {
 	struct ath_regulatory *regulatory = ath9k_hw_regulatory(ah);
+	struct ath_common *common = ath9k_hw_common(ah);
 	int i, regWrites = 0;
 	struct ieee80211_channel *channel = chan->chan;
 	u32 modesIndex, freqIndex;
@@ -807,7 +808,8 @@ static int ar5008_hw_process_ini(struct ath_hw *ah,
 		REG_WRITE(ah, reg, val);
 
 		if (reg >= 0x7800 && reg < 0x78a0
-		    && ah->config.analog_shiftreg) {
+		    && ah->config.analog_shiftreg
+		    && (common->bus_ops->ath_bus_type != ATH_USB)) {
 			udelay(100);
 		}
 
@@ -837,7 +839,8 @@ static int ar5008_hw_process_ini(struct ath_hw *ah,
 		REG_WRITE(ah, reg, val);
 
 		if (reg >= 0x7800 && reg < 0x78a0
-		    && ah->config.analog_shiftreg) {
+		    && ah->config.analog_shiftreg
+		    && (common->bus_ops->ath_bus_type != ATH_USB)) {
 			udelay(100);
 		}
 
