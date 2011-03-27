@@ -1254,7 +1254,6 @@ struct iwl_priv {
 
 	/* pci hardware address support */
 	void __iomem *hw_base;
-	u8   rev_id;
 
 	/* microcode/device supports multiple contexts */
 	u8 valid_contexts;
