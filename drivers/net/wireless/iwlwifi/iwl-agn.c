@@ -3685,7 +3685,6 @@ struct ieee80211_ops iwlagn_hw_ops = {
 static void iwl_hw_detect(struct iwl_priv *priv)
 {
 	priv->hw_rev = _iwl_read32(priv, CSR_HW_REV);
-	priv->hw_wa_rev = _iwl_read32(priv, CSR_HW_REV_WA_REG);
 	pci_read_config_byte(priv->pci_dev, PCI_REVISION_ID, &priv->rev_id);
 	IWL_DEBUG_INFO(priv, "HW Revision ID = 0x%X\n", priv->rev_id);
 }
