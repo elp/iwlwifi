@@ -669,7 +669,7 @@ static void iwl_rx_statistics(struct iwl_priv *priv,
 		tx = &stats->tx;
 		bt_activity = NULL;
 	} else {
-		WARN_ONCE(1, "len %d doesn't match BT (%ld) or normal (%ld)\n",
+		WARN_ONCE(1, "len %d doesn't match BT (%d) or normal (%d)\n",
 			  len, sizeof(struct iwl_bt_notif_statistics),
 			  sizeof(struct iwl_notif_statistics));
 		return;
