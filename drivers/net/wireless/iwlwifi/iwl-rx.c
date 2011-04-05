@@ -653,10 +653,12 @@ static void iwl_rx_statistics(struct iwl_priv *priv,
 		tx = &stats->tx;
 		bt_activity = &stats->general.activity;
 
+#ifdef CONFIG_IWLWIFI_DEBUGFS
 		/* handle this exception directly */
 		priv->statistics.num_bt_kills = stats->rx.general.num_bt_kills;
 		le32_add_cpu(&priv->statistics.accum_num_bt_kills,
 			     le32_to_cpu(stats->rx.general.num_bt_kills));
+#endif
 	} else if (len == sizeof(struct iwl_notif_statistics)) {
 		struct iwl_notif_statistics *stats;
 		stats = &pkt->u.stats;
