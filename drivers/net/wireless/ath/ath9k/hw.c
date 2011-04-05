@@ -156,25 +156,6 @@ u32 ath9k_hw_reverse_bits(u32 val, u32 n)
 	return retval;
 }
 
-bool ath9k_get_channel_edges(struct ath_hw *ah,
-			     u16 flags, u16 *low,
-			     u16 *high)
-{
-	struct ath9k_hw_capabilities *pCap = &ah->caps;
-
-	if (flags & CHANNEL_5GHZ) {
-		*low = pCap->low_5ghz_chan;
-		*high = pCap->high_5ghz_chan;
-		return true;
-	}
-	if ((flags & CHANNEL_2GHZ)) {
-		*low = pCap->low_2ghz_chan;
-		*high = pCap->high_2ghz_chan;
-		return true;
-	}
-	return false;
-}
-
 u16 ath9k_hw_computetxtime(struct ath_hw *ah,
 			   u8 phy, int kbps,
 			   u32 frameLen, u16 rateix,
@@ -1867,12 +1848,6 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah)
 	if (AR_SREV_9300_20_OR_LATER(ah))
 		ah->misc_mode |= AR_PCU_ALWAYS_PERFORM_KEYSEARCH;
 
-	pCap->low_2ghz_chan = 2312;
-	pCap->high_2ghz_chan = 2732;
-
-	pCap->low_5ghz_chan = 4920;
-	pCap->high_5ghz_chan = 6100;
-
 	common->crypt_caps |= ATH_CRYPT_CAP_CIPHER_AESCCM;
 
 	if (ah->hw_version.devid != AR2427_DEVID_PCIE)
@@ -2515,6 +2490,7 @@ static struct {
 	{ AR_SREV_VERSION_9287,         "9287" },
 	{ AR_SREV_VERSION_9271,         "9271" },
 	{ AR_SREV_VERSION_9300,         "9300" },
+	{ AR_SREV_VERSION_9485,         "9485" },
 };
 
 /* For devices with external radios */
