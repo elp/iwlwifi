@@ -484,6 +484,14 @@ int iwl_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 		return -ENOSPC;
 	}
 
+	/*
+	 * As we only have a single huge buffer, check that the command
+	 * is synchronous (otherwise buffers could end up being reused).
+	 */
+
+	if (WARN_ON((cmd->flags & CMD_ASYNC) && (cmd->flags & CMD_SIZE_HUGE)))
+		return -EINVAL;
+
 	spin_lock_irqsave(&priv->hcmd_lock, flags);
 
 	/* If this is a huge cmd, mark the huge flag also on the meta.flags
