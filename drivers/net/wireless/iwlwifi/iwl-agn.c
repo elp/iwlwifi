@@ -490,12 +490,14 @@ static void iwl_bg_bt_full_concurrency(struct work_struct *work)
 		container_of(work, struct iwl_priv, bt_full_concurrency);
 	struct iwl_rxon_context *ctx;
 
+	mutex_lock(&priv->mutex);
+
 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
-		return;
+		goto out;
 
 	/* dont send host command if rf-kill is on */
 	if (!iwl_is_ready_rf(priv))
-		return;
+		goto out;
 
 	IWL_DEBUG_INFO(priv, "BT coex in %s mode\n",
 		       priv->bt_full_concurrent ?
@@ -505,15 +507,15 @@ static void iwl_bg_bt_full_concurrency(struct work_struct *work)
 	 * LQ & RXON updated cmds must be sent before BT Config cmd
 	 * to avoid 3-wire collisions
 	 */
-	mutex_lock(&priv->mutex);
 	for_each_context(priv, ctx) {
 		if (priv->cfg->ops->hcmd->set_rxon_chain)
 			priv->cfg->ops->hcmd->set_rxon_chain(priv, ctx);
 		iwlcore_commit_rxon(priv, ctx);
 	}
-	mutex_unlock(&priv->mutex);
 
 	priv->cfg->ops->hcmd->send_bt_config(priv);
+out:
+	mutex_unlock(&priv->mutex);
 }
 
 /**
@@ -2359,9 +2361,6 @@ static void __iwl_down(struct iwl_priv *priv)
 	priv->bt_full_concurrent = false;
 	priv->bt_ci_compliance = 0;
 
-	/* Unblock any waiting calls */
-	wake_up_interruptible_all(&priv->wait_command_queue);
-
 	/* Wipe out the EXIT_PENDING status bit if we are not actually
 	 * exiting the module */
 	if (!exit_pending)
@@ -2590,8 +2589,12 @@ static void iwl_bg_init_alive_start(struct work_struct *data)
 	struct iwl_priv *priv =
 	    container_of(data, struct iwl_priv, init_alive_start.work);
 
-	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
+	mutex_lock(&priv->mutex);
+
+	if (test_bit(STATUS_EXIT_PENDING, &priv->status)) {
+		mutex_unlock(&priv->mutex);
 		return;
+	}
 
 	mutex_lock(&priv->mutex);
 	iwlagn_init_alive_start(priv);
@@ -2603,14 +2606,15 @@ static void iwl_bg_alive_start(struct work_struct *data)
 	struct iwl_priv *priv =
 	    container_of(data, struct iwl_priv, alive_start.work);
 
+	mutex_lock(&priv->mutex);
 	if (test_bit(STATUS_EXIT_PENDING, &priv->status))
-		return;
+		goto unlock;
 
 	/* enable dram interrupt */
 	iwl_reset_ict(priv);
 
-	mutex_lock(&priv->mutex);
 	iwl_alive_start(priv);
+unlock:
 	mutex_unlock(&priv->mutex);
 }
 
@@ -3230,21 +3234,22 @@ static void iwlagn_mac_channel_switch(struct ieee80211_hw *hw,
 
 	IWL_DEBUG_MAC80211(priv, "enter\n");
 
+	mutex_lock(&priv->mutex);
+
 	if (iwl_is_rfkill(priv))
-		goto out_exit;
+		goto out;
 
 	if (test_bit(STATUS_EXIT_PENDING, &priv->status) ||
 	    test_bit(STATUS_SCANNING, &priv->status))
-		goto out_exit;
+		goto out;
 
 	if (!iwl_is_associated_ctx(ctx))
-		goto out_exit;
+		goto out;
 
 	/* channel switch in progress */
 	if (priv->switch_rxon.switch_in_progress == true)
-		goto out_exit;
+		goto out;
 
-	mutex_lock(&priv->mutex);
 	if (priv->cfg->ops->lib->set_channel_switch) {
 
 		ch = channel->hw_value;
@@ -3300,7 +3305,6 @@ static void iwlagn_mac_channel_switch(struct ieee80211_hw *hw,
 	}
 out:
 	mutex_unlock(&priv->mutex);
-out_exit:
 	if (!priv->switch_rxon.switch_in_progress)
 		ieee80211_chswitch_done(ctx->vif, false);
 	IWL_DEBUG_MAC80211(priv, "leave\n");
@@ -3577,7 +3581,6 @@ static int iwl_init_drv(struct iwl_priv *priv)
 	INIT_LIST_HEAD(&priv->free_frames);
 
 	mutex_init(&priv->mutex);
-	mutex_init(&priv->sync_cmd_mutex);
 
 	priv->ieee_channels = NULL;
 	priv->ieee_rates = NULL;

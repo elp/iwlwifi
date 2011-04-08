@@ -260,6 +260,7 @@ enum {
 	CMD_SIZE_HUGE = (1 << 0),
 	CMD_ASYNC = (1 << 1),
 	CMD_WANT_SKB = (1 << 2),
+	CMD_MAPPED = (1 << 3),
 };
 
 #define DEF_CMD_PAYLOAD_SIZE 320
@@ -1247,7 +1248,6 @@ struct iwl_priv {
 	spinlock_t hcmd_lock;	/* protect hcmd */
 	spinlock_t reg_lock;	/* protect hw register access */
 	struct mutex mutex;
-	struct mutex sync_cmd_mutex; /* enable serialization of sync commands */
 
 	/* basic pci-network driver stuff */
 	struct pci_dev *pci_dev;
@@ -1415,6 +1415,7 @@ struct iwl_priv {
 		/* counts reply_tx error */
 		struct reply_tx_error_statistics reply_tx_stats;
 		struct reply_agg_tx_error_statistics reply_agg_tx_stats;
+
 		/* notification wait support */
 		struct list_head notif_waits;
 		spinlock_t notif_wait_lock;
@@ -1439,6 +1440,7 @@ struct iwl_priv {
 	bool bt_ch_announce;
 	bool bt_full_concurrent;
 	bool bt_ant_couple_ok;
+	bool bt_statistics;
 	__le32 kill_ack_mask;
 	__le32 kill_cts_mask;
 	__le16 bt_valid;

@@ -180,7 +180,6 @@ int iwl_send_cmd_sync(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 
 	IWL_DEBUG_INFO(priv, "Attempting to send sync command %s\n",
 			get_cmd_string(cmd->id));
-	mutex_lock(&priv->sync_cmd_mutex);
 
 	set_bit(STATUS_HCMD_ACTIVE, &priv->status);
 	IWL_DEBUG_INFO(priv, "Setting HCMD_ACTIVE for command %s\n",
@@ -191,7 +190,7 @@ int iwl_send_cmd_sync(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 		ret = cmd_idx;
 		IWL_ERR(priv, "Error sending %s: enqueue_hcmd failed: %d\n",
 			  get_cmd_string(cmd->id), ret);
-		goto out;
+		return ret;
 	}
 
 	ret = wait_event_interruptible_timeout(priv->wait_command_queue,
@@ -231,8 +230,7 @@ int iwl_send_cmd_sync(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 		goto cancel;
 	}
 
-	ret = 0;
-	goto out;
+	return 0;
 
 cancel:
 	if (cmd->flags & CMD_WANT_SKB) {
@@ -250,8 +248,7 @@ fail:
 		iwl_free_pages(priv, cmd->reply_page);
 		cmd->reply_page = 0;
 	}
-out:
-	mutex_unlock(&priv->sync_cmd_mutex);
+
 	return ret;
 }
 
