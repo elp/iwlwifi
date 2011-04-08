@@ -296,28 +296,24 @@ static const struct iwl_ops iwl2000_ops = {
 	.lib = &iwl2000_lib,
 	.hcmd = &iwlagn_hcmd,
 	.utils = &iwlagn_hcmd_utils,
-	.ieee80211_ops = &iwlagn_hw_ops,
 };
 
 static const struct iwl_ops iwl2030_ops = {
 	.lib = &iwl2000_lib,
 	.hcmd = &iwlagn_bt_hcmd,
 	.utils = &iwlagn_hcmd_utils,
-	.ieee80211_ops = &iwlagn_hw_ops,
 };
 
 static const struct iwl_ops iwl105_ops = {
 	.lib = &iwl2000_lib,
 	.hcmd = &iwlagn_hcmd,
 	.utils = &iwlagn_hcmd_utils,
-	.ieee80211_ops = &iwlagn_hw_ops,
 };
 
 static const struct iwl_ops iwl135_ops = {
 	.lib = &iwl2000_lib,
 	.hcmd = &iwlagn_bt_hcmd,
 	.utils = &iwlagn_hcmd_utils,
-	.ieee80211_ops = &iwlagn_hw_ops,
 };
 
 static struct iwl_base_params iwl2000_base_params = {
