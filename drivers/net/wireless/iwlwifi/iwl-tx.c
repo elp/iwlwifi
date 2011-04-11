@@ -470,6 +470,13 @@ int iwl_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 		return -EIO;
 	}
 
+	/*
+	 * As we only have a single huge buffer, check that the command
+	 * is synchronous (otherwise buffers could end up being reused).
+	 */
+	if (WARN_ON((cmd->flags & CMD_ASYNC) && (cmd->flags & CMD_SIZE_HUGE)))
+		return -EINVAL;
+
 	spin_lock_irqsave(&priv->hcmd_lock, flags);
 
 	if (iwl_queue_space(q) < ((cmd->flags & CMD_ASYNC) ? 2 : 1)) {
@@ -482,24 +489,6 @@ int iwl_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 			iwlagn_fw_error(priv, false);
 		}
 		return -ENOSPC;
-	}
-
-	/*
-	 * As we only have a single huge buffer, check that the command
-	 * is synchronous (otherwise buffers could end up being reused).
-	 */
-
-	if (WARN_ON((cmd->flags & CMD_ASYNC) && (cmd->flags & CMD_SIZE_HUGE)))
-		return -EINVAL;
-
-	spin_lock_irqsave(&priv->hcmd_lock, flags);
-
-	/* If this is a huge cmd, mark the huge flag also on the meta.flags
-	 * of the _original_ cmd. This is used for DMA mapping clean up.
-	 */
-	if (cmd->flags & CMD_SIZE_HUGE) {
-		idx = get_cmd_index(q, q->write_ptr, 0);
-		txq->meta[idx].flags = CMD_SIZE_HUGE;
 	}
 
 	idx = get_cmd_index(q, q->write_ptr, cmd->flags & CMD_SIZE_HUGE);
