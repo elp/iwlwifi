@@ -2596,7 +2596,6 @@ static void iwl_bg_init_alive_start(struct work_struct *data)
 		return;
 	}
 
-	mutex_lock(&priv->mutex);
 	iwlagn_init_alive_start(priv);
 	mutex_unlock(&priv->mutex);
 }
