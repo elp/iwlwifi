@@ -97,7 +97,7 @@ struct ieee80211_bss {
 	size_t supp_rates_len;
 
 	/*
-	 * During assocation, we save an ERP value from a probe response so
+	 * During association, we save an ERP value from a probe response so
 	 * that we can feed ERP info to the driver when handling the
 	 * association completes. these fields probably won't be up-to-date
 	 * otherwise, you probably don't want to use them.
@@ -488,8 +488,9 @@ struct ieee80211_if_mesh {
 	struct mesh_config mshcfg;
 	u32 mesh_seqnum;
 	bool accepting_plinks;
-	const u8 *vendor_ie;
-	u8 vendor_ie_len;
+	const u8 *ie;
+	u8 ie_len;
+	bool is_secure;
 };
 
 #ifdef CONFIG_MAC80211_MESH

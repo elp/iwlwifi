@@ -1415,7 +1415,6 @@ struct iwl_priv {
 		/* counts reply_tx error */
 		struct reply_tx_error_statistics reply_tx_stats;
 		struct reply_agg_tx_error_statistics reply_agg_tx_stats;
-
 		/* notification wait support */
 		struct list_head notif_waits;
 		spinlock_t notif_wait_lock;
@@ -1440,7 +1439,6 @@ struct iwl_priv {
 	bool bt_ch_announce;
 	bool bt_full_concurrent;
 	bool bt_ant_couple_ok;
-	bool bt_statistics;
 	__le32 kill_ack_mask;
 	__le32 kill_cts_mask;
 	__le16 bt_valid;

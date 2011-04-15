@@ -1294,7 +1294,7 @@ ieee80211_get_alt_retry_rate(const struct ieee80211_hw *hw,
  * acceleration (i.e. iwlwifi). Those drivers should provide update_tkip_key
  * handler.
  * The update_tkip_key() call updates the driver with the new phase 1 key.
- * This happens everytime the iv16 wraps around (every 65536 packets). The
+ * This happens every time the iv16 wraps around (every 65536 packets). The
  * set_key() call will happen only once for each key (unless the AP did
  * rekeying), it will not include a valid phase 1 key. The valid phase 1 key is
  * provided by update_tkip_key only. The trigger that makes mac80211 call this
@@ -1819,6 +1819,9 @@ enum ieee80211_ampdu_mlme_action {
  * @set_ringparam: Set tx and rx ring sizes.
  *
  * @get_ringparam: Get tx and rx ring current and maximum sizes.
+ *
+ * @tx_frames_pending: Check if there is any pending frame in the hardware
+ *	queues before entering power save.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw, struct sk_buff *skb);
@@ -1906,6 +1909,7 @@ struct ieee80211_ops {
 	int (*set_ringparam)(struct ieee80211_hw *hw, u32 tx, u32 rx);
 	void (*get_ringparam)(struct ieee80211_hw *hw,
 			      u32 *tx, u32 *tx_max, u32 *rx, u32 *rx_max);
+	bool (*tx_frames_pending)(struct ieee80211_hw *hw);
 };
 
 /**

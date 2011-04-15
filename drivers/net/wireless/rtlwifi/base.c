@@ -251,14 +251,16 @@ void rtl_init_rfkill(struct ieee80211_hw *hw)
 	bool blocked;
 	u8 valid = 0;
 
+	/*set init state to on */
+	rtlpriv->rfkill.rfkill_state = 1;
+	wiphy_rfkill_set_hw_state(hw->wiphy, 0);
+
 	radio_state = rtlpriv->cfg->ops->radio_onoff_checking(hw, &valid);
 
-	/*set init state to that of switch */
-	rtlpriv->rfkill.rfkill_state = radio_state;
-	printk(KERN_INFO "rtlwifi: wireless switch is %s\n",
-	       rtlpriv->rfkill.rfkill_state ? "on" : "off");
-
 	if (valid) {
+		printk(KERN_INFO "rtlwifi: wireless switch is %s\n",
+				rtlpriv->rfkill.rfkill_state ? "on" : "off");
+
 		rtlpriv->rfkill.rfkill_state = radio_state;
 
 		blocked = (rtlpriv->rfkill.rfkill_state == 1) ? 0 : 1;
@@ -520,7 +522,7 @@ void rtl_get_tcb_desc(struct ieee80211_hw *hw,
 			 *because hw will nerver use hw_rate
 			 *when tcb_desc->use_driver_rate = false
 			 *so we never set highest N rate here,
-			 *and N rate will all be controled by FW
+			 *and N rate will all be controlled by FW
 			 *when tcb_desc->use_driver_rate = false
 			 */
 			if (rtlmac->ht_enable) {

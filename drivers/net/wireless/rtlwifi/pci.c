@@ -374,7 +374,7 @@ static void rtl_pci_init_aspm(struct ieee80211_hw *hw)
 	 * 0 - Disable ASPM,
 	 * 1 - Enable ASPM without Clock Req,
 	 * 2 - Enable ASPM with Clock Req,
-	 * 3 - Alwyas Enable ASPM with Clock Req,
+	 * 3 - Always Enable ASPM with Clock Req,
 	 * 4 - Always Enable ASPM without Clock Req.
 	 * set defult to RTL8192CE:3 RTL8192E:2
 	 * */
@@ -1785,7 +1785,8 @@ void rtl_pci_disconnect(struct pci_dev *pdev)
 
 	rtl_pci_deinit(hw);
 	rtl_deinit_core(hw);
-	rtlpriv->cfg->ops->deinit_sw_leds(hw);
+	if (rtlpriv->cfg->ops->deinit_sw_leds)
+		rtlpriv->cfg->ops->deinit_sw_leds(hw);
 	_rtl_pci_io_handler_release(hw);
 	rtlpriv->cfg->ops->deinit_sw_vars(hw);
 

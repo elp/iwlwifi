@@ -47,9 +47,9 @@
  * Station entries are added by mac80211 when you establish a link with a
  * peer. This means different things for the different type of interfaces
  * we support. For a regular station this mean we add the AP sta when we
- * receive an assocation response from the AP. For IBSS this occurs when
+ * receive an association response from the AP. For IBSS this occurs when
  * get to know about a peer on the same IBSS. For WDS we add the sta for
- * the peer imediately upon device open. When using AP mode we add stations
+ * the peer immediately upon device open. When using AP mode we add stations
  * for each respective station upon request from userspace through nl80211.
  *
  * In order to remove a STA info structure, various sta_info_destroy_*()
@@ -228,6 +228,7 @@ struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 {
 	struct ieee80211_local *local = sdata->local;
 	struct sta_info *sta;
+	struct timespec uptime;
 	int i;
 
 	sta = kzalloc(sizeof(*sta) + local->hw.sta_data_size, gfp);
@@ -245,6 +246,8 @@ struct sta_info *sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 	sta->sdata = sdata;
 	sta->last_rx = jiffies;
 
+	do_posix_clock_monotonic_gettime(&uptime);
+	sta->last_connected = uptime.tv_sec;
 	ewma_init(&sta->avg_signal, 1024, 8);
 
 	if (sta_prepare_rate_control(local, sta, gfp)) {

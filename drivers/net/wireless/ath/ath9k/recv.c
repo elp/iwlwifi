@@ -75,7 +75,6 @@ static void ath_rx_buf_link(struct ath_softc *sc, struct ath_buf *bf)
 		*sc->rx.rxlink = bf->bf_daddr;
 
 	sc->rx.rxlink = &ds->ds_link;
-	ath9k_hw_rxena(ah);
 }
 
 static void ath_setdefantenna(struct ath_softc *sc, u32 antenna)
@@ -426,9 +425,7 @@ u32 ath_calcrxfilter(struct ath_softc *sc)
 	else
 		rfilt |= ATH9K_RX_FILTER_BEACON;
 
-	if ((AR_SREV_9280_20_OR_LATER(sc->sc_ah) ||
-	    AR_SREV_9285_12_OR_LATER(sc->sc_ah)) &&
-	    (sc->sc_ah->opmode == NL80211_IFTYPE_AP) &&
+	if ((sc->sc_ah->opmode == NL80211_IFTYPE_AP) ||
 	    (sc->rx.rxfilter & FIF_PSPOLL))
 		rfilt |= ATH9K_RX_FILTER_PSPOLL;
 
@@ -486,12 +483,12 @@ start_recv:
 bool ath_stoprecv(struct ath_softc *sc)
 {
 	struct ath_hw *ah = sc->sc_ah;
-	bool stopped;
+	bool stopped, reset = false;
 
 	spin_lock_bh(&sc->rx.rxbuflock);
 	ath9k_hw_abortpcurecv(ah);
 	ath9k_hw_setrxfilter(ah, 0);
-	stopped = ath9k_hw_stopdmarecv(ah);
+	stopped = ath9k_hw_stopdmarecv(ah, &reset);
 
 	if (sc->sc_ah->caps.hw_caps & ATH9K_HW_CAP_EDMA)
 		ath_edma_stop_recv(sc);
@@ -506,7 +503,7 @@ bool ath_stoprecv(struct ath_softc *sc)
 			"confusing the DMA engine when we start RX up\n");
 		ATH_DBG_WARN_ON_ONCE(!stopped);
 	}
-	return stopped;
+	return stopped || reset;
 }
 
 void ath_flushrecv(struct ath_softc *sc)
@@ -1767,6 +1764,7 @@ requeue:
 		} else {
 			list_move_tail(&bf->list, &sc->rx.rxbuf);
 			ath_rx_buf_link(sc, bf);
+			ath9k_hw_rxena(ah);
 		}
 	} while (1);
 
