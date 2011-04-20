@@ -164,10 +164,10 @@ static void iwl5000_set_ct_threshold(struct iwl_priv *priv)
 
 static int iwl5000_hw_set_hw_params(struct iwl_priv *priv)
 {
-	if (priv->cfg->mod_params->num_of_queues >= IWL_MIN_NUM_QUEUES &&
-	    priv->cfg->mod_params->num_of_queues <= IWLAGN_NUM_QUEUES)
+	if (iwlagn_mod_params.num_of_queues >= IWL_MIN_NUM_QUEUES &&
+	    iwlagn_mod_params.num_of_queues <= IWLAGN_NUM_QUEUES)
 		priv->cfg->base_params->num_of_queues =
-			priv->cfg->mod_params->num_of_queues;
+			iwlagn_mod_params.num_of_queues;
 
 	priv->hw_params.max_txq_num = priv->cfg->base_params->num_of_queues;
 	priv->hw_params.dma_chnl_num = FH50_TCSR_CHNL_NUM;
@@ -209,10 +209,10 @@ static int iwl5000_hw_set_hw_params(struct iwl_priv *priv)
 
 static int iwl5150_hw_set_hw_params(struct iwl_priv *priv)
 {
-	if (priv->cfg->mod_params->num_of_queues >= IWL_MIN_NUM_QUEUES &&
-	    priv->cfg->mod_params->num_of_queues <= IWLAGN_NUM_QUEUES)
+	if (iwlagn_mod_params.num_of_queues >= IWL_MIN_NUM_QUEUES &&
+	    iwlagn_mod_params.num_of_queues <= IWLAGN_NUM_QUEUES)
 		priv->cfg->base_params->num_of_queues =
-			priv->cfg->mod_params->num_of_queues;
+			iwlagn_mod_params.num_of_queues;
 
 	priv->hw_params.max_txq_num = priv->cfg->base_params->num_of_queues;
 	priv->hw_params.dma_chnl_num = FH50_TCSR_CHNL_NUM;
@@ -453,7 +453,6 @@ static struct iwl_ht_params iwl5000_ht_params = {
 	.eeprom_ver = EEPROM_5000_EEPROM_VERSION,		\
 	.eeprom_calib_ver = EEPROM_5000_TX_POWER_VERSION,	\
 	.ops = &iwl5000_ops,					\
-	.mod_params = &iwlagn_mod_params,			\
 	.base_params = &iwl5000_base_params,			\
 	.led_mode = IWL_LED_BLINK
 
@@ -497,7 +496,6 @@ struct iwl_cfg iwl5350_agn_cfg = {
 	.eeprom_ver = EEPROM_5050_EEPROM_VERSION,
 	.eeprom_calib_ver = EEPROM_5050_TX_POWER_VERSION,
 	.ops = &iwl5000_ops,
-	.mod_params = &iwlagn_mod_params,
 	.base_params = &iwl5000_base_params,
 	.ht_params = &iwl5000_ht_params,
 	.led_mode = IWL_LED_BLINK,
@@ -511,7 +509,6 @@ struct iwl_cfg iwl5350_agn_cfg = {
 	.eeprom_ver = EEPROM_5050_EEPROM_VERSION,		\
 	.eeprom_calib_ver = EEPROM_5050_TX_POWER_VERSION,	\
 	.ops = &iwl5150_ops,					\
-	.mod_params = &iwlagn_mod_params,			\
 	.base_params = &iwl5000_base_params,			\
 	.need_dc_calib = true,					\
 	.led_mode = IWL_LED_BLINK,				\
