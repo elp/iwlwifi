@@ -244,6 +244,17 @@ static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 	case IWL_TM_CMD_APP2DEV_REG_READ32:
 		val32 = iwl_read32(priv, ofs);
 		IWL_INFO(priv, "32bit value to read 0x%x\n", val32);
+
+		skb = cfg80211_testmode_alloc_reply_skb(hw->wiphy, 20);
+		if (!skb) {
+			IWL_DEBUG_INFO(priv, "Error allocating memory\n");
+			return -ENOMEM;
+		}
+		NLA_PUT_U32(skb, IWL_TM_ATTR_REG_VALUE32, val32);
+		status = cfg80211_testmode_reply(skb);
+		if (status < 0)
+			IWL_DEBUG_INFO(priv,
+				       "Error sending msg : %d\n", status);
 		break;
 	case IWL_TM_CMD_APP2DEV_REG_WRITE32:
 		if (!tb[IWL_TM_ATTR_REG_VALUE32]) {
@@ -271,19 +282,6 @@ static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 		return -ENOSYS;
 	}
 
-	if (nla_get_u32(tb[IWL_TM_ATTR_COMMAND]) ==
-					IWL_TM_CMD_APP2DEV_REG_READ32) {
-		skb = cfg80211_testmode_alloc_reply_skb(hw->wiphy, 20);
-		if (!skb) {
-			IWL_DEBUG_INFO(priv, "Error allocating memory\n");
-			return -ENOMEM;
-		}
-		NLA_PUT_U32(skb, IWL_TM_ATTR_REG_VALUE32, val32);
-		status = cfg80211_testmode_reply(skb);
-		if (status < 0)
-			IWL_DEBUG_INFO(priv,
-				       "Error sending msg : %d\n", status);
-	}
 	return status;
 
 nla_put_failure:
