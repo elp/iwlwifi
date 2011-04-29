@@ -191,7 +191,9 @@ static int iwl_testmode_ucode(struct ieee80211_hw *hw, struct nlattr **tb)
 
 	memset(&cmd, 0, sizeof(struct iwl_host_cmd));
 
-	if (!tb[IWL_TM_ATTR_COMMAND_FLAG] || !tb[IWL_TM_ATTR_UCODE_CMD_ID]) {
+	if (!tb[IWL_TM_ATTR_COMMAND_FLAG] ||
+	    !tb[IWL_TM_ATTR_UCODE_CMD_ID] ||
+	    !tb[IWL_TM_ATTR_UCODE_CMD_DATA]) {
 		IWL_DEBUG_INFO(priv,
 			"Error finding ucode command mandatory fields\n");
 		return -ENOMSG;
