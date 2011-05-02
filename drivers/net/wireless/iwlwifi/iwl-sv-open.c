@@ -86,7 +86,6 @@
  */
 static
 struct nla_policy iwl_testmode_gnl_msg_policy[IWL_TM_ATTR_MAX] = {
-	[IWL_TM_ATTR_COMMAND_FLAG] = { .type = NLA_U8, },
 	[IWL_TM_ATTR_COMMAND] = { .type = NLA_U32, },
 
 	[IWL_TM_ATTR_UCODE_CMD_ID] = { .type = NLA_U8, },
@@ -174,8 +173,8 @@ void iwl_testmode_init(struct iwl_priv *priv)
  * This function handles the user application commands to the ucode.
  *
  * It retrieves the mandatory fields IWL_TM_ATTR_UCODE_CMD_ID and
- * IWL_TM_ATTR_COMMAND_FLAG, and the optional field IWL_TM_ATTR_UCODE_CMD_DATA,
- * and calls to the handler to send the host command to the ucode.
+ * IWL_TM_ATTR_UCODE_CMD_DATA and calls to the handler to send the
+ * host command to the ucode.
  *
  * If any mandatory field is missing, -ENOMSG is replied to the user space
  * application; otherwise, the actual execution result of the host command to
@@ -191,15 +190,13 @@ static int iwl_testmode_ucode(struct ieee80211_hw *hw, struct nlattr **tb)
 
 	memset(&cmd, 0, sizeof(struct iwl_host_cmd));
 
-	if (!tb[IWL_TM_ATTR_COMMAND_FLAG] ||
-	    !tb[IWL_TM_ATTR_UCODE_CMD_ID] ||
+	if (!tb[IWL_TM_ATTR_UCODE_CMD_ID] ||
 	    !tb[IWL_TM_ATTR_UCODE_CMD_DATA]) {
 		IWL_DEBUG_INFO(priv,
 			"Error finding ucode command mandatory fields\n");
 		return -ENOMSG;
 	}
 
-	cmd.flags = nla_get_u8(tb[IWL_TM_ATTR_COMMAND_FLAG]);
 	cmd.id = nla_get_u8(tb[IWL_TM_ATTR_UCODE_CMD_ID]);
 	cmd.data = nla_data(tb[IWL_TM_ATTR_UCODE_CMD_DATA]);
 	cmd.len = nla_len(tb[IWL_TM_ATTR_UCODE_CMD_DATA]);

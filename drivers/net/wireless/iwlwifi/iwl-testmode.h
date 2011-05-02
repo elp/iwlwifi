@@ -105,11 +105,6 @@ enum iwl_tm_cmd_t {
 enum iwl_tm_attr_t {
 	IWL_TM_ATTR_NOT_APPLICABLE = 0,
 
-	/* Command flag. For the command from user space to kernel space,
-	 * it is to denote the attributes of the command */
-	IWL_TM_ATTR_COMMAND_FLAG,
-	/* bit 0: IWL_TESTMODE_CMD_ASYNC */
-
 	/* From user space to kernel space:
 	 * the command either destines to ucode, driver, or register;
 	 * See enum iwl_tm_cmd_t.
