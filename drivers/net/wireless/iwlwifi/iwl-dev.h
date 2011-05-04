@@ -111,8 +111,6 @@ struct iwl_cmd_meta {
 			 struct iwl_device_cmd *cmd,
 			 struct iwl_rx_packet *pkt);
 
-	/* The CMD_SIZE_HUGE flag bit indicates that the command
-	 * structure is stored at the end of the shared queue memory. */
 	u32 flags;
 
 	DEFINE_DMA_UNMAP_ADDR(mapping);
@@ -164,7 +162,7 @@ struct iwl_tx_info {
 
 struct iwl_tx_queue {
 	struct iwl_queue q;
-	void *tfds;
+	struct iwl_tfd *tfds;
 	struct iwl_device_cmd **cmd;
 	struct iwl_cmd_meta *meta;
 	struct iwl_tx_info *txb;
@@ -246,7 +244,6 @@ enum {
 	CMD_SYNC = 0,
 	CMD_SIZE_NORMAL = 0,
 	CMD_NO_SKB = 0,
-	CMD_SIZE_HUGE = (1 << 0),
 	CMD_ASYNC = (1 << 1),
 	CMD_WANT_SKB = (1 << 2),
 	CMD_MAPPED = (1 << 3),
@@ -258,8 +255,8 @@ enum {
  * struct iwl_device_cmd
  *
  * For allocation of the command and tx queues, this establishes the overall
- * size of the largest command we send to uCode, except for a scan command
- * (which is relatively huge; space is allocated separately).
+ * size of the largest command we send to uCode, except for commands that
+ * aren't fully copied and use other TFD space.
  */
 struct iwl_device_cmd {
 	struct iwl_cmd_header hdr;	/* uCode API */
@@ -276,7 +273,11 @@ struct iwl_device_cmd {
 
 #define TFD_MAX_PAYLOAD_SIZE (sizeof(struct iwl_device_cmd))
 
-#define IWL_MAX_CMD_TFDS	1
+#define IWL_MAX_CMD_TFDS	2
+
+enum iwl_hcmd_dataflag {
+	IWL_HCMD_DFL_NOCOPY	= BIT(0),
+};
 
 struct iwl_host_cmd {
 	const void *data[IWL_MAX_CMD_TFDS];
@@ -286,6 +287,7 @@ struct iwl_host_cmd {
 			 struct iwl_rx_packet *pkt);
 	u32 flags;
 	u16 len[IWL_MAX_CMD_TFDS];
+	u8 dataflags[IWL_MAX_CMD_TFDS];
 	u8 id;
 };
 
@@ -688,17 +690,8 @@ static inline int iwl_queue_used(const struct iwl_queue *q, int i)
 }
 
 
-static inline u8 get_cmd_index(struct iwl_queue *q, u32 index, int is_huge)
+static inline u8 get_cmd_index(struct iwl_queue *q, u32 index)
 {
-	/*
-	 * This is for init calibration result and scan command which
-	 * required buffer > TFD_MAX_PAYLOAD_SIZE,
-	 * the big buffer at end of command array
-	 */
-	if (is_huge)
-		return q->n_window;	/* must be power of 2 */
-
-	/* Otherwise, use normal size buffers */
 	return index & (q->n_window - 1);
 }
 
@@ -1452,6 +1445,7 @@ struct iwl_priv {
 	struct work_struct beacon_update;
 	struct iwl_rxon_context *beacon_ctx;
 	struct sk_buff *beacon_skb;
+	void *beacon_cmd;
 
 	struct work_struct tt_work;
 	struct work_struct ct_enter;
