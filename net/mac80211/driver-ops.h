@@ -647,4 +647,12 @@ static inline int drv_set_bitrate_mask(struct ieee80211_local *local,
 	return ret;
 }
 
+static inline void drv_rssi_callback(struct ieee80211_local *local,
+				     const enum ieee80211_rssi_event event)
+{
+	trace_drv_rssi_callback(local, event);
+	if (local->ops->rssi_callback)
+		local->ops->rssi_callback(&local->hw, event);
+	trace_drv_return_void(local);
+}
 #endif /* __MAC80211_DRIVER_OPS */
