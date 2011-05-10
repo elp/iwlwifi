@@ -695,10 +695,11 @@ int iwl_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 		if (!(cmd->dataflags[i] & IWL_HCMD_DFL_NOCOPY))
 			continue;
 		phys_addr = pci_map_single(priv->pci_dev, (void *)cmd->data[i],
-					   cmd->len[i], PCI_DMA_BIDIRECTIONAL);
+					   cmd->len[i], PCI_DMA_TODEVICE);
 		if (pci_dma_mapping_error(priv->pci_dev, phys_addr)) {
+			iwlagn_unmap_tfd(priv, out_meta,
+					 &txq->tfds[q->write_ptr]);
 			idx = -ENOMEM;
-			iwlagn_unmap_tfd(priv, out_meta, &txq->tfds[idx]);
 			goto out;
 		}
 
@@ -802,7 +803,7 @@ void iwl_tx_cmd_complete(struct iwl_priv *priv, struct iwl_rx_mem_buffer *rxb)
 	cmd = txq->cmd[cmd_index];
 	meta = &txq->meta[cmd_index];
 
-	iwlagn_unmap_tfd(priv, meta, &txq->tfds[cmd_index]);
+	iwlagn_unmap_tfd(priv, meta, &txq->tfds[index]);
 
 	/* Input error checking is done when commands are added to queue. */
 	if (meta->flags & CMD_WANT_SKB) {
