@@ -751,7 +751,6 @@ int iwlagn_tx_skb(struct iwl_priv *priv, struct sk_buff *skb)
 		if (!ieee80211_has_morefrags(fc))
 			priv->stations[sta_id].tid[tid].seq_number = seq_number;
 	}
-
 	spin_unlock(&priv->sta_lock);
 
 	/* Attach buffers to TFD */

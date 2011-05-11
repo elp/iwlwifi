@@ -674,6 +674,7 @@ int iwl_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 
 	phys_addr = pci_map_single(priv->pci_dev, &out_cmd->hdr,
 				   copy_size, PCI_DMA_BIDIRECTIONAL);
+
 	if (unlikely(pci_dma_mapping_error(priv->pci_dev, phys_addr))) {
 		idx = -ENOMEM;
 		goto out;
