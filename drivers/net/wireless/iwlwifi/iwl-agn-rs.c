@@ -3111,7 +3111,7 @@ static ssize_t rs_sta_dbgfs_scale_table_write(struct file *file,
 	struct iwl_lq_sta *lq_sta = file->private_data;
 	struct iwl_priv *priv;
 	char buf[64];
-	int buf_size;
+	size_t buf_size;
 	u32 parsed_rate;
 
 
