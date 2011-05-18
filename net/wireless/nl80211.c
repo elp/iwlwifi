@@ -1763,7 +1763,9 @@ static int nl80211_get_key(struct sk_buff *skb, struct genl_info *info)
 	if (cookie.error)
 		goto nla_put_failure;
 
-	genlmsg_end(msg, hdr);
+	if (genlmsg_end(msg, hdr) < 0)
+		goto free_msg;
+
 	return genlmsg_reply(msg, info);
 
  nla_put_failure:
@@ -2928,7 +2930,9 @@ static int nl80211_get_mesh_config(struct sk_buff *skb,
 	NLA_PUT_U8(msg, NL80211_MESHCONF_HWMP_ROOTMODE,
 			cur_params.dot11MeshHWMPRootMode);
 	nla_nest_end(msg, pinfoattr);
-	genlmsg_end(msg, hdr);
+	if (genlmsg_end(msg, hdr) < 0)
+		goto out;
+
 	return genlmsg_reply(msg, info);
 
  nla_put_failure:
@@ -3175,7 +3179,9 @@ static int nl80211_get_reg(struct sk_buff *skb, struct genl_info *info)
 
 	nla_nest_end(msg, nl_reg_rules);
 
-	genlmsg_end(msg, hdr);
+	if (genlmsg_end(msg, hdr) < 0)
+		goto put_failure;
+
 	err = genlmsg_reply(msg, info);
 	goto out;
 
@@ -3270,6 +3276,9 @@ static int validate_scan_freqs(struct nlattr *freqs)
 	int n_channels = 0, tmp1, tmp2;
 
 	nla_for_each_nested(attr1, freqs, tmp1) {
+		if (nla_get_u32(attr1) == 0xFFFFFFFF)
+			continue; /* skip can-scan-one flag */
+
 		n_channels++;
 		/*
 		 * Some hardware has a limited channel list for
@@ -3294,13 +3303,12 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
 	struct net_device *dev = info->user_ptr[1];
 	struct cfg80211_scan_request *request;
-	struct cfg80211_ssid *ssid;
-	struct ieee80211_channel *channel;
 	struct nlattr *attr;
 	struct wiphy *wiphy;
 	int err, tmp, n_ssids = 0, n_channels, i;
 	enum ieee80211_band band;
 	size_t ie_len;
+	bool do_all_chan = true;
 
 	if (!is_valid_ie_attr(info->attrs[NL80211_ATTR_IE]))
 		return -EINVAL;
@@ -3317,8 +3325,9 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 		n_channels = validate_scan_freqs(
 				info->attrs[NL80211_ATTR_SCAN_FREQUENCIES]);
 		if (!n_channels)
-			return -EINVAL;
+			goto auto_channels;
 	} else {
+auto_channels:
 		n_channels = 0;
 
 		for (band = 0; band < IEEE80211_NUM_BANDS; band++)
@@ -3342,8 +3351,8 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 		return -EINVAL;
 
 	request = kzalloc(sizeof(*request)
-			+ sizeof(*ssid) * n_ssids
-			+ sizeof(channel) * n_channels
+			+ sizeof(*request->ssids) * n_ssids
+			+ sizeof(*request->channels) * n_channels
 			+ ie_len, GFP_KERNEL);
 	if (!request)
 		return -ENOMEM;
@@ -3364,6 +3373,17 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 		nla_for_each_nested(attr, info->attrs[NL80211_ATTR_SCAN_FREQUENCIES], tmp) {
 			struct ieee80211_channel *chan;
 
+			/*
+			 * Special hack:  channel -1 means 'scan only active
+			 * channel if any VIFs on this device are associated
+			 * on the channel.
+			 */
+			if (nla_get_u32(attr) == 0xFFFFFFFF) {
+				request->can_scan_one = true;
+				continue;
+			}
+
+			do_all_chan = false;
 			chan = ieee80211_get_channel(wiphy, nla_get_u32(attr));
 
 			if (!chan) {
@@ -3378,7 +3398,9 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 			request->channels[i] = chan;
 			i++;
 		}
-	} else {
+	}
+
+	if (do_all_chan) {
 		/* all channels */
 		for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
 			int j;
@@ -3449,8 +3471,6 @@ static int nl80211_start_sched_scan(struct sk_buff *skb,
 	struct cfg80211_sched_scan_request *request;
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
 	struct net_device *dev = info->user_ptr[1];
-	struct cfg80211_ssid *ssid;
-	struct ieee80211_channel *channel;
 	struct nlattr *attr;
 	struct wiphy *wiphy;
 	int err, tmp, n_ssids = 0, n_channels, i;
@@ -3507,8 +3527,8 @@ static int nl80211_start_sched_scan(struct sk_buff *skb,
 		return -EINVAL;
 
 	request = kzalloc(sizeof(*request)
-			+ sizeof(*ssid) * n_ssids
-			+ sizeof(channel) * n_channels
+			+ sizeof(*request->ssids) * n_ssids
+			+ sizeof(*request->channels) * n_channels
 			+ ie_len, GFP_KERNEL);
 	if (!request)
 		return -ENOMEM;
@@ -4424,8 +4444,13 @@ int cfg80211_testmode_reply(struct sk_buff *skb)
 	}
 
 	nla_nest_end(skb, data);
-	genlmsg_end(skb, hdr);
+	if (genlmsg_end(skb, hdr) < 0)
+		goto out;
+
 	return genlmsg_reply(skb, rdev->testmode_info);
+out:
+	kfree_skb(skb);
+	return -ENOBUFS;
 }
 EXPORT_SYMBOL(cfg80211_testmode_reply);
 
@@ -4444,8 +4469,12 @@ void cfg80211_testmode_event(struct sk_buff *skb, gfp_t gfp)
 	struct nlattr *data = ((void **)skb->cb)[2];
 
 	nla_nest_end(skb, data);
-	genlmsg_end(skb, hdr);
+	if (genlmsg_end(skb, hdr) < 0) {
+		kfree_skb(skb);
+		return;
+	}
 	genlmsg_multicast(skb, 0, nl80211_testmode_mcgrp.id, gfp);
+
 }
 EXPORT_SYMBOL(cfg80211_testmode_event);
 #endif
@@ -4689,7 +4718,8 @@ static int nl80211_remain_on_channel(struct sk_buff *skb,
 
 	NLA_PUT_U64(msg, NL80211_ATTR_COOKIE, cookie);
 
-	genlmsg_end(msg, hdr);
+	if (genlmsg_end(msg, hdr) < 0)
+		goto free_msg;
 
 	return genlmsg_reply(msg, info);
 
@@ -4906,7 +4936,9 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 
 	NLA_PUT_U64(msg, NL80211_ATTR_COOKIE, cookie);
 
-	genlmsg_end(msg, hdr);
+	if (genlmsg_end(msg, hdr) < 0)
+		goto free_msg;
+
 	return genlmsg_reply(msg, info);
 
  nla_put_failure:
@@ -5008,7 +5040,9 @@ static int nl80211_get_power_save(struct sk_buff *skb, struct genl_info *info)
 
 	NLA_PUT_U32(msg, NL80211_ATTR_PS_STATE, ps_state);
 
-	genlmsg_end(msg, hdr);
+	if (genlmsg_end(msg, hdr) < 0)
+		goto free_msg;
+
 	return genlmsg_reply(msg, info);
 
  nla_put_failure:
@@ -5182,7 +5216,9 @@ static int nl80211_get_wowlan(struct sk_buff *skb, struct genl_info *info)
 		nla_nest_end(msg, nl_wowlan);
 	}
 
-	genlmsg_end(msg, hdr);
+	if (genlmsg_end(msg, hdr) < 0)
+		goto nla_put_failure;
+
 	return genlmsg_reply(msg, info);
 
 nla_put_failure:
