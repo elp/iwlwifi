@@ -1182,6 +1182,8 @@ enum iwl_scan_type {
 
 #ifdef CONFIG_IWLWIFI_DEVICE_SVTOOL
 struct iwl_testmode_trace {
+	u32 buff_size;
+	u32 total_size;
 	u8 *cpu_addr;
 	u8 *trace_addr;
 	dma_addr_t dma_addr;
