@@ -495,9 +495,9 @@ static void iwl_rx_handle(struct iwl_priv *priv)
 
 		rxq->queue[i] = NULL;
 
-		pci_unmap_page(priv->pci_dev, rxb->page_dma,
+		dma_unmap_page(priv->bus.dev, rxb->page_dma,
 			       PAGE_SIZE << priv->hw_params.rx_page_order,
-			       PCI_DMA_FROMDEVICE);
+			       DMA_FROM_DEVICE);
 		pkt = rxb_addr(rxb);
 
 		len = le32_to_cpu(pkt->len_n_flags) & FH_RSCSR_FRAME_SIZE_MSK;
@@ -579,9 +579,9 @@ static void iwl_rx_handle(struct iwl_priv *priv)
 		 * rx_free list for reuse later. */
 		spin_lock_irqsave(&rxq->lock, flags);
 		if (rxb->page != NULL) {
-			rxb->page_dma = pci_map_page(priv->pci_dev, rxb->page,
+			rxb->page_dma = dma_map_page(priv->bus.dev, rxb->page,
 				0, PAGE_SIZE << priv->hw_params.rx_page_order,
-				PCI_DMA_FROMDEVICE);
+				DMA_FROM_DEVICE);
 			list_add_tail(&rxb->list, &rxq->rx_free);
 			rxq->free_count++;
 		} else
@@ -3507,6 +3507,7 @@ int iwl_probe(void *bus_specific, struct iwl_bus_ops *bus_ops,
 	priv->bus.priv = priv;
 	priv->bus.bus_specific = bus_specific;
 	priv->bus.ops = bus_ops;
+	priv->bus.dev = priv->bus.ops->get_dev(&priv->bus);
 	priv->bus.ops->set_drv_data(&priv->bus, priv);
 	priv->bus.dev = priv->bus.ops->get_dev(&priv->bus);
 
