@@ -1076,7 +1076,6 @@ struct hci_sco_hdr {
 	__u8	dlen;
 } __packed;
 
-#ifdef __KERNEL__
 #include <linux/skbuff.h>
 static inline struct hci_event_hdr *hci_event_hdr(const struct sk_buff *skb)
 {
@@ -1092,7 +1091,6 @@ static inline struct hci_sco_hdr *hci_sco_hdr(const struct sk_buff *skb)
 {
 	return (struct hci_sco_hdr *) skb->data;
 }
-#endif
 
 /* Command opcode pack/unpack */
 #define hci_opcode_pack(ogf, ocf)	(__u16) ((ocf & 0x03ff)|(ogf << 10))

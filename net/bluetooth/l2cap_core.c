@@ -906,7 +906,7 @@ static struct l2cap_chan *l2cap_global_chan_by_psm(int state, __le16 psm, bdaddr
 		if (c->psm == psm) {
 			/* Exact match. */
 			if (!bacmp(&bt_sk(sk)->src, src)) {
-				read_unlock_bh(&chan_list_lock);
+				read_unlock(&chan_list_lock);
 				return c;
 			}
 
@@ -3755,7 +3755,7 @@ done:
 
 static inline int l2cap_conless_channel(struct l2cap_conn *conn, __le16 psm, struct sk_buff *skb)
 {
-	struct sock *sk;
+	struct sock *sk = NULL;
 	struct l2cap_chan *chan;
 
 	chan = l2cap_global_chan_by_psm(0, psm, conn->src);
@@ -3788,7 +3788,7 @@ done:
 
 static inline int l2cap_att_channel(struct l2cap_conn *conn, __le16 cid, struct sk_buff *skb)
 {
-	struct sock *sk;
+	struct sock *sk = NULL;
 	struct l2cap_chan *chan;
 
 	chan = l2cap_global_chan_by_scid(0, cid, conn->src);
