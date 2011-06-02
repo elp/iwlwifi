@@ -221,7 +221,8 @@ static ssize_t iwl_dbgfs_sram_read(struct file *file,
 	/* default is to dump the entire data segment */
 	if (!priv->dbgfs_sram_offset && !priv->dbgfs_sram_len) {
 		priv->dbgfs_sram_offset = 0x800000;
-		if (priv->ucode_type == UCODE_SUBTYPE_INIT)
+		if (priv->ucode_type == UCODE_SUBTYPE_INIT ||
+		    priv->ucode_type == UCODE_SUBTYPE_CALIB)
 			priv->dbgfs_sram_len = priv->ucode_init.data.len;
 		else
 			priv->dbgfs_sram_len = priv->ucode_rt.data.len;

@@ -1626,7 +1626,8 @@ void iwl_dump_nic_error_log(struct iwl_priv *priv)
 	struct iwl_error_event_table table;
 
 	base = priv->device_pointers.error_event_table;
-	if (priv->ucode_type == UCODE_SUBTYPE_INIT) {
+	if (priv->ucode_type == UCODE_SUBTYPE_INIT ||
+	    priv->ucode_type == UCODE_SUBTYPE_CALIB) {
 		if (!base)
 			base = priv->_agn.init_errlog_ptr;
 	} else {
@@ -1638,7 +1639,8 @@ void iwl_dump_nic_error_log(struct iwl_priv *priv)
 		IWL_ERR(priv,
 			"Not valid error log pointer 0x%08X for %s uCode\n",
 			base,
-			(priv->ucode_type == UCODE_SUBTYPE_INIT)
+			(priv->ucode_type == UCODE_SUBTYPE_INIT ||
+			 priv->ucode_type == UCODE_SUBTYPE_CALIB)
 					? "Init" : "RT");
 		return;
 	}
@@ -1702,7 +1704,8 @@ static int iwl_print_event_log(struct iwl_priv *priv, u32 start_idx,
 		return pos;
 
 	base = priv->device_pointers.log_event_table;
-	if (priv->ucode_type == UCODE_SUBTYPE_INIT) {
+	if (priv->ucode_type == UCODE_SUBTYPE_INIT ||
+	    priv->ucode_type == UCODE_SUBTYPE_CALIB) {
 		if (!base)
 			base = priv->_agn.init_evtlog_ptr;
 	} else {
@@ -1815,7 +1818,8 @@ int iwl_dump_nic_event_log(struct iwl_priv *priv, bool full_log,
 	size_t bufsz = 0;
 
 	base = priv->device_pointers.log_event_table;
-	if (priv->ucode_type == UCODE_SUBTYPE_INIT) {
+	if (priv->ucode_type == UCODE_SUBTYPE_INIT ||
+	    priv->ucode_type == UCODE_SUBTYPE_CALIB) {
 		logsize = priv->_agn.init_evtlog_size;
 		if (!base)
 			base = priv->_agn.init_evtlog_ptr;
@@ -1829,7 +1833,8 @@ int iwl_dump_nic_event_log(struct iwl_priv *priv, bool full_log,
 		IWL_ERR(priv,
 			"Invalid event log pointer 0x%08X for %s uCode\n",
 			base,
-			(priv->ucode_type == UCODE_SUBTYPE_INIT)
+			(priv->ucode_type == UCODE_SUBTYPE_INIT ||
+			 priv->ucode_type == UCODE_SUBTYPE_CALIB)
 					? "Init" : "RT");
 		return -EINVAL;
 	}
