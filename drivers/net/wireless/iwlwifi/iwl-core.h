@@ -172,6 +172,7 @@ struct iwl_mod_params {
 	int restart_fw;		/* def: 1 = restart firmware */
 	bool plcp_check;	/* def: true = enable plcp health check */
 	bool ack_check;		/* def: false = disable ack health check */
+	bool bt_coex_active;	/* def: true = enable bt coex */
 };
 
 /*
@@ -623,7 +624,6 @@ static inline bool iwl_advanced_bt_coexist(struct iwl_priv *priv)
 	       priv->cfg->bt_params->advanced_bt_coexist;
 }
 
-extern bool bt_coex_active;
 extern bool bt_siso_mode;
 
 
