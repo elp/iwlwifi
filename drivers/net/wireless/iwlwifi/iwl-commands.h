@@ -387,7 +387,6 @@ struct iwl_tx_ant_config_cmd {
 enum iwlagn_ucode_subtype {
 	UCODE_SUBTYPE_REGULAR	= 0,
 	UCODE_SUBTYPE_REGULAR_NEW = 1,
-	UCODE_SUBTYPE_CALIB	= 3,
 	UCODE_SUBTYPE_INIT	= 9,
 
 	/*

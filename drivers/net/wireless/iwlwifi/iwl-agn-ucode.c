@@ -694,8 +694,7 @@ int iwlagn_run_init_ucode(struct iwl_priv *priv)
 
 	/* Will also start the device */
 	ret = iwlagn_load_ucode_wait_alive(priv, &priv->ucode_init,
-					   UCODE_SUBTYPE_INIT,
-					   UCODE_SUBTYPE_CALIB);
+					   UCODE_SUBTYPE_INIT, -1);
 	if (ret)
 		goto error;
 
