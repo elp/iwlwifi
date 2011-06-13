@@ -3496,7 +3496,6 @@ int iwl_probe(void *bus_specific, struct iwl_bus_ops *bus_ops,
 	priv->bus.priv = priv;
 	priv->bus.bus_specific = bus_specific;
 	priv->bus.ops = bus_ops;
-	priv->bus.dev = priv->bus.ops->get_dev(&priv->bus);
 	priv->bus.irq = priv->bus.ops->get_irq(&priv->bus);
 	priv->bus.ops->set_drv_data(&priv->bus, priv);
 	priv->bus.dev = priv->bus.ops->get_dev(&priv->bus);
