@@ -290,8 +290,6 @@ extern const u8 iwl_eeprom_band_1[14];
 
 #define EEPROM_REGULATORY_BAND_NO_HT40			(0)
 
-#define EEPROM_BT_COMBO_DEVICE		BIT(6)
-
 struct iwl_eeprom_ops {
 	const u32 regulatory_bands[7];
 	const u8* (*query_addr) (const struct iwl_priv *priv, size_t offset);

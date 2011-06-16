@@ -124,17 +124,6 @@ int iwl_eeprom_check_sku(struct iwl_priv *priv)
 		return -EINVAL;
 	}
 
-	if ((iwl_eeprom_query16(priv, EEPROM_SUBSYSTEM_ID) &
-	     EEPROM_BT_COMBO_DEVICE)) {
-		/* WiFi/BT combo device */
-		if (!priv->cfg->bt_params) {
-			IWL_ERR(priv, "combo device with invalid setup\n");
-			return -EINVAL;
-		}
-	} else if (priv->cfg->bt_params) {
-		IWL_ERR(priv, "not a combo device\n");
-		return -EINVAL;
-	}
 	IWL_INFO(priv, "Device SKU: 0X%x\n", priv->cfg->sku);
 
 	if (!priv->cfg->valid_tx_ant && !priv->cfg->valid_rx_ant) {
