@@ -100,6 +100,26 @@ err_bd:
 	return -ENOMEM;
 }
 
+static void iwl_trans_rxq_free_rx_bufs(struct iwl_priv *priv)
+{
+	struct iwl_rx_queue *rxq = &priv->rxq;
+	int i;
+
+	/* Fill the rx_used queue with _all_ of the Rx buffers */
+	for (i = 0; i < RX_FREE_BUFFERS + RX_QUEUE_SIZE; i++) {
+		/* In the reset function, these buffers may have been allocated
+		 * to an SKB, so we need to unmap and free potential storage */
+		if (rxq->pool[i].page != NULL) {
+			dma_unmap_page(priv->bus.dev, rxq->pool[i].page_dma,
+				PAGE_SIZE << priv->hw_params.rx_page_order,
+				DMA_FROM_DEVICE);
+			__iwl_free_pages(priv, rxq->pool[i].page);
+			rxq->pool[i].page = NULL;
+		}
+		list_add_tail(&rxq->pool[i].list, &rxq->rx_used);
+	}
+}
+
 static int iwl_trans_rx_init(struct iwl_priv *priv)
 {
 	struct iwl_rx_queue *rxq = &priv->rxq;
@@ -116,19 +136,7 @@ static int iwl_trans_rx_init(struct iwl_priv *priv)
 	INIT_LIST_HEAD(&rxq->rx_free);
 	INIT_LIST_HEAD(&rxq->rx_used);
 
-	/* Fill the rx_used queue with _all_ of the Rx buffers */
-	for (i = 0; i < RX_FREE_BUFFERS + RX_QUEUE_SIZE; i++) {
-		/* In the reset function, these buffers may have been allocated
-		 * to an SKB, so we need to unmap and free potential storage */
-		if (rxq->pool[i].page != NULL) {
-			dma_unmap_page(priv->bus.dev, rxq->pool[i].page_dma,
-				PAGE_SIZE << priv->hw_params.rx_page_order,
-				DMA_FROM_DEVICE);
-			__iwl_free_pages(priv, rxq->pool[i].page);
-			rxq->pool[i].page = NULL;
-		}
-		list_add_tail(&rxq->pool[i].list, &rxq->rx_used);
-	}
+	iwl_trans_rxq_free_rx_bufs(priv);
 
 	for (i = 0; i < RX_QUEUE_SIZE; i++)
 		rxq->queue[i] = NULL;
@@ -143,8 +151,39 @@ static int iwl_trans_rx_init(struct iwl_priv *priv)
 	return 0;
 }
 
+/* Assumes that the skb field of the buffers in 'pool' is kept accurate.
+ * If an SKB has been detached, the POOL needs to have its SKB set to NULL
+ * This free routine walks the list of POOL entries and if SKB is set to
+ * non NULL it is unmapped and freed
+ */
+static void iwl_trans_rx_free(struct iwl_priv *priv)
+{
+	struct iwl_rx_queue *rxq = &priv->rxq;
+	unsigned long flags;
+
+	spin_lock_irqsave(&rxq->lock, flags);
+	iwl_trans_rxq_free_rx_bufs(priv);
+	spin_unlock_irqrestore(&rxq->lock, flags);
+
+	if (rxq->bd)
+		dma_free_coherent(priv->bus.dev, 4 * RX_QUEUE_SIZE,
+				  rxq->bd, rxq->bd_dma);
+	else
+		IWL_DEBUG_INFO(priv, "Free rxq->bd which is NULL\n");
+	rxq->bd = NULL;
+
+	if (rxq->rb_stts)
+		dma_free_coherent(priv->bus.dev,
+				  sizeof(struct iwl_rb_status),
+				  rxq->rb_stts, rxq->rb_stts_dma);
+	else
+		IWL_DEBUG_INFO(priv, "Free rxq->rb_stts which is NULL\n");
+	rxq->rb_stts = NULL;
+}
+
 static const struct iwl_trans_ops trans_ops = {
 	.rx_init = iwl_trans_rx_init,
+	.rx_free = iwl_trans_rx_free,
 };
 
 void iwl_trans_register(struct iwl_trans *trans)
