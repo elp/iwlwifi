@@ -137,7 +137,6 @@ struct iwl_lib_ops {
 
 	/* temperature */
 	struct iwl_temp_ops temp_ops;
-
 };
 
 /* NIC specific ops */

@@ -678,7 +678,6 @@ int iwl_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd)
 
 	phys_addr = dma_map_single(priv->bus.dev, &out_cmd->hdr, copy_size,
 				DMA_BIDIRECTIONAL);
-
 	if (unlikely(dma_mapping_error(priv->bus.dev, phys_addr))) {
 		idx = -ENOMEM;
 		goto out;
