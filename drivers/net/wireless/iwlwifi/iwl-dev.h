@@ -1234,11 +1234,9 @@ struct iwl_trans;
  * struct iwl_trans_ops - transport specific operations
 
  * @rx_init: inits the rx memory, allocate it if needed
- *@rx_free: frees the rx memory
  */
 struct iwl_trans_ops {
 	int (*rx_init)(struct iwl_priv *priv);
-	void (*rx_free)(struct iwl_priv *priv);
 };
 
 struct iwl_trans {

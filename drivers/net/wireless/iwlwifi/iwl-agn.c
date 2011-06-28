@@ -3718,7 +3718,8 @@ void __devexit iwl_remove(struct iwl_priv * priv)
 
 	iwl_dealloc_ucode(priv);
 
-	priv->trans.ops->rx_free(priv);
+	if (priv->rxq.bd)
+		iwlagn_rx_queue_free(priv, &priv->rxq);
 	iwlagn_hw_txq_ctx_free(priv);
 
 	iwl_eeprom_free(priv);
