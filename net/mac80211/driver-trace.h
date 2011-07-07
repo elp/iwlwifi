@@ -1046,6 +1046,34 @@ TRACE_EVENT(drv_rssi_callback,
 	)
 );
 
+TRACE_EVENT(drv_set_rekey_data,
+	TP_PROTO(struct ieee80211_local *local,
+		 struct ieee80211_sub_if_data *sdata,
+		 struct cfg80211_gtk_rekey_data *data),
+
+	TP_ARGS(local, sdata, data),
+
+	TP_STRUCT__entry(
+		LOCAL_ENTRY
+		VIF_ENTRY
+		__array(u8, kek, NL80211_KEK_LEN)
+		__array(u8, kck, NL80211_KCK_LEN)
+		__array(u8, replay_ctr, NL80211_REPLAY_CTR_LEN)
+	),
+
+	TP_fast_assign(
+		LOCAL_ASSIGN;
+		VIF_ASSIGN;
+		memcpy(__entry->kek, data->kek, NL80211_KEK_LEN);
+		memcpy(__entry->kck, data->kck, NL80211_KCK_LEN);
+		memcpy(__entry->replay_ctr, data->replay_ctr,
+		       NL80211_REPLAY_CTR_LEN);
+	),
+
+	TP_printk(LOCAL_PR_FMT VIF_PR_FMT,
+		  LOCAL_PR_ARG, VIF_PR_ARG)
+);
+
 /*
  * Tracing for API calls that drivers call.
  */
@@ -1337,6 +1365,27 @@ TRACE_EVENT(api_enable_rssi_reports,
 		VIF_PR_FMT " rssi_min_thold =%d, rssi_max_thold = %d",
 		VIF_PR_ARG, __entry->rssi_min_thold, __entry->rssi_max_thold
 	)
+);
+
+TRACE_EVENT(api_gtk_rekey_notify,
+	TP_PROTO(struct ieee80211_sub_if_data *sdata,
+		 const u8 *bssid, const u8 *replay_ctr),
+
+	TP_ARGS(sdata, bssid, replay_ctr),
+
+	TP_STRUCT__entry(
+		VIF_ENTRY
+		__array(u8, bssid, ETH_ALEN)
+		__array(u8, replay_ctr, NL80211_REPLAY_CTR_LEN)
+	),
+
+	TP_fast_assign(
+		VIF_ASSIGN;
+		memcpy(__entry->bssid, bssid, ETH_ALEN);
+		memcpy(__entry->replay_ctr, replay_ctr, NL80211_REPLAY_CTR_LEN);
+	),
+
+	TP_printk(VIF_PR_FMT, VIF_PR_ARG)
 );
 
 /*
