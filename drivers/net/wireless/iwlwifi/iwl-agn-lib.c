@@ -2141,4 +2141,3 @@ int iwlagn_start_device(struct iwl_priv *priv)
 
 	return 0;
 }
-
