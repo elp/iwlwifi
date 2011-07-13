@@ -973,7 +973,6 @@ static void iwl_trans_free(struct iwl_priv *priv)
 
 static const struct iwl_trans_ops trans_ops = {
 	.rx_init = iwl_trans_rx_init,
-	.rx_stop = iwl_trans_rx_stop,
 	.rx_free = iwl_trans_rx_free,
 
 	.tx_init = iwl_trans_tx_init,

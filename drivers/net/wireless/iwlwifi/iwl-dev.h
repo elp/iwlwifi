@@ -1236,7 +1236,6 @@ struct iwl_trans;
 /**
  * struct iwl_trans_ops - transport specific operations
  * @rx_init: inits the rx memory, allocate it if needed
- * @rx_stop: stop the rx
  * @rx_free: frees the rx memory
  * @tx_init:inits the tx memory, allocate if needed
  * @tx_start: starts and configures all the Tx fifo - usually done once the fw
@@ -1257,7 +1256,6 @@ struct iwl_trans;
  */
 struct iwl_trans_ops {
 	int (*rx_init)(struct iwl_priv *priv);
-	int (*rx_stop)(struct iwl_priv *priv);
 	void (*rx_free)(struct iwl_priv *priv);
 
 	int (*tx_init)(struct iwl_priv *priv);
