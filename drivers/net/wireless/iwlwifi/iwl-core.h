@@ -83,12 +83,14 @@ struct iwl_cmd;
 struct iwl_lib_ops {
 	/* set hw dependent parameters */
 	int (*set_hw_params)(struct iwl_priv *priv);
-	/* setup BT Rx handler */
-	void (*bt_rx_handler_setup)(struct iwl_priv *priv);
-	/* setup BT related deferred work */
-	void (*bt_setup_deferred_work)(struct iwl_priv *priv);
+	/* setup Rx handler */
+	void (*rx_handler_setup)(struct iwl_priv *priv);
+	/* setup deferred work */
+	void (*setup_deferred_work)(struct iwl_priv *priv);
 	/* cancel deferred work */
 	void (*cancel_deferred_work)(struct iwl_priv *priv);
+	/* check validity of rtc data address */
+	int (*is_valid_rtc_data_addr)(u32 addr);
 	int (*set_channel_switch)(struct iwl_priv *priv,
 				  struct ieee80211_channel_switch *ch_switch);
 	/* device specific configuration */
@@ -99,6 +101,16 @@ struct iwl_lib_ops {
 
 	/* temperature */
 	void (*temperature)(struct iwl_priv *priv);
+};
+
+/* NIC specific ops */
+struct iwl_nic_ops {
+	void (*additional_nic_config)(struct iwl_priv *priv);
+};
+
+struct iwl_ops {
+	const struct iwl_lib_ops *lib;
+	const struct iwl_nic_ops *nic;
 };
 
 struct iwl_mod_params {
@@ -187,22 +199,11 @@ struct iwl_ht_params {
 
 /**
  * struct iwl_cfg
- * @name: Offical name of the device
  * @fw_name_pre: Firmware filename prefix. The api version and extension
  *	(.ucode) will be added to filename before loading from disk. The
  *	filename is constructed as fw_name_pre<api>.ucode.
  * @ucode_api_max: Highest version of uCode API supported by driver.
  * @ucode_api_min: Lowest version of uCode API supported by driver.
- * @valid_tx_ant: valid transmit antenna
- * @valid_rx_ant: valid receive antenna
- * @sku: sku information from EEPROM
- * @eeprom_ver: EEPROM version
- * @eeprom_calib_ver: EEPROM calibration version
- * @lib: pointer to the lib ops
- * @additional_nic_config: additional nic configuration
- * @base_params: pointer to basic parameters
- * @ht_params: point to ht patameters
- * @bt_params: pointer to bt parameters
  * @pa_type: used by 6000 series only to identify the type of Power Amplifier
  * @need_dc_calib: need to perform init dc calibration
  * @need_temp_offset_calib: need to perform temperature offset calibration
@@ -229,7 +230,11 @@ struct iwl_ht_params {
  * }
  *
  * The ideal usage of this infrastructure is to treat a new ucode API
- * release as a new hardware revision.
+ * release as a new hardware revision. That is, through utilizing the
+ * iwl_hcmd_utils_ops etc. we accommodate different command structures
+ * and flows between hardware versions (4965/5000) as well as their API
+ * versions.
+ *
  */
 struct iwl_cfg {
 	/* params specific to an individual device within a device family */
@@ -242,8 +247,7 @@ struct iwl_cfg {
 	u16  sku;
 	u16  eeprom_ver;
 	u16  eeprom_calib_ver;
-	const struct iwl_lib_ops *lib;
-	void (*additional_nic_config)(struct iwl_priv *priv);
+	const struct iwl_ops *ops;
 	/* params not likely to change within a device family */
 	struct iwl_base_params *base_params;
 	/* params likely to change within a device family */
@@ -336,8 +340,21 @@ static inline void iwl_update_stats(struct iwl_priv *priv, bool is_tx,
 /*****************************************************
 * RX
 ******************************************************/
+void iwl_rx_queue_update_write_ptr(struct iwl_priv *priv,
+				  struct iwl_rx_queue *q);
+int iwl_rx_queue_space(const struct iwl_rx_queue *q);
+void iwl_tx_cmd_complete(struct iwl_priv *priv, struct iwl_rx_mem_buffer *rxb);
+
 void iwl_chswitch_done(struct iwl_priv *priv, bool is_success);
 
+/* TX helpers */
+
+/*****************************************************
+* TX
+******************************************************/
+void iwl_txq_update_write_ptr(struct iwl_priv *priv, struct iwl_tx_queue *txq);
+int iwl_queue_init(struct iwl_priv *priv, struct iwl_queue *q,
+			  int count, int slots_num, u32 id);
 void iwl_setup_watchdog(struct iwl_priv *priv);
 /*****************************************************
  * TX power
@@ -388,6 +405,12 @@ int __must_check iwl_scan_initiate(struct iwl_priv *priv,
  *****************************************************/
 
 const char *get_cmd_string(u8 cmd);
+int iwl_send_cmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd);
+int __must_check iwl_send_cmd_pdu(struct iwl_priv *priv, u8 id, u32 flags,
+				  u16 len, const void *data);
+
+int iwl_enqueue_hcmd(struct iwl_priv *priv, struct iwl_host_cmd *cmd);
+
 void iwl_bg_watchdog(unsigned long data);
 u32 iwl_usecs_to_beacons(struct iwl_priv *priv, u32 usec, u32 beacon_interval);
 __le32 iwl_add_beacon_time(struct iwl_priv *priv, u32 base,
@@ -397,9 +420,6 @@ __le32 iwl_add_beacon_time(struct iwl_priv *priv, u32 base,
 int iwl_suspend(struct iwl_priv *priv);
 int iwl_resume(struct iwl_priv *priv);
 #endif /* !CONFIG_PM */
-
-int iwl_probe(struct iwl_bus *bus, struct iwl_cfg *cfg);
-void __devexit iwl_remove(struct iwl_priv * priv);
 
 /*****************************************************
 *  Error Handling Debugging

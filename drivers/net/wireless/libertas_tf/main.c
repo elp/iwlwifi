@@ -10,6 +10,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/slab.h>
+
 #include <linux/etherdevice.h>
 #include "libertas_tf.h"
 

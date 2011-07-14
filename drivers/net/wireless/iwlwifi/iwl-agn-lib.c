@@ -53,73 +53,73 @@ static void iwlagn_count_tx_err_status(struct iwl_priv *priv, u16 status)
 
 	switch (status) {
 	case TX_STATUS_POSTPONE_DELAY:
-		priv->reply_tx_stats.pp_delay++;
+		priv->_agn.reply_tx_stats.pp_delay++;
 		break;
 	case TX_STATUS_POSTPONE_FEW_BYTES:
-		priv->reply_tx_stats.pp_few_bytes++;
+		priv->_agn.reply_tx_stats.pp_few_bytes++;
 		break;
 	case TX_STATUS_POSTPONE_BT_PRIO:
-		priv->reply_tx_stats.pp_bt_prio++;
+		priv->_agn.reply_tx_stats.pp_bt_prio++;
 		break;
 	case TX_STATUS_POSTPONE_QUIET_PERIOD:
-		priv->reply_tx_stats.pp_quiet_period++;
+		priv->_agn.reply_tx_stats.pp_quiet_period++;
 		break;
 	case TX_STATUS_POSTPONE_CALC_TTAK:
-		priv->reply_tx_stats.pp_calc_ttak++;
+		priv->_agn.reply_tx_stats.pp_calc_ttak++;
 		break;
 	case TX_STATUS_FAIL_INTERNAL_CROSSED_RETRY:
-		priv->reply_tx_stats.int_crossed_retry++;
+		priv->_agn.reply_tx_stats.int_crossed_retry++;
 		break;
 	case TX_STATUS_FAIL_SHORT_LIMIT:
-		priv->reply_tx_stats.short_limit++;
+		priv->_agn.reply_tx_stats.short_limit++;
 		break;
 	case TX_STATUS_FAIL_LONG_LIMIT:
-		priv->reply_tx_stats.long_limit++;
+		priv->_agn.reply_tx_stats.long_limit++;
 		break;
 	case TX_STATUS_FAIL_FIFO_UNDERRUN:
-		priv->reply_tx_stats.fifo_underrun++;
+		priv->_agn.reply_tx_stats.fifo_underrun++;
 		break;
 	case TX_STATUS_FAIL_DRAIN_FLOW:
-		priv->reply_tx_stats.drain_flow++;
+		priv->_agn.reply_tx_stats.drain_flow++;
 		break;
 	case TX_STATUS_FAIL_RFKILL_FLUSH:
-		priv->reply_tx_stats.rfkill_flush++;
+		priv->_agn.reply_tx_stats.rfkill_flush++;
 		break;
 	case TX_STATUS_FAIL_LIFE_EXPIRE:
-		priv->reply_tx_stats.life_expire++;
+		priv->_agn.reply_tx_stats.life_expire++;
 		break;
 	case TX_STATUS_FAIL_DEST_PS:
-		priv->reply_tx_stats.dest_ps++;
+		priv->_agn.reply_tx_stats.dest_ps++;
 		break;
 	case TX_STATUS_FAIL_HOST_ABORTED:
-		priv->reply_tx_stats.host_abort++;
+		priv->_agn.reply_tx_stats.host_abort++;
 		break;
 	case TX_STATUS_FAIL_BT_RETRY:
-		priv->reply_tx_stats.bt_retry++;
+		priv->_agn.reply_tx_stats.bt_retry++;
 		break;
 	case TX_STATUS_FAIL_STA_INVALID:
-		priv->reply_tx_stats.sta_invalid++;
+		priv->_agn.reply_tx_stats.sta_invalid++;
 		break;
 	case TX_STATUS_FAIL_FRAG_DROPPED:
-		priv->reply_tx_stats.frag_drop++;
+		priv->_agn.reply_tx_stats.frag_drop++;
 		break;
 	case TX_STATUS_FAIL_TID_DISABLE:
-		priv->reply_tx_stats.tid_disable++;
+		priv->_agn.reply_tx_stats.tid_disable++;
 		break;
 	case TX_STATUS_FAIL_FIFO_FLUSHED:
-		priv->reply_tx_stats.fifo_flush++;
+		priv->_agn.reply_tx_stats.fifo_flush++;
 		break;
 	case TX_STATUS_FAIL_INSUFFICIENT_CF_POLL:
-		priv->reply_tx_stats.insuff_cf_poll++;
+		priv->_agn.reply_tx_stats.insuff_cf_poll++;
 		break;
 	case TX_STATUS_FAIL_PASSIVE_NO_RX:
-		priv->reply_tx_stats.fail_hw_drop++;
+		priv->_agn.reply_tx_stats.fail_hw_drop++;
 		break;
 	case TX_STATUS_FAIL_NO_BEACON_ON_RADAR:
-		priv->reply_tx_stats.sta_color_mismatch++;
+		priv->_agn.reply_tx_stats.sta_color_mismatch++;
 		break;
 	default:
-		priv->reply_tx_stats.unknown++;
+		priv->_agn.reply_tx_stats.unknown++;
 		break;
 	}
 }
@@ -130,43 +130,43 @@ static void iwlagn_count_agg_tx_err_status(struct iwl_priv *priv, u16 status)
 
 	switch (status) {
 	case AGG_TX_STATE_UNDERRUN_MSK:
-		priv->reply_agg_tx_stats.underrun++;
+		priv->_agn.reply_agg_tx_stats.underrun++;
 		break;
 	case AGG_TX_STATE_BT_PRIO_MSK:
-		priv->reply_agg_tx_stats.bt_prio++;
+		priv->_agn.reply_agg_tx_stats.bt_prio++;
 		break;
 	case AGG_TX_STATE_FEW_BYTES_MSK:
-		priv->reply_agg_tx_stats.few_bytes++;
+		priv->_agn.reply_agg_tx_stats.few_bytes++;
 		break;
 	case AGG_TX_STATE_ABORT_MSK:
-		priv->reply_agg_tx_stats.abort++;
+		priv->_agn.reply_agg_tx_stats.abort++;
 		break;
 	case AGG_TX_STATE_LAST_SENT_TTL_MSK:
-		priv->reply_agg_tx_stats.last_sent_ttl++;
+		priv->_agn.reply_agg_tx_stats.last_sent_ttl++;
 		break;
 	case AGG_TX_STATE_LAST_SENT_TRY_CNT_MSK:
-		priv->reply_agg_tx_stats.last_sent_try++;
+		priv->_agn.reply_agg_tx_stats.last_sent_try++;
 		break;
 	case AGG_TX_STATE_LAST_SENT_BT_KILL_MSK:
-		priv->reply_agg_tx_stats.last_sent_bt_kill++;
+		priv->_agn.reply_agg_tx_stats.last_sent_bt_kill++;
 		break;
 	case AGG_TX_STATE_SCD_QUERY_MSK:
-		priv->reply_agg_tx_stats.scd_query++;
+		priv->_agn.reply_agg_tx_stats.scd_query++;
 		break;
 	case AGG_TX_STATE_TEST_BAD_CRC32_MSK:
-		priv->reply_agg_tx_stats.bad_crc32++;
+		priv->_agn.reply_agg_tx_stats.bad_crc32++;
 		break;
 	case AGG_TX_STATE_RESPONSE_MSK:
-		priv->reply_agg_tx_stats.response++;
+		priv->_agn.reply_agg_tx_stats.response++;
 		break;
 	case AGG_TX_STATE_DUMP_TX_MSK:
-		priv->reply_agg_tx_stats.dump_tx++;
+		priv->_agn.reply_agg_tx_stats.dump_tx++;
 		break;
 	case AGG_TX_STATE_DELAY_TX_MSK:
-		priv->reply_agg_tx_stats.delay_tx++;
+		priv->_agn.reply_agg_tx_stats.delay_tx++;
 		break;
 	default:
-		priv->reply_agg_tx_stats.unknown++;
+		priv->_agn.reply_agg_tx_stats.unknown++;
 		break;
 	}
 }
@@ -391,7 +391,8 @@ void iwl_check_abort_status(struct iwl_priv *priv,
 	}
 }
 
-void iwlagn_rx_reply_tx(struct iwl_priv *priv, struct iwl_rx_mem_buffer *rxb)
+static void iwlagn_rx_reply_tx(struct iwl_priv *priv,
+				struct iwl_rx_mem_buffer *rxb)
 {
 	struct iwl_rx_packet *pkt = rxb_addr(rxb);
 	u16 sequence = le16_to_cpu(pkt->hdr.sequence);
@@ -478,6 +479,27 @@ void iwlagn_rx_reply_tx(struct iwl_priv *priv, struct iwl_rx_mem_buffer *rxb)
 	spin_unlock_irqrestore(&priv->sta_lock, flags);
 }
 
+void iwlagn_rx_handler_setup(struct iwl_priv *priv)
+{
+	/* init calibration handlers */
+	priv->rx_handlers[CALIBRATION_RES_NOTIFICATION] =
+					iwlagn_rx_calib_result;
+	priv->rx_handlers[REPLY_TX] = iwlagn_rx_reply_tx;
+
+	/* set up notification wait support */
+	spin_lock_init(&priv->_agn.notif_wait_lock);
+	INIT_LIST_HEAD(&priv->_agn.notif_waits);
+	init_waitqueue_head(&priv->_agn.notif_waitq);
+}
+
+void iwlagn_setup_deferred_work(struct iwl_priv *priv)
+{
+	/*
+	 * nothing need to be done here anymore
+	 * still keep for future use if needed
+	 */
+}
+
 int iwlagn_hw_valid_rtc_data_addr(u32 addr)
 {
 	return (addr >= IWLAGN_RTC_DATA_LOWER_BOUND) &&
@@ -519,7 +541,7 @@ int iwlagn_send_tx_power(struct iwl_priv *priv)
 	else
 		tx_ant_cfg_cmd = REPLY_TX_POWER_DBM_CMD;
 
-	return trans_send_cmd_pdu(&priv->trans, tx_ant_cfg_cmd, CMD_SYNC,
+	return trans_send_cmd_pdu(priv, tx_ant_cfg_cmd, CMD_SYNC,
 			sizeof(tx_power_cmd), &tx_power_cmd);
 }
 
@@ -605,6 +627,283 @@ struct iwl_mod_params iwlagn_mod_params = {
 	.power_level = IWL_POWER_INDEX_1,
 	/* the rest are 0 by default */
 };
+
+int iwlagn_rx_init(struct iwl_priv *priv, struct iwl_rx_queue *rxq)
+{
+	u32 rb_size;
+	const u32 rfdnlog = RX_QUEUE_SIZE_LOG; /* 256 RBDs */
+	u32 rb_timeout = 0; /* FIXME: RX_RB_TIMEOUT for all devices? */
+
+	rb_timeout = RX_RB_TIMEOUT;
+
+	if (iwlagn_mod_params.amsdu_size_8K)
+		rb_size = FH_RCSR_RX_CONFIG_REG_VAL_RB_SIZE_8K;
+	else
+		rb_size = FH_RCSR_RX_CONFIG_REG_VAL_RB_SIZE_4K;
+
+	/* Stop Rx DMA */
+	iwl_write_direct32(priv, FH_MEM_RCSR_CHNL0_CONFIG_REG, 0);
+
+	/* Reset driver's Rx queue write index */
+	iwl_write_direct32(priv, FH_RSCSR_CHNL0_RBDCB_WPTR_REG, 0);
+
+	/* Tell device where to find RBD circular buffer in DRAM */
+	iwl_write_direct32(priv, FH_RSCSR_CHNL0_RBDCB_BASE_REG,
+			   (u32)(rxq->bd_dma >> 8));
+
+	/* Tell device where in DRAM to update its Rx status */
+	iwl_write_direct32(priv, FH_RSCSR_CHNL0_STTS_WPTR_REG,
+			   rxq->rb_stts_dma >> 4);
+
+	/* Enable Rx DMA
+	 * FH_RCSR_CHNL0_RX_IGNORE_RXF_EMPTY is set because of HW bug in
+	 *      the credit mechanism in 5000 HW RX FIFO
+	 * Direct rx interrupts to hosts
+	 * Rx buffer size 4 or 8k
+	 * RB timeout 0x10
+	 * 256 RBDs
+	 */
+	iwl_write_direct32(priv, FH_MEM_RCSR_CHNL0_CONFIG_REG,
+			   FH_RCSR_RX_CONFIG_CHNL_EN_ENABLE_VAL |
+			   FH_RCSR_CHNL0_RX_IGNORE_RXF_EMPTY |
+			   FH_RCSR_CHNL0_RX_CONFIG_IRQ_DEST_INT_HOST_VAL |
+			   FH_RCSR_CHNL0_RX_CONFIG_SINGLE_FRAME_MSK |
+			   rb_size|
+			   (rb_timeout << FH_RCSR_RX_CONFIG_REG_IRQ_RBTH_POS)|
+			   (rfdnlog << FH_RCSR_RX_CONFIG_RBDCB_SIZE_POS));
+
+	/* Set interrupt coalescing timer to default (2048 usecs) */
+	iwl_write8(priv, CSR_INT_COALESCING, IWL_HOST_INT_TIMEOUT_DEF);
+
+	return 0;
+}
+
+static void iwlagn_set_pwr_vmain(struct iwl_priv *priv)
+{
+/*
+ * (for documentation purposes)
+ * to set power to V_AUX, do:
+
+		if (pci_pme_capable(priv->pci_dev, PCI_D3cold))
+			iwl_set_bits_mask_prph(priv, APMG_PS_CTRL_REG,
+					       APMG_PS_CTRL_VAL_PWR_SRC_VAUX,
+					       ~APMG_PS_CTRL_MSK_PWR_SRC);
+ */
+
+	iwl_set_bits_mask_prph(priv, APMG_PS_CTRL_REG,
+			       APMG_PS_CTRL_VAL_PWR_SRC_VMAIN,
+			       ~APMG_PS_CTRL_MSK_PWR_SRC);
+}
+
+int iwlagn_hw_nic_init(struct iwl_priv *priv)
+{
+	unsigned long flags;
+	struct iwl_rx_queue *rxq = &priv->rxq;
+
+	/* nic_init */
+	spin_lock_irqsave(&priv->lock, flags);
+	iwl_apm_init(priv);
+
+	/* Set interrupt coalescing calibration timer to default (512 usecs) */
+	iwl_write8(priv, CSR_INT_COALESCING, IWL_HOST_INT_CALIB_TIMEOUT_DEF);
+
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	iwlagn_set_pwr_vmain(priv);
+
+	priv->cfg->ops->lib->nic_config(priv);
+
+	/* Allocate the RX queue, or reset if it is already allocated */
+	trans_rx_init(priv);
+
+	iwlagn_rx_replenish(priv);
+
+	iwlagn_rx_init(priv, rxq);
+
+	spin_lock_irqsave(&priv->lock, flags);
+
+	rxq->need_update = 1;
+	iwl_rx_queue_update_write_ptr(priv, rxq);
+
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	/* Allocate or reset and init all Tx and Command queues */
+	if (trans_tx_init(priv))
+		return -ENOMEM;
+
+	if (priv->cfg->base_params->shadow_reg_enable) {
+		/* enable shadow regs in HW */
+		iwl_set_bit(priv, CSR_MAC_SHADOW_REG_CTRL,
+			0x800FFFFF);
+	}
+
+	set_bit(STATUS_INIT, &priv->status);
+
+	return 0;
+}
+
+/**
+ * iwlagn_dma_addr2rbd_ptr - convert a DMA address to a uCode read buffer ptr
+ */
+static inline __le32 iwlagn_dma_addr2rbd_ptr(struct iwl_priv *priv,
+					  dma_addr_t dma_addr)
+{
+	return cpu_to_le32((u32)(dma_addr >> 8));
+}
+
+/**
+ * iwlagn_rx_queue_restock - refill RX queue from pre-allocated pool
+ *
+ * If there are slots in the RX queue that need to be restocked,
+ * and we have free pre-allocated buffers, fill the ranks as much
+ * as we can, pulling from rx_free.
+ *
+ * This moves the 'write' index forward to catch up with 'processed', and
+ * also updates the memory address in the firmware to reference the new
+ * target buffer.
+ */
+void iwlagn_rx_queue_restock(struct iwl_priv *priv)
+{
+	struct iwl_rx_queue *rxq = &priv->rxq;
+	struct list_head *element;
+	struct iwl_rx_mem_buffer *rxb;
+	unsigned long flags;
+
+	spin_lock_irqsave(&rxq->lock, flags);
+	while ((iwl_rx_queue_space(rxq) > 0) && (rxq->free_count)) {
+		/* The overwritten rxb must be a used one */
+		rxb = rxq->queue[rxq->write];
+		BUG_ON(rxb && rxb->page);
+
+		/* Get next free Rx buffer, remove from free list */
+		element = rxq->rx_free.next;
+		rxb = list_entry(element, struct iwl_rx_mem_buffer, list);
+		list_del(element);
+
+		/* Point to Rx buffer via next RBD in circular buffer */
+		rxq->bd[rxq->write] = iwlagn_dma_addr2rbd_ptr(priv,
+							      rxb->page_dma);
+		rxq->queue[rxq->write] = rxb;
+		rxq->write = (rxq->write + 1) & RX_QUEUE_MASK;
+		rxq->free_count--;
+	}
+	spin_unlock_irqrestore(&rxq->lock, flags);
+	/* If the pre-allocated buffer pool is dropping low, schedule to
+	 * refill it */
+	if (rxq->free_count <= RX_LOW_WATERMARK)
+		queue_work(priv->workqueue, &priv->rx_replenish);
+
+
+	/* If we've added more space for the firmware to place data, tell it.
+	 * Increment device's write pointer in multiples of 8. */
+	if (rxq->write_actual != (rxq->write & ~0x7)) {
+		spin_lock_irqsave(&rxq->lock, flags);
+		rxq->need_update = 1;
+		spin_unlock_irqrestore(&rxq->lock, flags);
+		iwl_rx_queue_update_write_ptr(priv, rxq);
+	}
+}
+
+/**
+ * iwlagn_rx_replenish - Move all used packet from rx_used to rx_free
+ *
+ * When moving to rx_free an SKB is allocated for the slot.
+ *
+ * Also restock the Rx queue via iwl_rx_queue_restock.
+ * This is called as a scheduled work item (except for during initialization)
+ */
+void iwlagn_rx_allocate(struct iwl_priv *priv, gfp_t priority)
+{
+	struct iwl_rx_queue *rxq = &priv->rxq;
+	struct list_head *element;
+	struct iwl_rx_mem_buffer *rxb;
+	struct page *page;
+	unsigned long flags;
+	gfp_t gfp_mask = priority;
+
+	while (1) {
+		spin_lock_irqsave(&rxq->lock, flags);
+		if (list_empty(&rxq->rx_used)) {
+			spin_unlock_irqrestore(&rxq->lock, flags);
+			return;
+		}
+		spin_unlock_irqrestore(&rxq->lock, flags);
+
+		if (rxq->free_count > RX_LOW_WATERMARK)
+			gfp_mask |= __GFP_NOWARN;
+
+		if (priv->hw_params.rx_page_order > 0)
+			gfp_mask |= __GFP_COMP;
+
+		/* Alloc a new receive buffer */
+		page = alloc_pages(gfp_mask, priv->hw_params.rx_page_order);
+		if (!page) {
+			if (net_ratelimit())
+				IWL_DEBUG_INFO(priv, "alloc_pages failed, "
+					       "order: %d\n",
+					       priv->hw_params.rx_page_order);
+
+			if ((rxq->free_count <= RX_LOW_WATERMARK) &&
+			    net_ratelimit())
+				IWL_CRIT(priv, "Failed to alloc_pages with %s. Only %u free buffers remaining.\n",
+					 priority == GFP_ATOMIC ?  "GFP_ATOMIC" : "GFP_KERNEL",
+					 rxq->free_count);
+			/* We don't reschedule replenish work here -- we will
+			 * call the restock method and if it still needs
+			 * more buffers it will schedule replenish */
+			return;
+		}
+
+		spin_lock_irqsave(&rxq->lock, flags);
+
+		if (list_empty(&rxq->rx_used)) {
+			spin_unlock_irqrestore(&rxq->lock, flags);
+			__free_pages(page, priv->hw_params.rx_page_order);
+			return;
+		}
+		element = rxq->rx_used.next;
+		rxb = list_entry(element, struct iwl_rx_mem_buffer, list);
+		list_del(element);
+
+		spin_unlock_irqrestore(&rxq->lock, flags);
+
+		BUG_ON(rxb->page);
+		rxb->page = page;
+		/* Get physical address of the RB */
+		rxb->page_dma = dma_map_page(priv->bus.dev, page, 0,
+				PAGE_SIZE << priv->hw_params.rx_page_order,
+				DMA_FROM_DEVICE);
+		/* dma address must be no more than 36 bits */
+		BUG_ON(rxb->page_dma & ~DMA_BIT_MASK(36));
+		/* and also 256 byte aligned! */
+		BUG_ON(rxb->page_dma & DMA_BIT_MASK(8));
+
+		spin_lock_irqsave(&rxq->lock, flags);
+
+		list_add_tail(&rxb->list, &rxq->rx_free);
+		rxq->free_count++;
+
+		spin_unlock_irqrestore(&rxq->lock, flags);
+	}
+}
+
+void iwlagn_rx_replenish(struct iwl_priv *priv)
+{
+	unsigned long flags;
+
+	iwlagn_rx_allocate(priv, GFP_KERNEL);
+
+	spin_lock_irqsave(&priv->lock, flags);
+	iwlagn_rx_queue_restock(priv);
+	spin_unlock_irqrestore(&priv->lock, flags);
+}
+
+void iwlagn_rx_replenish_now(struct iwl_priv *priv)
+{
+	iwlagn_rx_allocate(priv, GFP_ATOMIC);
+
+	iwlagn_rx_queue_restock(priv);
+}
 
 int iwlagn_hwrate_to_mac80211_idx(u32 rate_n_flags, enum ieee80211_band band)
 {
@@ -749,7 +1048,7 @@ static int iwl_get_channels_for_scan(struct iwl_priv *priv,
 
 static int iwl_fill_offch_tx(struct iwl_priv *priv, void *data, size_t maxlen)
 {
-	struct sk_buff *skb = priv->offchan_tx_skb;
+	struct sk_buff *skb = priv->_agn.offchan_tx_skb;
 
 	if (skb->len < maxlen)
 		maxlen = skb->len;
@@ -835,7 +1134,7 @@ int iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 	} else if (priv->scan_type == IWL_SCAN_OFFCH_TX) {
 		scan->suspend_time = 0;
 		scan->max_out_time =
-			cpu_to_le32(1024 * priv->offchan_tx_timeout);
+			cpu_to_le32(1024 * priv->_agn.offchan_tx_timeout);
 	}
 
 	switch (priv->scan_type) {
@@ -1023,9 +1322,9 @@ int iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 		scan_ch = (void *)&scan->data[cmd_len];
 		scan_ch->type = SCAN_CHANNEL_TYPE_ACTIVE;
 		scan_ch->channel =
-			cpu_to_le16(priv->offchan_tx_chan->hw_value);
+			cpu_to_le16(priv->_agn.offchan_tx_chan->hw_value);
 		scan_ch->active_dwell =
-			cpu_to_le16(priv->offchan_tx_timeout);
+			cpu_to_le16(priv->_agn.offchan_tx_timeout);
 		scan_ch->passive_dwell = 0;
 
 		/* Set txpower levels to defaults */
@@ -1035,7 +1334,7 @@ int iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 		 * power level:
 		 * scan_ch->tx_gain = ((1 << 5) | (2 << 3)) | 3;
 		 */
-		if (priv->offchan_tx_chan->band == IEEE80211_BAND_5GHZ)
+		if (priv->_agn.offchan_tx_chan->band == IEEE80211_BAND_5GHZ)
 			scan_ch->tx_gain = ((1 << 5) | (3 << 3)) | 3;
 		else
 			scan_ch->tx_gain = ((1 << 5) | (5 << 3));
@@ -1061,7 +1360,7 @@ int iwlagn_request_scan(struct iwl_priv *priv, struct ieee80211_vif *vif)
 	if (ret)
 		return ret;
 
-	ret = trans_send_cmd(&priv->trans, &cmd);
+	ret = trans_send_cmd(priv, &cmd);
 	if (ret) {
 		clear_bit(STATUS_SCAN_HW, &priv->status);
 		iwlagn_set_pan_params(priv);
@@ -1167,7 +1466,7 @@ int iwlagn_txfifo_flush(struct iwl_priv *priv, u16 flush_control)
 		       flush_cmd.fifo_control);
 	flush_cmd.flush_control = cpu_to_le16(flush_control);
 
-	return trans_send_cmd(&priv->trans, &cmd);
+	return trans_send_cmd(priv, &cmd);
 }
 
 void iwlagn_dev_txfifo_flush(struct iwl_priv *priv, u16 flush_control)
@@ -1361,12 +1660,12 @@ void iwlagn_send_advance_bt_config(struct iwl_priv *priv)
 	if (priv->cfg->bt_params->bt_session_2) {
 		memcpy(&bt_cmd_2000.basic, &basic,
 			sizeof(basic));
-		ret = trans_send_cmd_pdu(&priv->trans, REPLY_BT_CONFIG,
+		ret = trans_send_cmd_pdu(priv, REPLY_BT_CONFIG,
 			CMD_SYNC, sizeof(bt_cmd_2000), &bt_cmd_2000);
 	} else {
 		memcpy(&bt_cmd_6000.basic, &basic,
 			sizeof(basic));
-		ret = trans_send_cmd_pdu(&priv->trans, REPLY_BT_CONFIG,
+		ret = trans_send_cmd_pdu(priv, REPLY_BT_CONFIG,
 			CMD_SYNC, sizeof(bt_cmd_6000), &bt_cmd_6000);
 	}
 	if (ret)
@@ -1607,19 +1906,18 @@ static void iwlagn_print_uartmsg(struct iwl_priv *priv,
 }
 
 static void iwlagn_set_kill_msk(struct iwl_priv *priv,
-				     struct iwl_bt_uart_msg *uart_msg)
+				struct iwl_bt_uart_msg *uart_msg)
 {
 	u8 kill_msk;
 	static const __le32 bt_kill_ack_msg[2] = {
-			IWLAGN_BT_KILL_ACK_MASK_DEFAULT,
-			IWLAGN_BT_KILL_ACK_CTS_MASK_SCO };
+		IWLAGN_BT_KILL_ACK_MASK_DEFAULT,
+		IWLAGN_BT_KILL_ACK_CTS_MASK_SCO };
 	static const __le32 bt_kill_cts_msg[2] = {
-			IWLAGN_BT_KILL_CTS_MASK_DEFAULT,
-			IWLAGN_BT_KILL_ACK_CTS_MASK_SCO };
+		IWLAGN_BT_KILL_CTS_MASK_DEFAULT,
+		IWLAGN_BT_KILL_ACK_CTS_MASK_SCO };
 
 	kill_msk = (BT_UART_MSG_FRAME3SCOESCO_MSK & uart_msg->frame3)
-		 ? 1 : 0;
-
+		? 1 : 0;
 	if (priv->kill_ack_mask != bt_kill_ack_msg[kill_msk] ||
 	    priv->kill_cts_mask != bt_kill_cts_msg[kill_msk]) {
 		priv->bt_valid |= IWLAGN_BT_VALID_KILL_ACK_MASK;
@@ -1688,12 +1986,15 @@ void iwlagn_bt_coex_profile_notif(struct iwl_priv *priv,
 
 void iwlagn_bt_rx_handler_setup(struct iwl_priv *priv)
 {
+	iwlagn_rx_handler_setup(priv);
 	priv->rx_handlers[REPLY_BT_COEX_PROFILE_NOTIF] =
 		iwlagn_bt_coex_profile_notif;
 }
 
 void iwlagn_bt_setup_deferred_work(struct iwl_priv *priv)
 {
+	iwlagn_setup_deferred_work(priv);
+
 	INIT_WORK(&priv->bt_traffic_change_work,
 		  iwlagn_bt_traffic_change_work);
 }
@@ -2005,9 +2306,9 @@ void iwlagn_init_notification_wait(struct iwl_priv *priv,
 	wait_entry->triggered = false;
 	wait_entry->aborted = false;
 
-	spin_lock_bh(&priv->notif_wait_lock);
-	list_add(&wait_entry->list, &priv->notif_waits);
-	spin_unlock_bh(&priv->notif_wait_lock);
+	spin_lock_bh(&priv->_agn.notif_wait_lock);
+	list_add(&wait_entry->list, &priv->_agn.notif_waits);
+	spin_unlock_bh(&priv->_agn.notif_wait_lock);
 }
 
 int iwlagn_wait_notification(struct iwl_priv *priv,
@@ -2016,13 +2317,13 @@ int iwlagn_wait_notification(struct iwl_priv *priv,
 {
 	int ret;
 
-	ret = wait_event_timeout(priv->notif_waitq,
+	ret = wait_event_timeout(priv->_agn.notif_waitq,
 				 wait_entry->triggered || wait_entry->aborted,
 				 timeout);
 
-	spin_lock_bh(&priv->notif_wait_lock);
+	spin_lock_bh(&priv->_agn.notif_wait_lock);
 	list_del(&wait_entry->list);
-	spin_unlock_bh(&priv->notif_wait_lock);
+	spin_unlock_bh(&priv->_agn.notif_wait_lock);
 
 	if (wait_entry->aborted)
 		return -EIO;
@@ -2036,7 +2337,93 @@ int iwlagn_wait_notification(struct iwl_priv *priv,
 void iwlagn_remove_notification(struct iwl_priv *priv,
 				struct iwl_notification_wait *wait_entry)
 {
-	spin_lock_bh(&priv->notif_wait_lock);
+	spin_lock_bh(&priv->_agn.notif_wait_lock);
 	list_del(&wait_entry->list);
-	spin_unlock_bh(&priv->notif_wait_lock);
+	spin_unlock_bh(&priv->_agn.notif_wait_lock);
+}
+
+int iwlagn_start_device(struct iwl_priv *priv)
+{
+	int ret;
+
+	if ((priv->cfg->sku & EEPROM_SKU_CAP_AMT_ENABLE) &&
+	     iwl_prepare_card_hw(priv)) {
+		IWL_WARN(priv, "Exit HW not ready\n");
+		return -EIO;
+	}
+
+	/* If platform's RF_KILL switch is NOT set to KILL */
+	if (iwl_read32(priv, CSR_GP_CNTRL) & CSR_GP_CNTRL_REG_FLAG_HW_RF_KILL_SW)
+		clear_bit(STATUS_RF_KILL_HW, &priv->status);
+	else
+		set_bit(STATUS_RF_KILL_HW, &priv->status);
+
+	if (iwl_is_rfkill(priv)) {
+		wiphy_rfkill_set_hw_state(priv->hw->wiphy, true);
+		iwl_enable_interrupts(priv);
+		return -ERFKILL;
+	}
+
+	iwl_write32(priv, CSR_INT, 0xFFFFFFFF);
+
+	ret = iwlagn_hw_nic_init(priv);
+	if (ret) {
+		IWL_ERR(priv, "Unable to init nic\n");
+		return ret;
+	}
+
+	/* make sure rfkill handshake bits are cleared */
+	iwl_write32(priv, CSR_UCODE_DRV_GP1_CLR, CSR_UCODE_SW_BIT_RFKILL);
+	iwl_write32(priv, CSR_UCODE_DRV_GP1_CLR,
+		    CSR_UCODE_DRV_GP1_BIT_CMD_BLOCKED);
+
+	/* clear (again), then enable host interrupts */
+	iwl_write32(priv, CSR_INT, 0xFFFFFFFF);
+	iwl_enable_interrupts(priv);
+
+	/* really make sure rfkill handshake bits are cleared */
+	iwl_write32(priv, CSR_UCODE_DRV_GP1_CLR, CSR_UCODE_SW_BIT_RFKILL);
+	iwl_write32(priv, CSR_UCODE_DRV_GP1_CLR, CSR_UCODE_SW_BIT_RFKILL);
+
+	return 0;
+}
+
+void iwlagn_stop_device(struct iwl_priv *priv)
+{
+	unsigned long flags;
+
+	/* stop and reset the on-board processor */
+	iwl_write32(priv, CSR_RESET, CSR_RESET_REG_FLAG_NEVO_RESET);
+
+	/* tell the device to stop sending interrupts */
+	spin_lock_irqsave(&priv->lock, flags);
+	iwl_disable_interrupts(priv);
+	spin_unlock_irqrestore(&priv->lock, flags);
+	iwl_synchronize_irq(priv);
+
+	/* device going down, Stop using ICT table */
+	iwl_disable_ict(priv);
+
+	/*
+	 * If a HW restart happens during firmware loading,
+	 * then the firmware loading might call this function
+	 * and later it might be called again due to the
+	 * restart. So don't process again if the device is
+	 * already dead.
+	 */
+	if (test_bit(STATUS_DEVICE_ENABLED, &priv->status)) {
+		trans_tx_stop(priv);
+		trans_rx_stop(priv);
+
+		/* Power-down device's busmaster DMA clocks */
+		iwl_write_prph(priv, APMG_CLK_DIS_REG,
+			       APMG_CLK_VAL_DMA_CLK_RQT);
+		udelay(5);
+	}
+
+	/* Make sure (redundant) we've released our request to stay awake */
+	iwl_clear_bit(priv, CSR_GP_CNTRL, CSR_GP_CNTRL_REG_FLAG_MAC_ACCESS_REQ);
+
+	/* Stop the device, and put it in low power state */
+	iwl_apm_stop(priv);
 }

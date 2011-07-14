@@ -17,7 +17,6 @@
 #include <linux/i2c/twl.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/fixed.h>
-#include <linux/mmc/host.h>
 #include <linux/wl12xx.h>
 #include <linux/mmc/host.h>
 

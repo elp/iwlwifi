@@ -211,7 +211,7 @@ int iwlcore_init_geos(struct iwl_priv *priv)
 	if ((priv->bands[IEEE80211_BAND_5GHZ].n_channels == 0) &&
 	     priv->cfg->sku & EEPROM_SKU_CAP_BAND_52GHZ) {
 		char buf[32];
-		bus_get_hw_id(priv->bus, buf, sizeof(buf));
+		priv->bus.ops->get_hw_id(&priv->bus, buf, sizeof(buf));
 		IWL_INFO(priv, "Incorrectly detected BG card as ABG. "
 			"Please send your %s to maintainer.\n", buf);
 		priv->cfg->sku &= ~EEPROM_SKU_CAP_BAND_52GHZ;
@@ -376,7 +376,7 @@ int iwl_send_rxon_timing(struct iwl_priv *priv, struct iwl_rxon_context *ctx)
 			le32_to_cpu(ctx->timing.beacon_init_val),
 			le16_to_cpu(ctx->timing.atim_window));
 
-	return trans_send_cmd_pdu(&priv->trans, ctx->rxon_timing_cmd,
+	return trans_send_cmd_pdu(priv, ctx->rxon_timing_cmd,
 				CMD_SYNC, sizeof(ctx->timing), &ctx->timing);
 }
 
@@ -840,12 +840,12 @@ static void iwlagn_abort_notification_waits(struct iwl_priv *priv)
 	unsigned long flags;
 	struct iwl_notification_wait *wait_entry;
 
-	spin_lock_irqsave(&priv->notif_wait_lock, flags);
-	list_for_each_entry(wait_entry, &priv->notif_waits, list)
+	spin_lock_irqsave(&priv->_agn.notif_wait_lock, flags);
+	list_for_each_entry(wait_entry, &priv->_agn.notif_waits, list)
 		wait_entry->aborted = true;
-	spin_unlock_irqrestore(&priv->notif_wait_lock, flags);
+	spin_unlock_irqrestore(&priv->_agn.notif_wait_lock, flags);
 
-	wake_up_all(&priv->notif_waitq);
+	wake_up_all(&priv->_agn.notif_waitq);
 }
 
 void iwlagn_fw_error(struct iwl_priv *priv, bool ondemand)
@@ -1012,7 +1012,7 @@ int iwl_apm_init(struct iwl_priv *priv)
 	iwl_set_bit(priv, CSR_HW_IF_CONFIG_REG,
 				    CSR_HW_IF_CONFIG_REG_BIT_HAP_WAKE_L1A);
 
-	bus_apm_config(priv->bus);
+	priv->bus.ops->apm_config(&priv->bus);
 
 	/* Configure analog phase-lock-loop before activating to D0A */
 	if (priv->cfg->base_params->pll_cfg_val)
@@ -1132,7 +1132,7 @@ void iwl_send_bt_config(struct iwl_priv *priv)
 	IWL_DEBUG_INFO(priv, "BT coex %s\n",
 		(bt_cmd.flags == BT_COEX_DISABLE) ? "disable" : "active");
 
-	if (trans_send_cmd_pdu(&priv->trans, REPLY_BT_CONFIG,
+	if (trans_send_cmd_pdu(priv, REPLY_BT_CONFIG,
 			     CMD_SYNC, sizeof(struct iwl_bt_cmd), &bt_cmd))
 		IWL_ERR(priv, "failed to send BT Coex Config\n");
 }
@@ -1145,12 +1145,12 @@ int iwl_send_statistics_request(struct iwl_priv *priv, u8 flags, bool clear)
 	};
 
 	if (flags & CMD_ASYNC)
-		return trans_send_cmd_pdu(&priv->trans, REPLY_STATISTICS_CMD,
+		return trans_send_cmd_pdu(priv, REPLY_STATISTICS_CMD,
 					      CMD_ASYNC,
 					       sizeof(struct iwl_statistics_cmd),
 					       &statistics_cmd);
 	else
-		return trans_send_cmd_pdu(&priv->trans, REPLY_STATISTICS_CMD,
+		return trans_send_cmd_pdu(priv, REPLY_STATISTICS_CMD,
 					CMD_SYNC,
 					sizeof(struct iwl_statistics_cmd),
 					&statistics_cmd);

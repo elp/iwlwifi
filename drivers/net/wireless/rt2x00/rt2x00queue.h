@@ -648,7 +648,7 @@ static inline int rt2x00queue_status_timeout(struct queue_entry *entry)
 }
 
 /**
- * rt2x00queuedma__timeout - Check if a timeout occurred for DMA transfers
+ * rt2x00queue_dma_timeout - Check if a timeout occurred for DMA transfers
  * @entry: Queue entry to check.
  */
 static inline int rt2x00queue_dma_timeout(struct queue_entry *entry)

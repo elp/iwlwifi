@@ -14,8 +14,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <linux/slab.h>
-
 #include "hw.h"
 #include "hw-ops.h"
 #include "../regd.h"

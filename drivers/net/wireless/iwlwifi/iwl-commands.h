@@ -2656,7 +2656,6 @@ struct statistics_rx_bt {
 	struct statistics_rx_ht_phy ofdm_ht;
 } __packed;
 
-
 /**
  * struct statistics_tx_power - current tx power
  *
@@ -3156,6 +3155,7 @@ struct iwl_enhance_sensitivity_cmd {
 /* The default calibrate table size if not specified by firmware */
 #define IWL_DEFAULT_STANDARD_PHY_CALIBRATE_TBL_SIZE	18
 enum {
+	IWL_PHY_CALIBRATE_DIFF_GAIN_CMD		= 7,
 	IWL_PHY_CALIBRATE_DC_CMD		= 8,
 	IWL_PHY_CALIBRATE_LO_CMD		= 9,
 	IWL_PHY_CALIBRATE_TX_IQ_CMD		= 11,
@@ -3168,36 +3168,22 @@ enum {
 
 #define IWL_MAX_PHY_CALIBRATE_TBL_SIZE		(253)
 
+#define IWL_CALIB_INIT_CFG_ALL	cpu_to_le32(0xffffffff)
+
 /* This enum defines the bitmap of various calibrations to enable in both
  * init ucode and runtime ucode through CALIBRATION_CFG_CMD.
  */
 enum iwl_ucode_calib_cfg {
-	IWL_CALIB_CFG_RX_BB_IDX			= BIT(0),
-	IWL_CALIB_CFG_DC_IDX			= BIT(1),
-	IWL_CALIB_CFG_LO_IDX			= BIT(2),
-	IWL_CALIB_CFG_TX_IQ_IDX			= BIT(3),
-	IWL_CALIB_CFG_RX_IQ_IDX			= BIT(4),
-	IWL_CALIB_CFG_NOISE_IDX			= BIT(5),
-	IWL_CALIB_CFG_CRYSTAL_IDX		= BIT(6),
-	IWL_CALIB_CFG_TEMPERATURE_IDX		= BIT(7),
-	IWL_CALIB_CFG_PAPD_IDX			= BIT(8),
-	IWL_CALIB_CFG_SENSITIVITY_IDX		= BIT(9),
-	IWL_CALIB_CFG_TX_PWR_IDX		= BIT(10),
+	IWL_CALIB_CFG_RX_BB_IDX,
+	IWL_CALIB_CFG_DC_IDX,
+	IWL_CALIB_CFG_TX_IQ_IDX,
+	IWL_CALIB_CFG_RX_IQ_IDX,
+	IWL_CALIB_CFG_NOISE_IDX,
+	IWL_CALIB_CFG_CRYSTAL_IDX,
+	IWL_CALIB_CFG_TEMPERATURE_IDX,
+	IWL_CALIB_CFG_PAPD_IDX,
 };
 
-#define IWL_CALIB_INIT_CFG_ALL	cpu_to_le32(IWL_CALIB_CFG_RX_BB_IDX |	\
-					IWL_CALIB_CFG_DC_IDX |		\
-					IWL_CALIB_CFG_LO_IDX |		\
-					IWL_CALIB_CFG_TX_IQ_IDX |	\
-					IWL_CALIB_CFG_RX_IQ_IDX |	\
-					IWL_CALIB_CFG_NOISE_IDX |	\
-					IWL_CALIB_CFG_CRYSTAL_IDX |	\
-					IWL_CALIB_CFG_TEMPERATURE_IDX |	\
-					IWL_CALIB_CFG_PAPD_IDX |	\
-					IWL_CALIB_CFG_SENSITIVITY_IDX |	\
-					IWL_CALIB_CFG_TX_PWR_IDX)
-
-#define IWL_CALIB_CFG_FLAG_SEND_COMPLETE_NTFY_MSK	cpu_to_le32(BIT(0))
 
 struct iwl_calib_cfg_elmnt_s {
 	__le32 is_enable;
@@ -3231,6 +3217,15 @@ struct iwl_calib_cmd {
 	u8 data[0];
 } __packed;
 
+/* IWL_PHY_CALIBRATE_DIFF_GAIN_CMD (7) */
+struct iwl_calib_diff_gain_cmd {
+	struct iwl_calib_hdr hdr;
+	s8 diff_gain_a;		/* see above */
+	s8 diff_gain_b;
+	s8 diff_gain_c;
+	u8 reserved1;
+} __packed;
+
 struct iwl_calib_xtal_freq_cmd {
 	struct iwl_calib_hdr hdr;
 	u8 cap_pin1;
@@ -3238,11 +3233,11 @@ struct iwl_calib_xtal_freq_cmd {
 	u8 pad[2];
 } __packed;
 
-#define DEFAULT_RADIO_SENSOR_OFFSET    cpu_to_le16(2700)
+#define DEFAULT_RADIO_SENSOR_OFFSET    2700
 struct iwl_calib_temperature_offset_cmd {
 	struct iwl_calib_hdr hdr;
-	__le16 radio_sensor_offset;
-	__le16 reserved;
+	s16 radio_sensor_offset;
+	s16 reserved;
 } __packed;
 
 /* IWL_PHY_CALIBRATE_CHAIN_NOISE_RESET_CMD */
