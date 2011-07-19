@@ -133,9 +133,7 @@ static void iwl_trans_rx_hw_init(struct iwl_priv *priv,
 {
 	u32 rb_size;
 	const u32 rfdnlog = RX_QUEUE_SIZE_LOG; /* 256 RBDs */
-	u32 rb_timeout = 0; /* FIXME: RX_RB_TIMEOUT for all devices? */
-
-	rb_timeout = RX_RB_TIMEOUT;
+	u32 rb_timeout = RX_RB_TIMEOUT; /* FIXME: RX_RB_TIMEOUT for all devices? */
 
 	if (iwlagn_mod_params.amsdu_size_8K)
 		rb_size = FH_RCSR_RX_CONFIG_REG_VAL_RB_SIZE_8K;
@@ -1134,8 +1132,6 @@ static const struct iwl_trans_ops trans_ops = {
 
 	.rx_free = iwl_trans_rx_free,
 	.tx_free = iwl_trans_tx_free,
-
-	.stop_device = iwl_trans_stop_device,
 
 	.send_cmd = iwl_send_cmd,
 	.send_cmd_pdu = iwl_send_cmd_pdu,
