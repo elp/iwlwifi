@@ -1125,6 +1125,9 @@ struct iwl_rxon_context {
 	const u8 *ac_to_queue;
 	u8 mcast_queue;
 
+	u8 bssid[ETH_ALEN];
+	bool preauth_bssid;
+
 	/*
 	 * We could use the vif to indicate active, but we
 	 * also need it to be active during disabling when

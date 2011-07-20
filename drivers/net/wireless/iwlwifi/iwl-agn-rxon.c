@@ -434,6 +434,10 @@ int iwlagn_commit_rxon(struct iwl_priv *priv, struct iwl_rxon_context *ctx)
 	if (!ctx->is_active)
 		return 0;
 
+	/* override BSSID if necessary due to preauth */
+	if (ctx->preauth_bssid)
+		memcpy(ctx->staging.bssid_addr, ctx->bssid, ETH_ALEN);
+
 	/* always get timestamp with Rx frame */
 	ctx->staging.flags |= RXON_FLG_TSF2HOST_MSK;
 
@@ -883,8 +887,6 @@ void iwlagn_bss_info_changed(struct ieee80211_hw *hw,
 	else
 		ctx->staging.flags &= ~RXON_FLG_SELF_CTS_EN;
 
-	memcpy(ctx->staging.bssid_addr, bss_conf->bssid, ETH_ALEN);
-
 	if (vif->type == NL80211_IFTYPE_AP ||
 	    vif->type == NL80211_IFTYPE_ADHOC) {
 		if (vif->bss_conf.enable_beacon) {
@@ -912,6 +914,7 @@ void iwlagn_bss_info_changed(struct ieee80211_hw *hw,
 		if (!priv->disable_chain_noise_cal)
 			iwlagn_chain_noise_reset(priv);
 		priv->start_calib = 1;
+		WARN_ON(ctx->preauth_bssid);
 	}
 
 	if (changes & BSS_CHANGED_IBSS) {
