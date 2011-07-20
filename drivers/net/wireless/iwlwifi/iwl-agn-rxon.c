@@ -580,7 +580,7 @@ int iwlagn_mac_config(struct ieee80211_hw *hw, u32 changed)
 			goto out;
 		}
 
-		spin_lock_irqsave(&priv->lock, flags);
+		spin_lock_irqsave(&priv->shrd->lock, flags);
 
 		for_each_context(priv, ctx) {
 			/* Configure HT40 channels */
@@ -624,7 +624,7 @@ int iwlagn_mac_config(struct ieee80211_hw *hw, u32 changed)
 					       ctx->vif);
 		}
 
-		spin_unlock_irqrestore(&priv->lock, flags);
+		spin_unlock_irqrestore(&priv->shrd->lock, flags);
 
 		iwl_update_bcast_stations(priv);
 
