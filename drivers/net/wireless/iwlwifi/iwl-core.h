@@ -135,6 +135,7 @@ struct iwl_mod_params {
  * @temperature_kelvin: temperature report by uCode in kelvin
  * @max_event_log_size: size of event log buffer size for ucode event logging
  * @shadow_reg_enable: HW shadhow register bit
+ * @hd_v2: v2 of enhanced sensitivity value, used for 2000 series and up
  */
 struct iwl_base_params {
 	int eeprom_size;
@@ -156,6 +157,7 @@ struct iwl_base_params {
 	bool temperature_kelvin;
 	u32 max_event_log_size;
 	const bool shadow_reg_enable;
+	const bool hd_v2;
 };
 /*
  * @advanced_bt_coexist: support advanced bt coexist
