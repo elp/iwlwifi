@@ -145,12 +145,6 @@ struct iwl_queue {
 				* space less than this */
 };
 
-/* One for each TFD */
-struct iwl_tx_info {
-	struct sk_buff *skb;
-	struct iwl_rxon_context *ctx;
-};
-
 /**
  * struct iwl_tx_queue - Tx Queue for DMA
  * @q: generic Rx/Tx queue descriptor
@@ -176,7 +170,7 @@ struct iwl_tx_queue {
 	struct iwl_tfd *tfds;
 	struct iwl_device_cmd **cmd;
 	struct iwl_cmd_meta *meta;
-	struct iwl_tx_info *txb;
+	struct sk_buff **skbs;
 	unsigned long time_stamp;
 	u8 need_update;
 	u8 sched_retry;
@@ -1372,9 +1366,9 @@ extern struct iwl_mod_params iwlagn_mod_params;
 static inline struct ieee80211_hdr *iwl_tx_queue_get_hdr(struct iwl_priv *priv,
 							 int txq_id, int idx)
 {
-	if (priv->txq[txq_id].txb[idx].skb)
+	if (priv->txq[txq_id].skbs[idx])
 		return (struct ieee80211_hdr *)priv->txq[txq_id].
-				txb[idx].skb->data;
+				skbs[idx]->data;
 	return NULL;
 }
 
