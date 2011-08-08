@@ -57,29 +57,29 @@ static inline u32 u16_field_get(u8 *preq_elem, int offset, bool ae)
 #define PREQ_IE_TTL(x)		(*(x + 2))
 #define PREQ_IE_PREQ_ID(x)	u32_field_get(x, 3, 0)
 #define PREQ_IE_ORIG_ADDR(x)	(x + 7)
-#define PREQ_IE_ORIG_SN(x)	u32_field_get(x, 13, 0);
-#define PREQ_IE_LIFETIME(x)	u32_field_get(x, 17, AE_F_SET(x));
-#define PREQ_IE_METRIC(x) 	u32_field_get(x, 21, AE_F_SET(x));
+#define PREQ_IE_ORIG_SN(x)	u32_field_get(x, 13, 0)
+#define PREQ_IE_LIFETIME(x)	u32_field_get(x, 17, AE_F_SET(x))
+#define PREQ_IE_METRIC(x) 	u32_field_get(x, 21, AE_F_SET(x))
 #define PREQ_IE_TARGET_F(x)	(*(AE_F_SET(x) ? x + 32 : x + 26))
 #define PREQ_IE_TARGET_ADDR(x) 	(AE_F_SET(x) ? x + 33 : x + 27)
-#define PREQ_IE_TARGET_SN(x) 	u32_field_get(x, 33, AE_F_SET(x));
+#define PREQ_IE_TARGET_SN(x) 	u32_field_get(x, 33, AE_F_SET(x))
 
 
 #define PREP_IE_FLAGS(x)	PREQ_IE_FLAGS(x)
 #define PREP_IE_HOPCOUNT(x)	PREQ_IE_HOPCOUNT(x)
 #define PREP_IE_TTL(x)		PREQ_IE_TTL(x)
 #define PREP_IE_ORIG_ADDR(x)	(x + 3)
-#define PREP_IE_ORIG_SN(x)	u32_field_get(x, 9, 0);
-#define PREP_IE_LIFETIME(x)	u32_field_get(x, 13, AE_F_SET(x));
-#define PREP_IE_METRIC(x)	u32_field_get(x, 17, AE_F_SET(x));
+#define PREP_IE_ORIG_SN(x)	u32_field_get(x, 9, 0)
+#define PREP_IE_LIFETIME(x)	u32_field_get(x, 13, AE_F_SET(x))
+#define PREP_IE_METRIC(x)	u32_field_get(x, 17, AE_F_SET(x))
 #define PREP_IE_TARGET_ADDR(x)	(AE_F_SET(x) ? x + 27 : x + 21)
-#define PREP_IE_TARGET_SN(x)	u32_field_get(x, 27, AE_F_SET(x));
+#define PREP_IE_TARGET_SN(x)	u32_field_get(x, 27, AE_F_SET(x))
 
 #define PERR_IE_TTL(x)		(*(x))
 #define PERR_IE_TARGET_FLAGS(x)	(*(x + 2))
 #define PERR_IE_TARGET_ADDR(x)	(x + 3)
-#define PERR_IE_TARGET_SN(x)	u32_field_get(x, 9, 0);
-#define PERR_IE_TARGET_RCODE(x)	u16_field_get(x, 13, 0);
+#define PERR_IE_TARGET_SN(x)	u32_field_get(x, 9, 0)
+#define PERR_IE_TARGET_RCODE(x)	u16_field_get(x, 13, 0)
 
 #define MSEC_TO_TU(x) (x*1000/1024)
 #define SN_GT(x, y) ((long) (y) - (long) (x) < 0)
@@ -792,9 +792,9 @@ static void mesh_queue_preq(struct mesh_path *mpath, u8 flags)
 		return;
 	}
 
-	spin_lock(&ifmsh->mesh_preq_queue_lock);
+	spin_lock_bh(&ifmsh->mesh_preq_queue_lock);
 	if (ifmsh->preq_queue_len == MAX_PREQ_QUEUE_LEN) {
-		spin_unlock(&ifmsh->mesh_preq_queue_lock);
+		spin_unlock_bh(&ifmsh->mesh_preq_queue_lock);
 		kfree(preq_node);
 		if (printk_ratelimit())
 			mhwmp_dbg("PREQ node queue full\n");
@@ -806,7 +806,7 @@ static void mesh_queue_preq(struct mesh_path *mpath, u8 flags)
 
 	list_add_tail(&preq_node->list, &ifmsh->preq_queue.list);
 	++ifmsh->preq_queue_len;
-	spin_unlock(&ifmsh->mesh_preq_queue_lock);
+	spin_unlock_bh(&ifmsh->mesh_preq_queue_lock);
 
 	if (time_after(jiffies, ifmsh->last_preq + min_preq_int_jiff(sdata)))
 		ieee80211_queue_work(&sdata->local->hw, &sdata->work);

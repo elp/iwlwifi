@@ -1,6 +1,7 @@
 /*
  * This file contains the handling of TX in wlan driver.
  */
+#include <linux/hardirq.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/sched.h>
@@ -11,6 +12,7 @@
 #include "decl.h"
 #include "defs.h"
 #include "dev.h"
+#include "mesh.h"
 
 /**
  * convert_radiotap_rate_to_mv - converts Tx/Rx rates from IEEE80211_RADIOTAP_RATE
