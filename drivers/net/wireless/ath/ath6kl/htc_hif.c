@@ -24,29 +24,6 @@
 
 #define ATH6KL_TIME_QUANTUM	10  /* in ms */
 
-static void ath6kl_add_io_pkt(struct ath6kl_device *dev,
-			      struct htc_packet *packet)
-{
-	spin_lock_bh(&dev->lock);
-	list_add_tail(&packet->list, &dev->reg_io);
-	spin_unlock_bh(&dev->lock);
-}
-
-static struct htc_packet *ath6kl_get_io_pkt(struct ath6kl_device *dev)
-{
-	struct htc_packet *packet = NULL;
-
-	spin_lock_bh(&dev->lock);
-	if (!list_empty(&dev->reg_io)) {
-		packet = list_first_entry(&dev->reg_io,
-					 struct htc_packet, list);
-		list_del(&packet->list);
-	}
-	spin_unlock_bh(&dev->lock);
-
-	return packet;
-}
-
 static int ath6kldev_cp_scat_dma_buf(struct hif_scatter_req *req, bool from_dma)
 {
 	u8 *buf;
@@ -191,65 +168,6 @@ int ath6kldev_rx_control(struct ath6kl_device *dev, bool enable_rx)
 	return status;
 }
 
-static void ath6kldev_rw_async_handler(struct htc_target *target,
-				       struct htc_packet *packet)
-{
-	struct ath6kl_device *dev = target->dev;
-	struct hif_scatter_req *req = packet->pkt_cntxt;
-
-	req->status = packet->status;
-
-	ath6kl_add_io_pkt(dev, packet);
-
-	req->complete(req);
-}
-
-static int ath6kldev_rw_scatter(struct ath6kl *ar, struct hif_scatter_req *req)
-{
-	struct ath6kl_device *dev = ar->htc_target->dev;
-	struct htc_packet *packet = NULL;
-	int status = 0;
-	u32 request = req->req;
-	u8 *virt_dma_buf;
-
-	if (!req->len)
-		return 0;
-
-	if (request & HIF_ASYNCHRONOUS) {
-		/* use an I/O packet to carry this request */
-		packet = ath6kl_get_io_pkt(dev);
-		if (!packet) {
-			status = -ENOMEM;
-			goto out;
-		}
-
-		packet->pkt_cntxt = req;
-		packet->completion = ath6kldev_rw_async_handler;
-		packet->context = ar->htc_target;
-	}
-
-	virt_dma_buf = req->virt_dma_buf;
-
-	if (request & HIF_ASYNCHRONOUS)
-		status = hif_write_async(dev->ar, req->addr, virt_dma_buf,
-					 req->len, request, packet);
-	else
-		status = hif_read_write_sync(dev->ar, req->addr, virt_dma_buf,
-					     req->len, request);
-
-out:
-	if (status)
-		if (request & HIF_ASYNCHRONOUS) {
-			if (packet != NULL)
-				ath6kl_add_io_pkt(dev, packet);
-			req->status = status;
-			req->complete(req);
-			status = 0;
-		}
-
-	return status;
-}
-
 int ath6kldev_submit_scat_req(struct ath6kl_device *dev,
 			      struct hif_scatter_req *scat_req, bool read)
 {
@@ -273,102 +191,24 @@ int ath6kldev_submit_scat_req(struct ath6kl_device *dev,
 		   scat_req->addr, !read ? "async" : "sync",
 		   (read) ? "rd" : "wr");
 
-	if (!read && dev->virt_scat)
+	if (!read && scat_req->virt_scat) {
 		status = ath6kldev_cp_scat_dma_buf(scat_req, false);
-
-	if (status) {
-		if (!read) {
+		if (status) {
 			scat_req->status = status;
-			scat_req->complete(scat_req);
+			scat_req->complete(dev->ar->htc_target, scat_req);
 			return 0;
 		}
-		return status;
 	}
 
-	status = dev->hif_scat_info.rw_scat_func(dev->ar, scat_req);
+	status = ath6kl_hif_scat_req_rw(dev->ar, scat_req);
 
 	if (read) {
 		/* in sync mode, we can touch the scatter request */
 		scat_req->status = status;
-		if (!status && dev->virt_scat)
+		if (!status && scat_req->virt_scat)
 			scat_req->status =
 				ath6kldev_cp_scat_dma_buf(scat_req, true);
 	}
-
-	return status;
-}
-
-/*
- * function to set up virtual scatter support if HIF
- * layer has not implemented the interface.
- */
-static int ath6kldev_setup_virt_scat_sup(struct ath6kl_device *dev)
-{
-	struct hif_scatter_req *scat_req;
-	int buf_sz, scat_req_sz, scat_list_sz;
-	int i, status = 0;
-	u8 *virt_dma_buf;
-
-	buf_sz = 2 * L1_CACHE_BYTES + ATH6KL_MAX_TRANSFER_SIZE_PER_SCATTER;
-
-	scat_list_sz = (ATH6KL_SCATTER_ENTRIES_PER_REQ - 1) *
-		       sizeof(struct hif_scatter_item);
-	scat_req_sz = sizeof(*scat_req) + scat_list_sz;
-
-	for (i = 0; i < ATH6KL_SCATTER_REQS; i++) {
-		scat_req = kzalloc(scat_req_sz, GFP_KERNEL);
-
-		if (!scat_req) {
-			status = -ENOMEM;
-			break;
-		}
-
-		virt_dma_buf = kzalloc(buf_sz, GFP_KERNEL);
-		if (!virt_dma_buf) {
-			kfree(scat_req);
-			status = -ENOMEM;
-			break;
-		}
-
-		scat_req->virt_dma_buf =
-			(u8 *)L1_CACHE_ALIGN((unsigned long)virt_dma_buf);
-
-		/* we emulate a DMA bounce interface */
-		hif_scatter_req_add(dev->ar, scat_req);
-	}
-
-	if (status)
-		ath6kl_hif_cleanup_scatter(dev->ar);
-	else {
-		dev->hif_scat_info.rw_scat_func = ath6kldev_rw_scatter;
-		dev->hif_scat_info.max_scat_entries =
-			ATH6KL_SCATTER_ENTRIES_PER_REQ;
-		dev->hif_scat_info.max_xfer_szper_scatreq =
-			ATH6KL_MAX_TRANSFER_SIZE_PER_SCATTER;
-		dev->virt_scat = true;
-	}
-
-	return status;
-}
-
-int ath6kldev_setup_msg_bndl(struct ath6kl_device *dev, int max_msg_per_trans)
-{
-	int status;
-
-	status = ath6kl_hif_enable_scatter(dev->ar, &dev->hif_scat_info);
-
-	if (status) {
-		ath6kl_warn("hif does not support scatter requests (%d)\n",
-			    status);
-
-		/* we can try to use a virtual DMA scatter mechanism */
-		status = ath6kldev_setup_virt_scat_sup(dev);
-	}
-
-	if (!status)
-		ath6kl_dbg(ATH6KL_DBG_ANY, "max scatter items:%d: maxlen:%d\n",
-			   dev->hif_scat_info.max_scat_entries,
-			   dev->hif_scat_info.max_xfer_szper_scatreq);
 
 	return status;
 }
@@ -576,7 +416,8 @@ static int proc_pending_irqs(struct ath6kl_device *dev, bool *done)
 		 * improve performance by reducing context switching when
 		 * we rapidly pull packets.
 		 */
-		status = dev->msg_pending(dev->htc_cnxt, &lk_ahd, &fetched);
+		status = ath6kl_htc_rxmsg_pending_handler(dev->htc_cnxt,
+							  &lk_ahd, &fetched);
 		if (status)
 			goto out;
 
@@ -585,7 +426,7 @@ static int proc_pending_irqs(struct ath6kl_device *dev, bool *done)
 			 * HTC could not pull any messages out due to lack
 			 * of resources.
 			 */
-			dev->chk_irq_status_cnt = 0;
+			dev->htc_cnxt->chk_irq_status_cnt = 0;
 	}
 
 	/* now handle the rest of them */
@@ -628,7 +469,8 @@ out:
 	ath6kl_dbg(ATH6KL_DBG_IRQ,
 		   "bypassing irq status re-check, forcing done\n");
 
-	*done = true;
+	if (!dev->htc_cnxt->chk_irq_status_cnt)
+		*done = true;
 
 	ath6kl_dbg(ATH6KL_DBG_IRQ,
 		   "proc_pending_irqs: (done:%d, status=%d\n", *done, status);
@@ -647,7 +489,7 @@ int ath6kldev_intr_bh_handler(struct ath6kl *ar)
 	 * Reset counter used to flag a re-scan of IRQ status registers on
 	 * the target.
 	 */
-	dev->chk_irq_status_cnt = 0;
+	dev->htc_cnxt->chk_irq_status_cnt = 0;
 
 	/*
 	 * IRQ processing is synchronous, interrupt status registers can be
@@ -766,39 +608,27 @@ int ath6kldev_mask_intrs(struct ath6kl_device *dev)
 int ath6kldev_setup(struct ath6kl_device *dev)
 {
 	int status = 0;
-	int i;
-	struct htc_packet *packet;
 
-	/* initialize our free list of IO packets */
-	INIT_LIST_HEAD(&dev->reg_io);
 	spin_lock_init(&dev->lock);
-
-	/* carve up register I/O packets (these are for ASYNC register I/O ) */
-	for (i = 0; i < ATH6KL_MAX_REG_IO_BUFFERS; i++) {
-		packet = &dev->reg_io_buf[i].packet;
-		set_htc_rxpkt_info(packet, dev, dev->reg_io_buf[i].buf,
-				   ATH6KL_REG_IO_BUFFER_SIZE, 0);
-		ath6kl_add_io_pkt(dev, packet);
-	}
 
 	/*
 	 * NOTE: we actually get the block size of a mailbox other than 0,
 	 * for SDIO the block size on mailbox 0 is artificially set to 1.
 	 * So we use the block size that is set for the other 3 mailboxes.
 	 */
-	dev->block_sz = dev->ar->mbox_info.block_size;
+	dev->htc_cnxt->block_sz = dev->ar->mbox_info.block_size;
 
 	/* must be a power of 2 */
-	if ((dev->block_sz & (dev->block_sz - 1)) != 0) {
+	if ((dev->htc_cnxt->block_sz & (dev->htc_cnxt->block_sz - 1)) != 0) {
 		WARN_ON(1);
 		goto fail_setup;
 	}
 
 	/* assemble mask, used for padding to a block */
-	dev->block_mask = dev->block_sz - 1;
+	dev->htc_cnxt->block_mask = dev->htc_cnxt->block_sz - 1;
 
 	ath6kl_dbg(ATH6KL_DBG_TRC, "block size: %d, mbox addr:0x%X\n",
-		   dev->block_sz, dev->ar->mbox_info.htc_addr);
+		   dev->htc_cnxt->block_sz, dev->ar->mbox_info.htc_addr);
 
 	ath6kl_dbg(ATH6KL_DBG_TRC,
 		   "hif interrupt processing is sync only\n");

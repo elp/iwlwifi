@@ -223,7 +223,7 @@ static bool ath6kl_cfg80211_ready(struct ath6kl *ar)
 		return false;
 	}
 
-	if (ar->wlan_state == WLAN_DISABLED) {
+	if (!test_bit(WLAN_ENABLED, &ar->flag)) {
 		ath6kl_err("wlan disabled\n");
 		return false;
 	}
@@ -559,14 +559,14 @@ void ath6kl_cfg80211_connect_event(struct ath6kl *ar, u16 channel,
 		return;
 	}
 
-	if (!test_bit(CONNECTED, &ar->flag)) {
+	if (ar->sme_state == SME_CONNECTING) {
 		/* inform connect result to cfg80211 */
-		ar->sme_state = SME_DISCONNECTED;
+		ar->sme_state = SME_CONNECTED;
 		cfg80211_connect_result(ar->net_dev, bssid,
 					assoc_req_ie, assoc_req_len,
 					assoc_resp_ie, assoc_resp_len,
 					WLAN_STATUS_SUCCESS, GFP_KERNEL);
-	} else {
+	} else if (ar->sme_state == SME_CONNECTED) {
 		/* inform roam event to cfg80211 */
 		cfg80211_roamed(ar->net_dev, ibss_ch, bssid,
 				assoc_req_ie, assoc_req_len,
@@ -720,9 +720,9 @@ static inline bool is_ch_11a(u16 ch)
 	return (!((ch >= 2412) && (ch <= 2484)));
 }
 
-static void ath6kl_cfg80211_scan_node(void *arg, struct bss *ni)
+/* struct ath6kl_node_table::nt_nodelock is locked when calling this */
+void ath6kl_cfg80211_scan_node(struct wiphy *wiphy, struct bss *ni)
 {
-	struct wiphy *wiphy = (struct wiphy *)arg;
 	u16 size;
 	unsigned char *ieeemgmtbuf = NULL;
 	struct ieee80211_mgmt *mgmt;
@@ -769,7 +769,7 @@ static void ath6kl_cfg80211_scan_node(void *arg, struct bss *ni)
 		   "%s: bssid %pM ch %d freq %d size %d\n", __func__,
 		   mgmt->bssid, channel->hw_value, freq, size);
 	cfg80211_inform_bss_frame(wiphy, channel, mgmt,
-				  size, signal, GFP_KERNEL);
+				  size, signal, GFP_ATOMIC);
 
 	kfree(ieeemgmtbuf);
 }
@@ -779,7 +779,6 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 {
 	struct ath6kl *ar = (struct ath6kl *)ath6kl_priv(ndev);
 	int ret = 0;
-	u32 force_fg_scan = 0;
 
 	if (!ath6kl_cfg80211_ready(ar))
 		return -EIO;
@@ -807,10 +806,7 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 						  request->ssids[i].ssid);
 	}
 
-	if (test_bit(CONNECTED, &ar->flag))
-		force_fg_scan = 1;
-
-	if (ath6kl_wmi_startscan_cmd(ar->wmi, WMI_LONG_SCAN, force_fg_scan,
+	if (ath6kl_wmi_startscan_cmd(ar->wmi, WMI_LONG_SCAN, 0,
 				     false, 0, 0, 0, NULL) != 0) {
 		ath6kl_err("wmi_startscan_cmd failed\n");
 		ret = -EIO;
@@ -823,29 +819,33 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 void ath6kl_cfg80211_scan_complete_event(struct ath6kl *ar, int status)
 {
+	int i;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: status %d\n", __func__, status);
 
-	if (ar->scan_req) {
-		/* Translate data to cfg80211 mgmt format */
-		ath6kl_wmi_iterate_nodes(ar->wmi, ath6kl_cfg80211_scan_node,
-					 ar->wdev->wiphy);
+	if (!ar->scan_req)
+		return;
 
-		cfg80211_scan_done(ar->scan_req, ((status & -ECANCELED)
-						  || (status & -EBUSY)) ? true :
-				   false);
-
-		if (ar->scan_req->n_ssids && ar->scan_req->ssids[0].ssid_len) {
-			u8 i;
-
-			for (i = 0; i < ar->scan_req->n_ssids; i++) {
-				ath6kl_wmi_probedssid_cmd(ar->wmi, i + 1,
-							  DISABLE_SSID_FLAG,
-							  0, NULL);
-			}
-		}
-		ar->scan_req = NULL;
+	if ((status == -ECANCELED) || (status == -EBUSY)) {
+		cfg80211_scan_done(ar->scan_req, true);
+		goto out;
 	}
+
+	/* Translate data to cfg80211 mgmt format */
+	wlan_iterate_nodes(&ar->scan_table, ar->wdev->wiphy);
+
+	cfg80211_scan_done(ar->scan_req, false);
+
+	if (ar->scan_req->n_ssids && ar->scan_req->ssids[0].ssid_len) {
+		for (i = 0; i < ar->scan_req->n_ssids; i++) {
+			ath6kl_wmi_probedssid_cmd(ar->wmi, i + 1,
+						  DISABLE_SSID_FLAG,
+						  0, NULL);
+		}
+	}
+
+out:
+	ar->scan_req = NULL;
 }
 
 static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,

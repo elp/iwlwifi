@@ -119,10 +119,13 @@
 #define HTC_RX_PKT_PART_OF_BUNDLE        (1 << 2)
 #define HTC_RX_PKT_NO_RECYCLE            (1 << 3)
 
+<<<<<<< HEAD
 /* scatter request flags */
 
 #define HTC_SCAT_REQ_FLG_PART_BNDL  (1 << 0)
 
+=======
+>>>>>>> upstream
 #define NUM_CONTROL_BUFFERS     8
 #define NUM_CONTROL_TX_BUFFERS  2
 #define NUM_CONTROL_RX_BUFFERS  (NUM_CONTROL_BUFFERS - NUM_CONTROL_TX_BUFFERS)
@@ -532,6 +535,7 @@ struct htc_target {
 
 	bool tx_bndl_enable;
 	int rx_bndl_enable;
+<<<<<<< HEAD
 };
 
 void *htc_create(struct ath6kl *ar);
@@ -553,6 +557,44 @@ void htc_indicate_activity_change(struct htc_target *target,
 				  enum htc_endpoint_id endpoint, bool active);
 int htc_get_rxbuf_num(struct htc_target *target, enum htc_endpoint_id endpoint);
 int htc_add_rxbuf_multiple(struct htc_target *target, struct list_head *pktq);
+=======
+	int max_rx_bndl_sz;
+	int max_tx_bndl_sz;
+
+	u32 block_sz;
+	u32 block_mask;
+
+	int max_scat_entries;
+	int max_xfer_szper_scatreq;
+
+	int chk_irq_status_cnt;
+};
+
+void *ath6kl_htc_create(struct ath6kl *ar);
+void ath6kl_htc_set_credit_dist(struct htc_target *target,
+				struct htc_credit_state_info *cred_info,
+				u16 svc_pri_order[], int len);
+int ath6kl_htc_wait_target(struct htc_target *target);
+int ath6kl_htc_start(struct htc_target *target);
+int ath6kl_htc_conn_service(struct htc_target *target,
+			    struct htc_service_connect_req *req,
+			    struct htc_service_connect_resp *resp);
+int ath6kl_htc_tx(struct htc_target *target, struct htc_packet *packet);
+void ath6kl_htc_stop(struct htc_target *target);
+void ath6kl_htc_cleanup(struct htc_target *target);
+void ath6kl_htc_flush_txep(struct htc_target *target,
+			   enum htc_endpoint_id endpoint, u16 tag);
+void ath6kl_htc_flush_rx_buf(struct htc_target *target);
+void ath6kl_htc_indicate_activity_change(struct htc_target *target,
+					 enum htc_endpoint_id endpoint,
+					 bool active);
+int ath6kl_htc_get_rxbuf_num(struct htc_target *target,
+			     enum htc_endpoint_id endpoint);
+int ath6kl_htc_add_rxbuf_multiple(struct htc_target *target,
+				  struct list_head *pktq);
+int ath6kl_htc_rxmsg_pending_handler(struct htc_target *target,
+				     u32 msg_look_ahead[], int *n_pkts);
+>>>>>>> upstream
 
 static inline void set_htc_pkt_info(struct htc_packet *packet, void *context,
 				    u8 *buf, unsigned int len,

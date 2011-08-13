@@ -128,6 +128,33 @@ static int ath6kl_sdio_func0_cmd52_wr_byte(struct mmc_card *card,
 	return mmc_wait_for_cmd(card->host, &io_cmd, 0);
 }
 
+static int ath6kl_sdio_io(struct sdio_func *func, u32 request, u32 addr,
+			  u8 *buf, u32 len)
+{
+	int ret = 0;
+
+	if (request & HIF_WRITE) {
+		if (addr >= HIF_MBOX_BASE_ADDR &&
+		    addr <= HIF_MBOX_END_ADDR)
+			addr += (HIF_MBOX_WIDTH - len);
+
+		if (addr == HIF_MBOX0_EXT_BASE_ADDR)
+			addr += HIF_MBOX0_EXT_WIDTH - len;
+
+		if (request & HIF_FIXED_ADDRESS)
+			ret = sdio_writesb(func, addr, buf, len);
+		else
+			ret = sdio_memcpy_toio(func, addr, buf, len);
+	} else {
+		if (request & HIF_FIXED_ADDRESS)
+			ret = sdio_readsb(func, buf, addr, len);
+		else
+			ret = sdio_memcpy_fromio(func, buf, addr, len);
+	}
+
+	return ret;
+}
+
 static struct bus_request *ath6kl_sdio_alloc_busreq(struct ath6kl_sdio *ar_sdio)
 {
 	struct bus_request *bus_req;
@@ -163,7 +190,6 @@ static void ath6kl_sdio_free_bus_req(struct ath6kl_sdio *ar_sdio,
 }
 
 static void ath6kl_sdio_setup_scat_data(struct hif_scatter_req *scat_req,
-					struct hif_scatter_req_priv *s_req_priv,
 					struct mmc_data *data)
 {
 	struct scatterlist *sg;
@@ -182,7 +208,7 @@ static void ath6kl_sdio_setup_scat_data(struct hif_scatter_req *scat_req,
 						    MMC_DATA_READ;
 
 	/* fill SG entries */
-	sg = s_req_priv->sgentries;
+	sg = scat_req->sgentries;
 	sg_init_table(sg, scat_req->scat_entries);
 
 	/* assemble SG list */
@@ -206,7 +232,7 @@ static void ath6kl_sdio_setup_scat_data(struct hif_scatter_req *scat_req,
 	}
 
 	/* set scatter-gather table for request */
-	data->sg = s_req_priv->sgentries;
+	data->sg = scat_req->sgentries;
 	data->sg_len = scat_req->scat_entries;
 }
 
@@ -218,15 +244,26 @@ static int ath6kl_sdio_scat_rw(struct ath6kl_sdio *ar_sdio,
 	struct mmc_data data;
 	struct hif_scatter_req *scat_req;
 	u8 opcode, rw;
-	int status;
+	int status, len;
 
 	scat_req = req->scat_req;
+
+	if (scat_req->virt_scat) {
+		len = scat_req->len;
+		if (scat_req->req & HIF_BLOCK_BASIS)
+			len = round_down(len, HIF_MBOX_BLOCK_SIZE);
+
+		status = ath6kl_sdio_io(ar_sdio->func, scat_req->req,
+					scat_req->addr, scat_req->virt_dma_buf,
+					len);
+		goto scat_complete;
+	}
 
 	memset(&mmc_req, 0, sizeof(struct mmc_request));
 	memset(&cmd, 0, sizeof(struct mmc_command));
 	memset(&data, 0, sizeof(struct mmc_data));
 
-	ath6kl_sdio_setup_scat_data(scat_req, scat_req->req_priv, &data);
+	ath6kl_sdio_setup_scat_data(scat_req, &data);
 
 	opcode = (scat_req->req & HIF_FIXED_ADDRESS) ?
 		  CMD53_ARG_FIXED_ADDRESS : CMD53_ARG_INCR_ADDRESS;
@@ -258,6 +295,8 @@ static int ath6kl_sdio_scat_rw(struct ath6kl_sdio *ar_sdio,
 	mmc_wait_for_req(ar_sdio->func->card->host, &mmc_req);
 
 	status = cmd.error ? cmd.error : data.error;
+
+scat_complete:
 	scat_req->status = status;
 
 	if (scat_req->status)
@@ -265,132 +304,74 @@ static int ath6kl_sdio_scat_rw(struct ath6kl_sdio *ar_sdio,
 			   scat_req->status);
 
 	if (scat_req->req & HIF_ASYNCHRONOUS)
-		scat_req->complete(scat_req);
+		scat_req->complete(ar_sdio->ar->htc_target, scat_req);
 
 	return status;
 }
 
-
-/* callback to issue a read-write scatter request */
-static int ath6kl_sdio_async_rw_scatter(struct ath6kl *ar,
-					struct hif_scatter_req *scat_req)
-{
-	struct ath6kl_sdio *ar_sdio = ath6kl_sdio_priv(ar);
-	struct hif_scatter_req_priv *req_priv = scat_req->req_priv;
-	u32 request = scat_req->req;
-	int status = 0;
-	unsigned long flags;
-
-	if (!scat_req->len)
-		return -EINVAL;
-
-	ath6kl_dbg(ATH6KL_DBG_SCATTER,
-		"hif-scatter: total len: %d scatter entries: %d\n",
-		scat_req->len, scat_req->scat_entries);
-
-	if (request & HIF_SYNCHRONOUS) {
-		sdio_claim_host(ar_sdio->func);
-		status = ath6kl_sdio_scat_rw(ar_sdio, req_priv->busrequest);
-		sdio_release_host(ar_sdio->func);
-	} else {
-		spin_lock_irqsave(&ar_sdio->wr_async_lock, flags);
-		list_add_tail(&req_priv->busrequest->list, &ar_sdio->wr_asyncq);
-		spin_unlock_irqrestore(&ar_sdio->wr_async_lock, flags);
-		queue_work(ar->ath6kl_wq, &ar_sdio->wr_async_work);
-	}
-
-	return status;
-}
-
-/* clean up scatter support */
-static void ath6kl_sdio_cleanup_scat_resource(struct ath6kl_sdio *ar_sdio)
-{
-	struct hif_scatter_req *s_req, *tmp_req;
-	unsigned long flag;
-
-	/* empty the free list */
-	spin_lock_irqsave(&ar_sdio->scat_lock, flag);
-	list_for_each_entry_safe(s_req, tmp_req, &ar_sdio->scat_req, list) {
-		list_del(&s_req->list);
-		spin_unlock_irqrestore(&ar_sdio->scat_lock, flag);
-
-		if (s_req->req_priv && s_req->req_priv->busrequest)
-			ath6kl_sdio_free_bus_req(ar_sdio,
-						 s_req->req_priv->busrequest);
-		kfree(s_req->virt_dma_buf);
-		kfree(s_req->req_priv);
-		kfree(s_req);
-
-		spin_lock_irqsave(&ar_sdio->scat_lock, flag);
-	}
-	spin_unlock_irqrestore(&ar_sdio->scat_lock, flag);
-}
-
-/* setup of HIF scatter resources */
-static int ath6kl_sdio_setup_scat_resource(struct ath6kl_sdio *ar_sdio,
-					   struct hif_dev_scat_sup_info *pinfo)
+static int ath6kl_sdio_alloc_prep_scat_req(struct ath6kl_sdio *ar_sdio,
+					   int n_scat_entry, int n_scat_req,
+					   bool virt_scat)
 {
 	struct hif_scatter_req *s_req;
 	struct bus_request *bus_req;
-	int i, scat_req_sz, scat_list_sz;
+	int i, scat_req_sz, scat_list_sz, sg_sz, buf_sz;
+	u8 *virt_buf;
 
-	/* check if host supports scatter and it meets our requirements */
-	if (ar_sdio->func->card->host->max_segs < MAX_SCATTER_ENTRIES_PER_REQ) {
-		ath6kl_err("hif-scatter: host only supports scatter of : %d entries, need: %d\n",
-			   ar_sdio->func->card->host->max_segs,
-			   MAX_SCATTER_ENTRIES_PER_REQ);
-		return -EINVAL;
-	}
-
-	ath6kl_dbg(ATH6KL_DBG_ANY,
-		   "hif-scatter enabled: max scatter req : %d entries: %d\n",
-		   MAX_SCATTER_REQUESTS, MAX_SCATTER_ENTRIES_PER_REQ);
-
-	scat_list_sz = (MAX_SCATTER_ENTRIES_PER_REQ - 1) *
-		       sizeof(struct hif_scatter_item);
+	scat_list_sz = (n_scat_entry - 1) * sizeof(struct hif_scatter_item);
 	scat_req_sz = sizeof(*s_req) + scat_list_sz;
 
-	for (i = 0; i < MAX_SCATTER_REQUESTS; i++) {
+	if (!virt_scat)
+		sg_sz = sizeof(struct scatterlist) * n_scat_entry;
+	else
+		buf_sz =  2 * L1_CACHE_BYTES +
+			  ATH6KL_MAX_TRANSFER_SIZE_PER_SCATTER;
+
+	for (i = 0; i < n_scat_req; i++) {
 		/* allocate the scatter request */
 		s_req = kzalloc(scat_req_sz, GFP_KERNEL);
 		if (!s_req)
-			goto fail_setup_scat;
+			return -ENOMEM;
 
-		/* allocate the private request blob */
-		s_req->req_priv = kzalloc(sizeof(*s_req->req_priv), GFP_KERNEL);
+		if (virt_scat) {
+			virt_buf = kzalloc(buf_sz, GFP_KERNEL);
+			if (!virt_buf) {
+				kfree(s_req);
+				return -ENOMEM;
+			}
 
-		if (!s_req->req_priv) {
-			kfree(s_req);
-			goto fail_setup_scat;
+			s_req->virt_dma_buf =
+				(u8 *)L1_CACHE_ALIGN((unsigned long)virt_buf);
+		} else {
+			/* allocate sglist */
+			s_req->sgentries = kzalloc(sg_sz, GFP_KERNEL);
+
+			if (!s_req->sgentries) {
+				kfree(s_req);
+				return -ENOMEM;
+			}
 		}
 
 		/* allocate a bus request for this scatter request */
 		bus_req = ath6kl_sdio_alloc_busreq(ar_sdio);
 		if (!bus_req) {
-			kfree(s_req->req_priv);
+			kfree(s_req->sgentries);
+			kfree(s_req->virt_dma_buf);
 			kfree(s_req);
-			goto fail_setup_scat;
+			return -ENOMEM;
 		}
 
 		/* assign the scatter request to this bus request */
 		bus_req->scat_req = s_req;
-		s_req->req_priv->busrequest = bus_req;
+		s_req->busrequest = bus_req;
+
+		s_req->virt_scat = virt_scat;
+
 		/* add it to the scatter pool */
 		hif_scatter_req_add(ar_sdio->ar, s_req);
 	}
 
-	/* set scatter function pointers */
-	pinfo->rw_scat_func = ath6kl_sdio_async_rw_scatter;
-	pinfo->max_scat_entries = MAX_SCATTER_ENTRIES_PER_REQ;
-	pinfo->max_xfer_szper_scatreq = MAX_SCATTER_REQ_TRANSFER_SIZE;
-
 	return 0;
-
-fail_setup_scat:
-	ath6kl_err("hif-scatter: failed to alloc scatter resources !\n");
-	ath6kl_sdio_cleanup_scat_resource(ar_sdio);
-
-	return -ENOMEM;
 }
 
 static int ath6kl_sdio_read_write_sync(struct ath6kl *ar, u32 addr, u8 *buf,
@@ -414,27 +395,9 @@ static int ath6kl_sdio_read_write_sync(struct ath6kl *ar, u32 addr, u8 *buf,
 		tbuf = buf;
 
 	sdio_claim_host(ar_sdio->func);
-	if (request & HIF_WRITE) {
-		if (addr >= HIF_MBOX_BASE_ADDR &&
-		    addr <= HIF_MBOX_END_ADDR)
-			addr += (HIF_MBOX_WIDTH - len);
-
-		if (addr == HIF_MBOX0_EXT_BASE_ADDR)
-			addr += HIF_MBOX0_EXT_WIDTH - len;
-
-		if (request & HIF_FIXED_ADDRESS)
-			ret = sdio_writesb(ar_sdio->func, addr, tbuf, len);
-		else
-			ret = sdio_memcpy_toio(ar_sdio->func, addr, tbuf, len);
-	} else {
-		if (request & HIF_FIXED_ADDRESS)
-			ret = sdio_readsb(ar_sdio->func, tbuf, addr, len);
-		else
-			ret = sdio_memcpy_fromio(ar_sdio->func, tbuf,
-						 addr, len);
-		if (bounced)
-			memcpy(buf, tbuf, len);
-	}
+	ret = ath6kl_sdio_io(ar_sdio->func, request, addr, tbuf, len);
+	if ((request & HIF_READ) && bounced)
+		memcpy(buf, tbuf, len);
 	sdio_release_host(ar_sdio->func);
 
 	return ret;
@@ -645,22 +608,117 @@ static void ath6kl_sdio_scatter_req_add(struct ath6kl *ar,
 
 }
 
-static int ath6kl_sdio_enable_scatter(struct ath6kl *ar,
-				      struct hif_dev_scat_sup_info *info)
+/* scatter gather read write request */
+static int ath6kl_sdio_async_rw_scatter(struct ath6kl *ar,
+					struct hif_scatter_req *scat_req)
 {
 	struct ath6kl_sdio *ar_sdio = ath6kl_sdio_priv(ar);
-	int ret;
+	u32 request = scat_req->req;
+	int status = 0;
+	unsigned long flags;
 
-	ret = ath6kl_sdio_setup_scat_resource(ar_sdio, info);
+	if (!scat_req->len)
+		return -EINVAL;
 
-	return ret;
+	ath6kl_dbg(ATH6KL_DBG_SCATTER,
+		"hif-scatter: total len: %d scatter entries: %d\n",
+		scat_req->len, scat_req->scat_entries);
+
+	if (request & HIF_SYNCHRONOUS) {
+		sdio_claim_host(ar_sdio->func);
+		status = ath6kl_sdio_scat_rw(ar_sdio, scat_req->busrequest);
+		sdio_release_host(ar_sdio->func);
+	} else {
+		spin_lock_irqsave(&ar_sdio->wr_async_lock, flags);
+		list_add_tail(&scat_req->busrequest->list, &ar_sdio->wr_asyncq);
+		spin_unlock_irqrestore(&ar_sdio->wr_async_lock, flags);
+		queue_work(ar->ath6kl_wq, &ar_sdio->wr_async_work);
+	}
+
+	return status;
 }
 
+/* clean up scatter support */
 static void ath6kl_sdio_cleanup_scatter(struct ath6kl *ar)
 {
 	struct ath6kl_sdio *ar_sdio = ath6kl_sdio_priv(ar);
+	struct hif_scatter_req *s_req, *tmp_req;
+	unsigned long flag;
 
-	ath6kl_sdio_cleanup_scat_resource(ar_sdio);
+	/* empty the free list */
+	spin_lock_irqsave(&ar_sdio->scat_lock, flag);
+	list_for_each_entry_safe(s_req, tmp_req, &ar_sdio->scat_req, list) {
+		list_del(&s_req->list);
+		spin_unlock_irqrestore(&ar_sdio->scat_lock, flag);
+
+		if (s_req->busrequest)
+			ath6kl_sdio_free_bus_req(ar_sdio, s_req->busrequest);
+		kfree(s_req->virt_dma_buf);
+		kfree(s_req->sgentries);
+		kfree(s_req);
+
+		spin_lock_irqsave(&ar_sdio->scat_lock, flag);
+	}
+	spin_unlock_irqrestore(&ar_sdio->scat_lock, flag);
+}
+
+/* setup of HIF scatter resources */
+static int ath6kl_sdio_enable_scatter(struct ath6kl *ar)
+{
+	struct ath6kl_sdio *ar_sdio = ath6kl_sdio_priv(ar);
+	struct htc_target *target = ar->htc_target;
+	int ret;
+	bool virt_scat = false;
+
+	/* check if host supports scatter and it meets our requirements */
+	if (ar_sdio->func->card->host->max_segs < MAX_SCATTER_ENTRIES_PER_REQ) {
+		ath6kl_err("host only supports scatter of :%d entries, need: %d\n",
+			   ar_sdio->func->card->host->max_segs,
+			   MAX_SCATTER_ENTRIES_PER_REQ);
+		virt_scat = true;
+	}
+
+	if (!virt_scat) {
+		ret = ath6kl_sdio_alloc_prep_scat_req(ar_sdio,
+				MAX_SCATTER_ENTRIES_PER_REQ,
+				MAX_SCATTER_REQUESTS, virt_scat);
+
+		if (!ret) {
+			ath6kl_dbg(ATH6KL_DBG_ANY,
+				   "hif-scatter enabled: max scatter req : %d entries: %d\n",
+				   MAX_SCATTER_REQUESTS,
+				   MAX_SCATTER_ENTRIES_PER_REQ);
+
+			target->max_scat_entries = MAX_SCATTER_ENTRIES_PER_REQ;
+			target->max_xfer_szper_scatreq =
+						MAX_SCATTER_REQ_TRANSFER_SIZE;
+		} else {
+			ath6kl_sdio_cleanup_scatter(ar);
+			ath6kl_warn("hif scatter resource setup failed, trying virtual scatter method\n");
+		}
+	}
+
+	if (virt_scat || ret) {
+		ret = ath6kl_sdio_alloc_prep_scat_req(ar_sdio,
+				ATH6KL_SCATTER_ENTRIES_PER_REQ,
+				ATH6KL_SCATTER_REQS, virt_scat);
+
+		if (ret) {
+			ath6kl_err("failed to alloc virtual scatter resources !\n");
+			ath6kl_sdio_cleanup_scatter(ar);
+			return ret;
+		}
+
+		ath6kl_dbg(ATH6KL_DBG_ANY,
+			   "Vitual scatter enabled, max_scat_req:%d, entries:%d\n",
+			   ATH6KL_SCATTER_REQS, ATH6KL_SCATTER_ENTRIES_PER_REQ);
+
+		target->max_scat_entries = ATH6KL_SCATTER_ENTRIES_PER_REQ;
+		target->max_xfer_szper_scatreq =
+					ATH6KL_MAX_TRANSFER_SIZE_PER_SCATTER;
+	}
+
+	return 0;
 }
 
 static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
@@ -671,6 +729,7 @@ static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.scatter_req_get = ath6kl_sdio_scatter_req_get,
 	.scatter_req_add = ath6kl_sdio_scatter_req_add,
 	.enable_scatter = ath6kl_sdio_enable_scatter,
+	.scat_req_rw = ath6kl_sdio_async_rw_scatter,
 	.cleanup_scatter = ath6kl_sdio_cleanup_scatter,
 };
 

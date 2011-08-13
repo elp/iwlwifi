@@ -127,10 +127,10 @@ static void htc_tx_comp_handler(struct htc_target *target,
 	htc_tx_complete(endpoint, &container);
 }
 
-static void htc_async_tx_scat_complete(struct hif_scatter_req *scat_req)
+static void htc_async_tx_scat_complete(struct htc_target *target,
+				       struct hif_scatter_req *scat_req)
 {
-	struct htc_endpoint *endpoint = scat_req->ep;
-	struct htc_target *target = endpoint->target;
+	struct htc_endpoint *endpoint;
 	struct htc_packet *packet;
 	struct list_head tx_compq;
 	int i;
@@ -143,6 +143,9 @@ static void htc_async_tx_scat_complete(struct hif_scatter_req *scat_req)
 
 	if (scat_req->status)
 		ath6kl_err("send scatter req failed: %d\n", scat_req->status);
+
+	packet = scat_req->scat_list[0].packet;
+	endpoint = &target->endpoint[packet->endpoint];
 
 	/* walk through the scatter list and process */
 	for (i = 0; i < scat_req->scat_entries; i++) {
@@ -178,7 +181,7 @@ static int htc_issue_send(struct htc_target *target, struct htc_packet *packet)
 	ath6kl_dbg(ATH6KL_DBG_HTC_SEND, "%s: transmit len : %d (%s)\n",
 		   __func__, send_len, sync ? "sync" : "async");
 
-	padded_len = CALC_TXRX_PADDED_LEN(target->dev, send_len);
+	padded_len = CALC_TXRX_PADDED_LEN(target, send_len);
 
 	ath6kl_dbg(ATH6KL_DBG_HTC_SEND,
 		"DevSendPacket, padded len: %d mbox:0x%X (mode:%s)\n",
@@ -284,7 +287,7 @@ static void htc_tx_pkts_get(struct htc_target *target,
 			"got head pkt:0x%p , queue depth: %d\n",
 			packet, get_queue_depth(&endpoint->txq));
 
-		len = CALC_TXRX_PADDED_LEN(target->dev,
+		len = CALC_TXRX_PADDED_LEN(target,
 					   packet->act_len + HTC_HDR_LENGTH);
 
 		if (htc_check_credits(target, endpoint, &flags,
@@ -353,7 +356,7 @@ static int htc_setup_send_scat_list(struct htc_target *target,
 	int i, len, rem_scat, cred_pad;
 	int status = 0;
 
-	rem_scat = target->dev->max_tx_bndl_sz;
+	rem_scat = target->max_tx_bndl_sz;
 
 	for (i = 0; i < n_scat; i++) {
 		scat_req->scat_list[i].packet = NULL;
@@ -362,7 +365,7 @@ static int htc_setup_send_scat_list(struct htc_target *target,
 			break;
 
 		packet = list_first_entry(queue, struct htc_packet, list);
-		len = CALC_TXRX_PADDED_LEN(target->dev,
+		len = CALC_TXRX_PADDED_LEN(target,
 					   packet->act_len + HTC_HDR_LENGTH);
 
 		cred_pad = htc_get_credit_padding(target->tgt_cred_sz,
@@ -429,10 +432,7 @@ static void htc_issue_send_bundle(struct htc_endpoint *endpoint,
 {
 	struct htc_target *target = endpoint->target;
 	struct hif_scatter_req *scat_req = NULL;
-	struct hif_dev_scat_sup_info hif_info;
 	int n_scat, n_sent_bundle = 0, tot_pkts_bundle = 0;
-
-	hif_info = target->dev->hif_scat_info;
 
 	while (true) {
 		n_scat = get_queue_depth(queue);
@@ -465,7 +465,6 @@ static void htc_issue_send_bundle(struct htc_endpoint *endpoint,
 
 		/* send path is always asynchronous */
 		scat_req->complete = htc_async_tx_scat_complete;
-		scat_req->ep = endpoint;
 		n_sent_bundle++;
 		tot_pkts_bundle += scat_req->scat_entries;
 
@@ -690,9 +689,9 @@ static int htc_setup_tx_complete(struct htc_target *target)
 	return status;
 }
 
-void htc_set_credit_dist(struct htc_target *target,
-			 struct htc_credit_state_info *cred_dist_cntxt,
-			 u16 srvc_pri_order[], int list_len)
+void ath6kl_htc_set_credit_dist(struct htc_target *target,
+				struct htc_credit_state_info *cred_dist_cntxt,
+				u16 srvc_pri_order[], int list_len)
 {
 	struct htc_endpoint *endpoint;
 	int i, ep;
@@ -718,7 +717,7 @@ void htc_set_credit_dist(struct htc_target *target,
 	}
 }
 
-int htc_tx(struct htc_target *target, struct htc_packet *packet)
+int ath6kl_htc_tx(struct htc_target *target, struct htc_packet *packet)
 {
 	struct htc_endpoint *endpoint;
 	struct list_head queue;
@@ -746,8 +745,8 @@ int htc_tx(struct htc_target *target, struct htc_packet *packet)
 }
 
 /* flush endpoint TX queue */
-void htc_flush_txep(struct htc_target *target,
-		    enum htc_endpoint_id eid, u16 tag)
+void ath6kl_htc_flush_txep(struct htc_target *target,
+			   enum htc_endpoint_id eid, u16 tag)
 {
 	struct htc_packet *packet, *tmp_pkt;
 	struct list_head discard_q, container;
@@ -786,7 +785,7 @@ void htc_flush_txep(struct htc_target *target,
 
 }
 
-static void htc_flush_txep_all(struct htc_target *target)
+static void ath6kl_htc_flush_txep_all(struct htc_target *target)
 {
 	struct htc_endpoint *endpoint;
 	int i;
@@ -798,12 +797,12 @@ static void htc_flush_txep_all(struct htc_target *target)
 		if (endpoint->svc_id == 0)
 			/* not in use.. */
 			continue;
-		htc_flush_txep(target, i, HTC_TX_PACKET_TAG_ALL);
+		ath6kl_htc_flush_txep(target, i, HTC_TX_PACKET_TAG_ALL);
 	}
 }
 
-void htc_indicate_activity_change(struct htc_target *target,
-				  enum htc_endpoint_id eid, bool active)
+void ath6kl_htc_indicate_activity_change(struct htc_target *target,
+					 enum htc_endpoint_id eid, bool active)
 {
 	struct htc_endpoint *endpoint = &target->endpoint[eid];
 	bool dist = false;
@@ -870,7 +869,7 @@ static int htc_add_rxbuf(struct htc_target *target, struct htc_packet *packet)
 
 	INIT_LIST_HEAD(&queue);
 	list_add_tail(&packet->list, &queue);
-	return htc_add_rxbuf_multiple(target, &queue);
+	return ath6kl_htc_add_rxbuf_multiple(target, &queue);
 }
 
 static void htc_reclaim_rxbuf(struct htc_target *target,
@@ -902,7 +901,7 @@ static int dev_rx_pkt(struct htc_target *target, struct htc_packet *packet,
 	u32 padded_len;
 	int status;
 
-	padded_len = CALC_TXRX_PADDED_LEN(dev, rx_len);
+	padded_len = CALC_TXRX_PADDED_LEN(target, rx_len);
 
 	if (padded_len > packet->buf_len) {
 		ath6kl_err("not enough receive space for packet - padlen:%d recvlen:%d bufferlen:%d\n",
@@ -970,7 +969,7 @@ static int htc_setup_rxpkts(struct htc_target *target, struct htc_endpoint *ep,
 	int status = 0, j, full_len;
 	bool no_recycle;
 
-	full_len = CALC_TXRX_PADDED_LEN(target->dev,
+	full_len = CALC_TXRX_PADDED_LEN(target,
 					le16_to_cpu(htc_hdr->payld_len) +
 					sizeof(*htc_hdr));
 
@@ -1230,7 +1229,7 @@ static void htc_proc_cred_rpt(struct htc_target *target,
 			endpoint->ep_st.cred_rpt_from_other += 1;
 		}
 
-		if (ENDPOINT_0 == rpt->eid)
+		if (rpt->eid == ENDPOINT_0)
 			/* always give endpoint 0 credits back */
 			endpoint->cred_dist.credits += rpt->credits;
 		else {
@@ -1401,8 +1400,9 @@ static int htc_proc_trailer(struct htc_target *target,
 		len -= record->len;
 	}
 
-	ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, "BAD Recv Trailer",
-		     orig_buf, orig_len);
+	if (status)
+		ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, "BAD Recv Trailer",
+				orig_buf, orig_len);
 
 	return status;
 }
@@ -1530,7 +1530,7 @@ static int htc_issue_rxpkt_bundle(struct htc_target *target,
 {
 	struct hif_scatter_req *scat_req;
 	struct htc_packet *packet;
-	int rem_space = target->dev->max_rx_bndl_sz;
+	int rem_space = target->max_rx_bndl_sz;
 	int n_scat_pkt, status = 0, i, len;
 
 	n_scat_pkt = get_queue_depth(rxq);
@@ -1563,19 +1563,13 @@ static int htc_issue_rxpkt_bundle(struct htc_target *target,
 	if (scat_req == NULL)
 		goto fail_rx_pkt;
 
-	scat_req->flags = 0;
-
-	if (part_bundle)
-		scat_req->flags |=
-		    HTC_SCAT_REQ_FLG_PART_BNDL;
-
 	for (i = 0; i < n_scat_pkt; i++) {
 		int pad_len;
 
 		packet = list_first_entry(rxq, struct htc_packet, list);
 		list_del(&packet->list);
 
-		pad_len = CALC_TXRX_PADDED_LEN(target->dev,
+		pad_len = CALC_TXRX_PADDED_LEN(target,
 						   packet->act_len);
 
 		if ((rem_space - pad_len) < 0) {
@@ -1727,9 +1721,8 @@ static int htc_fetch_rxpkts(struct htc_target *target,
 	return status;
 }
 
-static int htc_rxmsg_pending_handler(struct htc_target *target,
-				     u32 msg_look_ahead[],
-				     int *num_pkts)
+int ath6kl_htc_rxmsg_pending_handler(struct htc_target *target,
+				     u32 msg_look_ahead[], int *num_pkts)
 {
 	struct htc_packet *packets, *tmp_pkt;
 	struct htc_endpoint *endpoint;
@@ -1782,7 +1775,7 @@ static int htc_rxmsg_pending_handler(struct htc_target *target,
 			 * A recv bundle was detected, force IRQ status
 			 * re-check again
 			 */
-			target->dev->chk_irq_status_cnt = 1;
+			target->chk_irq_status_cnt = 1;
 
 		n_fetched += get_queue_depth(&rx_pktq);
 
@@ -1807,7 +1800,7 @@ static int htc_rxmsg_pending_handler(struct htc_target *target,
 		 * before leaving IRQ processing, this can net better
 		 * performance in high throughput situations.
 		 */
-		target->dev->chk_irq_status_cnt = 1;
+		target->chk_irq_status_cnt = 1;
 	}
 
 	if (status) {
@@ -1911,8 +1904,8 @@ fail_ctrl_rx:
 	return NULL;
 }
 
-int htc_add_rxbuf_multiple(struct htc_target *target,
-			   struct list_head *pkt_queue)
+int ath6kl_htc_add_rxbuf_multiple(struct htc_target *target,
+				  struct list_head *pkt_queue)
 {
 	struct htc_endpoint *endpoint;
 	struct htc_packet *first_pkt;
@@ -1973,7 +1966,7 @@ int htc_add_rxbuf_multiple(struct htc_target *target,
 	return status;
 }
 
-void htc_flush_rx_buf(struct htc_target *target)
+void ath6kl_htc_flush_rx_buf(struct htc_target *target)
 {
 	struct htc_endpoint *endpoint;
 	struct htc_packet *packet, *tmp_pkt;
@@ -2001,9 +1994,9 @@ void htc_flush_rx_buf(struct htc_target *target)
 	}
 }
 
-int htc_conn_service(struct htc_target *target,
-		     struct htc_service_connect_req *conn_req,
-		     struct htc_service_connect_resp *conn_resp)
+int ath6kl_htc_conn_service(struct htc_target *target,
+			    struct htc_service_connect_req *conn_req,
+			    struct htc_service_connect_resp *conn_resp)
 {
 	struct htc_packet *rx_pkt = NULL;
 	struct htc_packet *tx_pkt = NULL;
@@ -2161,7 +2154,8 @@ static void reset_ep_state(struct htc_target *target)
 	INIT_LIST_HEAD(&target->cred_dist_list);
 }
 
-int htc_get_rxbuf_num(struct htc_target *target, enum htc_endpoint_id endpoint)
+int ath6kl_htc_get_rxbuf_num(struct htc_target *target,
+			     enum htc_endpoint_id endpoint)
 {
 	int num;
 
@@ -2173,19 +2167,17 @@ int htc_get_rxbuf_num(struct htc_target *target, enum htc_endpoint_id endpoint)
 
 static void htc_setup_msg_bndl(struct htc_target *target)
 {
-	struct hif_dev_scat_sup_info *scat_info = &target->dev->hif_scat_info;
-
 	/* limit what HTC can handle */
 	target->msg_per_bndl_max = min(HTC_HOST_MAX_MSG_PER_BUNDLE,
 				       target->msg_per_bndl_max);
 
-	if (ath6kldev_setup_msg_bndl(target->dev, target->msg_per_bndl_max)) {
+	if (ath6kl_hif_enable_scatter(target->dev->ar)) {
 		target->msg_per_bndl_max = 0;
 		return;
 	}
 
 	/* limit bundle what the device layer can handle */
-	target->msg_per_bndl_max = min(scat_info->max_scat_entries,
+	target->msg_per_bndl_max = min(target->max_scat_entries,
 				       target->msg_per_bndl_max);
 
 	ath6kl_dbg(ATH6KL_DBG_TRC,
@@ -2193,21 +2185,21 @@ static void htc_setup_msg_bndl(struct htc_target *target)
 		   target->msg_per_bndl_max);
 
 	/* Max rx bundle size is limited by the max tx bundle size */
-	target->dev->max_rx_bndl_sz = scat_info->max_xfer_szper_scatreq;
+	target->max_rx_bndl_sz = target->max_xfer_szper_scatreq;
 	/* Max tx bundle size if limited by the extended mbox address range */
-	target->dev->max_tx_bndl_sz = min(HIF_MBOX0_EXT_WIDTH,
-					  scat_info->max_xfer_szper_scatreq);
+	target->max_tx_bndl_sz = min(HIF_MBOX0_EXT_WIDTH,
+				     target->max_xfer_szper_scatreq);
 
 	ath6kl_dbg(ATH6KL_DBG_ANY, "max recv: %d max send: %d\n",
-		   target->dev->max_rx_bndl_sz, target->dev->max_tx_bndl_sz);
+		   target->max_rx_bndl_sz, target->max_tx_bndl_sz);
 
-	if (target->dev->max_tx_bndl_sz)
+	if (target->max_tx_bndl_sz)
 		target->tx_bndl_enable = true;
 
-	if (target->dev->max_rx_bndl_sz)
+	if (target->max_rx_bndl_sz)
 		target->rx_bndl_enable = true;
 
-	if ((target->tgt_cred_sz % target->dev->block_sz) != 0) {
+	if ((target->tgt_cred_sz % target->block_sz) != 0) {
 		ath6kl_warn("credit size: %d is not block aligned! Disabling send bundling\n",
 			    target->tgt_cred_sz);
 
@@ -2221,7 +2213,7 @@ static void htc_setup_msg_bndl(struct htc_target *target)
 	}
 }
 
-int htc_wait_target(struct htc_target *target)
+int ath6kl_htc_wait_target(struct htc_target *target)
 {
 	struct htc_packet *packet = NULL;
 	struct htc_ready_ext_msg *rdy_msg;
@@ -2284,7 +2276,7 @@ int htc_wait_target(struct htc_target *target)
 	connect.svc_id = HTC_CTRL_RSVD_SVC;
 
 	/* connect fake service */
-	status = htc_conn_service((void *)target, &connect, &resp);
+	status = ath6kl_htc_conn_service((void *)target, &connect, &resp);
 
 	if (status)
 		ath6kl_hif_cleanup_scatter(target->dev->ar);
@@ -2302,7 +2294,7 @@ fail_wait_target:
  * Start HTC, enable interrupts and let the target know
  * host has finished setup.
  */
-int htc_start(struct htc_target *target)
+int ath6kl_htc_start(struct htc_target *target)
 {
 	struct htc_packet *packet;
 	int status;
@@ -2336,13 +2328,13 @@ int htc_start(struct htc_target *target)
 	status = ath6kldev_unmask_intrs(target->dev);
 
 	if (status)
-		htc_stop(target);
+		ath6kl_htc_stop(target);
 
 	return status;
 }
 
 /* htc_stop: stop interrupt reception, and flush all queued buffers */
-void htc_stop(struct htc_target *target)
+void ath6kl_htc_stop(struct htc_target *target)
 {
 	spin_lock_bh(&target->htc_lock);
 	target->htc_flags |= HTC_OP_STATE_STOPPING;
@@ -2355,14 +2347,14 @@ void htc_stop(struct htc_target *target)
 	 */
 	ath6kldev_mask_intrs(target->dev);
 
-	htc_flush_txep_all(target);
+	ath6kl_htc_flush_txep_all(target);
 
-	htc_flush_rx_buf(target);
+	ath6kl_htc_flush_rx_buf(target);
 
 	reset_ep_state(target);
 }
 
-void *htc_create(struct ath6kl *ar)
+void *ath6kl_htc_create(struct ath6kl *ar)
 {
 	struct htc_target *target = NULL;
 	struct htc_packet *packet;
@@ -2392,7 +2384,6 @@ void *htc_create(struct ath6kl *ar)
 
 	target->dev->ar = ar;
 	target->dev->htc_cnxt = target;
-	target->dev->msg_pending = htc_rxmsg_pending_handler;
 	target->ep_waiting = ENDPOINT_MAX;
 
 	reset_ep_state(target);
@@ -2432,7 +2423,7 @@ void *htc_create(struct ath6kl *ar)
 fail_create_htc:
 	if (i != NUM_CONTROL_BUFFERS || status) {
 		if (target) {
-			htc_cleanup(target);
+			ath6kl_htc_cleanup(target);
 			target = NULL;
 		}
 	}
@@ -2441,7 +2432,7 @@ fail_create_htc:
 }
 
 /* cleanup the HTC instance */
-void htc_cleanup(struct htc_target *target)
+void ath6kl_htc_cleanup(struct htc_target *target)
 {
 	struct htc_packet *packet, *tmp_packet;
 

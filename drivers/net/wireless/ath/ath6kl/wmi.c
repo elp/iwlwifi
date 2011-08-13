@@ -317,9 +317,8 @@ int ath6kl_wmi_dot11_hdr_remove(struct wmi *wmi, struct sk_buff *skb)
 	datap = skb->data;
 	llc_hdr = (struct ath6kl_llc_snap_hdr *)(datap);
 
+	memset(&eth_hdr, 0, sizeof(eth_hdr));
 	eth_hdr.h_proto = llc_hdr->eth_type;
-	memset(eth_hdr.h_dest, 0, sizeof(eth_hdr.h_dest));
-	memset(eth_hdr.h_source, 0, sizeof(eth_hdr.h_source));
 
 	switch ((le16_to_cpu(wh.frame_control)) &
 		(IEEE80211_FCTL_FROMDS | IEEE80211_FCTL_TODS)) {
@@ -385,13 +384,6 @@ int ath6kl_wmi_data_hdr_remove(struct wmi *wmi, struct sk_buff *skb)
 	skb_pull(skb, sizeof(struct wmi_data_hdr));
 
 	return 0;
-}
-
-void ath6kl_wmi_iterate_nodes(struct wmi *wmi,
-			      void (*f) (void *arg, struct bss *),
-			      void *arg)
-{
-	wlan_iterate_nodes(&wmi->scan_table, f, arg);
 }
 
 static void ath6kl_wmi_convert_bssinfo_hdr2_to_hdr(struct sk_buff *skb,
@@ -499,8 +491,6 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len)
 	ath6kl_dbg(ATH6KL_DBG_WMI, "%s: freq %d bssid %pM\n",
 		   __func__, ev->ch, ev->bssid);
 
-	memcpy(wmi->bssid, ev->bssid, ETH_ALEN);
-
 	/* Start of assoc rsp IEs */
 	pie = ev->assoc_info + ev->beacon_ie_len +
 	      ev->assoc_req_len + (sizeof(u16) * 3); /* capinfo, status, aid */
@@ -547,7 +537,6 @@ static int ath6kl_wmi_disconnect_event_rx(struct wmi *wmi, u8 *datap, int len)
 		return -EINVAL;
 
 	ev = (struct wmi_disconnect_event *) datap;
-	memset(wmi->bssid, 0, sizeof(wmi->bssid));
 
 	wmi->is_wmm_enabled = false;
 	wmi->pair_crypto_type = NONE_CRYPT;
@@ -729,7 +718,7 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len)
 		return -EINVAL;
 
 	bih = (struct wmi_bss_info_hdr *) datap;
-	bss = wlan_find_node(&wmi->scan_table, bih->bssid);
+	bss = wlan_find_node(&wmi->parent_dev->scan_table, bih->bssid);
 
 	if (a_sle16_to_cpu(bih->rssi) > 0) {
 		if (bss == NULL)
@@ -773,12 +762,12 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len)
 		 * instance value of scan result. It also sync up RSSI info
 		 * in GUI between scan result and RSSI signal icon.
 		 */
-		if (memcmp(wmi->bssid, bih->bssid, ETH_ALEN) == 0) {
+		if (memcmp(wmi->parent_dev->bssid, bih->bssid, ETH_ALEN) == 0) {
 			bih->rssi = a_cpu_to_sle16(bss->ni_rssi);
 			bih->snr = bss->ni_snr;
 		}
 
-		wlan_node_reclaim(&wmi->scan_table, bss);
+		wlan_node_reclaim(&wmi->parent_dev->scan_table, bss);
 	}
 
 	/*
@@ -863,7 +852,7 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len)
 	 * which is done in ath6kl_wlan_parse_beacon
 	 */
 	bss->ni_cie.ie_chan = le16_to_cpu(bih->ch);
-	wlan_setup_node(&wmi->scan_table, bss, bih->bssid);
+	wlan_setup_node(&wmi->parent_dev->scan_table, bss, bih->bssid);
 
 	return 0;
 }
@@ -884,10 +873,10 @@ static int ath6kl_wmi_opt_frame_event_rx(struct wmi *wmi, u8 *datap, int len)
 	ath6kl_dbg(ATH6KL_DBG_WMI, "opt frame event %2.2x:%2.2x\n",
 		   bih->bssid[4], bih->bssid[5]);
 
-	bss = wlan_find_node(&wmi->scan_table, bih->bssid);
+	bss = wlan_find_node(&wmi->parent_dev->scan_table, bih->bssid);
 	if (bss != NULL) {
 		/* Free up the node. We are about to allocate a new node. */
-		wlan_node_reclaim(&wmi->scan_table, bss);
+		wlan_node_reclaim(&wmi->parent_dev->scan_table, bss);
 	}
 
 	bss = wlan_node_alloc(len);
@@ -901,7 +890,7 @@ static int ath6kl_wmi_opt_frame_event_rx(struct wmi *wmi, u8 *datap, int len)
 		return -EINVAL;
 
 	memcpy(bss->ni_buf, buf, len);
-	wlan_setup_node(&wmi->scan_table, bss, bih->bssid);
+	wlan_setup_node(&wmi->parent_dev->scan_table, bss, bih->bssid);
 
 	return 0;
 }
@@ -1010,7 +999,7 @@ static int ath6kl_wmi_scan_complete_rx(struct wmi *wmi, u8 *datap, int len)
 	ev = (struct wmi_scan_complete_event *) datap;
 
 	if (a_sle32_to_cpu(ev->status) == 0)
-		wlan_refresh_inactive_nodes(&wmi->scan_table);
+		wlan_refresh_inactive_nodes(wmi->parent_dev);
 
 	ath6kl_scan_complete_evt(wmi->parent_dev, a_sle32_to_cpu(ev->status));
 	wmi->is_probe_ssid = false;
@@ -2251,12 +2240,6 @@ int ath6kl_wmi_get_tx_pwr_cmd(struct wmi *wmi)
 	return ath6kl_wmi_simple_cmd(wmi, WMI_GET_TX_PWR_CMDID);
 }
 
-void ath6kl_wmi_get_current_bssid(struct wmi *wmi, u8 *bssid)
-{
-	if (bssid)
-		memcpy(bssid, wmi->bssid, ETH_ALEN);
-}
-
 int ath6kl_wmi_set_lpreamble_cmd(struct wmi *wmi, u8 status, u8 preamble_policy)
 {
 	struct sk_buff *skb;
@@ -2344,7 +2327,7 @@ s32 ath6kl_wmi_get_rate(s8 rate_index)
 void ath6kl_wmi_node_return(struct wmi *wmi, struct bss *bss)
 {
 	if (bss)
-		wlan_node_return(&wmi->scan_table, bss);
+		wlan_node_return(&wmi->parent_dev->scan_table, bss);
 }
 
 struct bss *ath6kl_wmi_find_ssid_node(struct wmi *wmi, u8 * ssid,
@@ -2353,7 +2336,7 @@ struct bss *ath6kl_wmi_find_ssid_node(struct wmi *wmi, u8 * ssid,
 {
 	struct bss *node = NULL;
 
-	node = wlan_find_ssid_node(&wmi->scan_table, ssid,
+	node = wlan_find_ssid_node(&wmi->parent_dev->scan_table, ssid,
 				  ssid_len, is_wpa2, match_ssid);
 	return node;
 }
@@ -2362,7 +2345,7 @@ struct bss *ath6kl_wmi_find_node(struct wmi *wmi, const u8 * mac_addr)
 {
 	struct bss *ni = NULL;
 
-	ni = wlan_find_node(&wmi->scan_table, mac_addr);
+	ni = wlan_find_node(&wmi->parent_dev->scan_table, mac_addr);
 
 	return ni;
 }
@@ -2371,9 +2354,9 @@ void ath6kl_wmi_node_free(struct wmi *wmi, const u8 * mac_addr)
 {
 	struct bss *ni = NULL;
 
-	ni = wlan_find_node(&wmi->scan_table, mac_addr);
+	ni = wlan_find_node(&wmi->parent_dev->scan_table, mac_addr);
 	if (ni != NULL)
-		wlan_node_reclaim(&wmi->scan_table, ni);
+		wlan_node_reclaim(&wmi->parent_dev->scan_table, ni);
 
 	return;
 }
@@ -2725,7 +2708,7 @@ static void ath6kl_wmi_qos_state_init(struct wmi *wmi)
 	spin_unlock_bh(&wmi->lock);
 }
 
-void *ath6kl_wmi_init(void *dev)
+void *ath6kl_wmi_init(struct ath6kl *dev)
 {
 	struct wmi *wmi;
 
@@ -2737,7 +2720,6 @@ void *ath6kl_wmi_init(void *dev)
 
 	wmi->parent_dev = dev;
 
-	wlan_node_table_init(wmi, &wmi->scan_table);
 	ath6kl_wmi_qos_state_init(wmi);
 
 	wmi->pwr_mode = REC_POWER;
@@ -2757,6 +2739,5 @@ void ath6kl_wmi_shutdown(struct wmi *wmi)
 	if (!wmi)
 		return;
 
-	wlan_node_table_cleanup(&wmi->scan_table);
 	kfree(wmi);
 }

@@ -63,15 +63,6 @@ struct ath6kl_irq_enable_reg {
 	u8 cntr_int_status_en;
 } __packed;
 
-/* buffers for ASYNC I/O */
-struct ath6kl_async_reg_io_buffer {
-	struct htc_packet packet;
-	u8 pad1[A_CACHE_LINE_PAD];
-	/* cache-line safe with pads around */
-	u8 buf[ATH6KL_REG_IO_BUFFER_SIZE];
-	u8 pad2[A_CACHE_LINE_PAD];
-};
-
 struct ath6kl_device {
 	spinlock_t lock;
 	u8 pad1[A_CACHE_LINE_PAD];
@@ -79,18 +70,7 @@ struct ath6kl_device {
 	u8 pad2[A_CACHE_LINE_PAD];
 	struct ath6kl_irq_enable_reg irq_en_reg;
 	u8 pad3[A_CACHE_LINE_PAD];
-	u32 block_sz;
-	u32 block_mask;
 	struct htc_target *htc_cnxt;
-	struct list_head reg_io;
-	struct ath6kl_async_reg_io_buffer reg_io_buf[ATH6KL_MAX_REG_IO_BUFFERS];
-	int (*msg_pending) (struct htc_target *target, u32 lk_ahds[],
-			    int *npkts_fetched);
-	struct hif_dev_scat_sup_info hif_scat_info;
-	bool virt_scat;
-	int max_rx_bndl_sz;
-	int max_tx_bndl_sz;
-	int chk_irq_status_cnt;
 	struct ath6kl *ar;
 };
 
@@ -106,7 +86,6 @@ int ath6kldev_rw_comp_handler(void *context, int status);
 int ath6kldev_intr_bh_handler(struct ath6kl *ar);
 
 /* Scatter Function and Definitions */
-int ath6kldev_setup_msg_bndl(struct ath6kl_device *dev, int max_msg_per_xfer);
 int ath6kldev_submit_scat_req(struct ath6kl_device *dev,
 			    struct hif_scatter_req *scat_req, bool read);
 

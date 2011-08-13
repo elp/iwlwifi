@@ -146,21 +146,20 @@ void wlan_free_allnodes(struct ath6kl_node_table *nt)
 		wlan_node_reclaim(nt, ni);
 }
 
-void wlan_iterate_nodes(struct ath6kl_node_table *nt,
-			void (*f) (void *arg, struct bss *), void *arg)
+void wlan_iterate_nodes(struct ath6kl_node_table *nt, void *arg)
 {
 	struct bss *ni;
 
 	spin_lock_bh(&nt->nt_nodelock);
 	for (ni = nt->nt_node_first; ni; ni = ni->ni_list_next) {
 			ni->ni_refcnt++;
-			(*f) (arg, ni);
+			ath6kl_cfg80211_scan_node(arg, ni);
 			wlan_node_dec_free(ni);
 	}
 	spin_unlock_bh(&nt->nt_nodelock);
 }
 
-void wlan_node_table_init(void *wmi, struct ath6kl_node_table *nt)
+void wlan_node_table_init(struct ath6kl_node_table *nt)
 {
 	ath6kl_dbg(ATH6KL_DBG_WLAN_NODE, "node table = 0x%lx\n",
 		   (unsigned long)nt);
@@ -169,23 +168,20 @@ void wlan_node_table_init(void *wmi, struct ath6kl_node_table *nt)
 
 	spin_lock_init(&nt->nt_nodelock);
 
-	nt->nt_wmi = wmi;
 	nt->nt_node_age = WLAN_NODE_INACT_TIMEOUT_MSEC;
 }
 
-void wlan_refresh_inactive_nodes(struct ath6kl_node_table *nt)
+void wlan_refresh_inactive_nodes(struct ath6kl *ar)
 {
+	struct ath6kl_node_table *nt = &ar->scan_table;
 	struct bss *bss;
-	u8 my_bssid[ETH_ALEN];
 	u32 now;
-
-	ath6kl_wmi_get_current_bssid(nt->nt_wmi, my_bssid);
 
 	now = jiffies_to_msecs(jiffies);
 	bss = nt->nt_node_first;
 	while (bss != NULL) {
 		/* refresh all nodes except the current bss */
-		if (memcmp(my_bssid, bss->ni_macaddr, sizeof(my_bssid)) != 0) {
+		if (memcmp(ar->bssid, bss->ni_macaddr, ETH_ALEN) != 0) {
 			if (((now - bss->ni_tstamp) > nt->nt_node_age)
 			    || --bss->ni_actcnt == 0) {
 				wlan_node_reclaim(nt, bss);

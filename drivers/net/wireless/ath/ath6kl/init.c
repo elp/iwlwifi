@@ -160,7 +160,7 @@ static int ath6kl_connectservice(struct ath6kl *ar,
 
 	memset(&response, 0, sizeof(response));
 
-	status = htc_conn_service(ar->htc_target, con_req, &response);
+	status = ath6kl_htc_conn_service(ar->htc_target, con_req, &response);
 	if (status) {
 		ath6kl_err("failed to connect to %s service status:%d\n",
 			   desc, status);
@@ -584,7 +584,7 @@ struct ath6kl *ath6kl_core_alloc(struct device *sdev)
 	init_netdev(dev);
 
 	ar->net_dev = dev;
-	ar->wlan_state = WLAN_ENABLED;
+	set_bit(WLAN_ENABLED, &ar->flag);
 
 	ar->wlan_pwr_state = WLAN_POWER_STATE_ON;
 
@@ -1053,7 +1053,7 @@ static int ath6kl_init(struct net_device *dev)
 
 	/* Indicate that WMI is enabled (although not ready yet) */
 	set_bit(WMI_ENABLED, &ar->flag);
-	ar->wmi = ath6kl_wmi_init((void *) ar);
+	ar->wmi = ath6kl_wmi_init(ar);
 	if (!ar->wmi) {
 		ath6kl_err("failed to initialize wmi\n");
 		status = -EIO;
@@ -1062,14 +1062,16 @@ static int ath6kl_init(struct net_device *dev)
 
 	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: got wmi @ 0x%p.\n", __func__, ar->wmi);
 
+	wlan_node_table_init(&ar->scan_table);
+
 	/*
 	 * The reason we have to wait for the target here is that the
 	 * driver layer has to init BMI in order to set the host block
 	 * size.
 	 */
-	if (htc_wait_target(ar->htc_target)) {
+	if (ath6kl_htc_wait_target(ar->htc_target)) {
 		status = -EIO;
-		goto err_wmi_cleanup;
+		goto err_node_cleanup;
 	}
 
 	if (ath6kl_init_service_ep(ar)) {
@@ -1096,7 +1098,7 @@ static int ath6kl_init(struct net_device *dev)
 	ath6kl_cookie_init(ar);
 
 	/* start HTC */
-	status = htc_start(ar->htc_target);
+	status = ath6kl_htc_start(ar->htc_target);
 
 	if (status) {
 		ath6kl_cookie_cleanup(ar);
@@ -1136,13 +1138,16 @@ static int ath6kl_init(struct net_device *dev)
 		goto ath6kl_init_done;
 
 err_htc_stop:
-	htc_stop(ar->htc_target);
+
+	ath6kl_htc_stop(ar->htc_target);
 err_rxbuf_cleanup:
-	htc_flush_rx_buf(ar->htc_target);
+	ath6kl_htc_flush_rx_buf(ar->htc_target);
 	ath6kl_cleanup_amsdu_rxbufs(ar);
 err_cleanup_scatter:
 	ath6kl_hif_cleanup_scatter(ar);
-err_wmi_cleanup:
+err_node_cleanup:
+	wlan_node_table_cleanup(&ar->scan_table);
+
 	ath6kl_wmi_shutdown(ar->wmi);
 	clear_bit(WMI_ENABLED, &ar->flag);
 	ar->wmi = NULL;
@@ -1176,7 +1181,7 @@ int ath6kl_core_init(struct ath6kl *ar)
 	if (ret)
 		goto err_bmi_cleanup;
 
-	ar->htc_target = htc_create(ar);
+	ar->htc_target = ath6kl_htc_create(ar);
 
 	if (!ar->htc_target) {
 		ret = -ENOMEM;
@@ -1214,7 +1219,7 @@ int ath6kl_core_init(struct ath6kl *ar)
 	return ret;
 
 err_htc_cleanup:
-	htc_cleanup(ar->htc_target);
+	ath6kl_htc_cleanup(ar->htc_target);
 err_bmi_cleanup:
 	ath6kl_bmi_cleanup(ar);
 err_wq:
@@ -1239,7 +1244,7 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 	if (ar->wlan_pwr_state != WLAN_POWER_STATE_CUT_PWR)
 		ath6kl_stop_endpoint(ndev, false, true);
 
-	ar->wlan_state = WLAN_DISABLED;
+	clear_bit(WLAN_ENABLED, &ar->flag);
 }
 
 /*
@@ -1272,7 +1277,7 @@ void ath6kl_destroy(struct net_device *dev, unsigned int unregister)
 	destroy_workqueue(ar->ath6kl_wq);
 
 	if (ar->htc_target)
-		htc_cleanup(ar->htc_target);
+		ath6kl_htc_cleanup(ar->htc_target);
 
 	aggr_module_destroy(ar->aggr_cntxt);
 
@@ -1288,6 +1293,13 @@ void ath6kl_destroy(struct net_device *dev, unsigned int unregister)
 	}
 
 	free_netdev(dev);
+
+	wlan_node_table_cleanup(&ar->scan_table);
+
+	kfree(ar->fw_board);
+	kfree(ar->fw_otp);
+	kfree(ar->fw);
+	kfree(ar->fw_patch);
 
 	ath6kl_cfg80211_deinit(ar);
 }

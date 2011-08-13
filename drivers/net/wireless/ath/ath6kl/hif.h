@@ -20,6 +20,8 @@
 #include "common.h"
 #include "core.h"
 
+#include <linux/scatterlist.h>
+
 #define BUS_REQUEST_MAX_NUM                64
 #define HIF_MBOX_BLOCK_SIZE                128
 #define HIF_MBOX0_BLOCK_SIZE               1
@@ -169,29 +171,19 @@ struct hif_scatter_req {
 	/* total length of entire transfer */
 	u32 len;
 
-	u32 flags;
-	void (*complete) (struct hif_scatter_req *);
+	bool virt_scat;
+
+	void (*complete) (struct htc_target *, struct hif_scatter_req *);
 	int status;
-	struct htc_endpoint *ep;
 	int scat_entries;
 
-	struct hif_scatter_req_priv *req_priv;
+	struct bus_request *busrequest;
+	struct scatterlist *sgentries;
 
 	/* bounce buffer for upper layers to copy to/from */
 	u8 *virt_dma_buf;
 
 	struct hif_scatter_item scat_list[1];
-};
-
-struct hif_dev_scat_sup_info {
-	int (*rw_scat_func) (struct ath6kl *ar, struct hif_scatter_req *);
-	int max_scat_entries;
-	int max_xfer_szper_scatreq;
-};
-
-struct hif_scatter_req_priv {
-	struct bus_request *busrequest;
-	struct scatterlist sgentries[MAX_SCATTER_ENTRIES_PER_REQ];
 };
 
 struct ath6kl_hif_ops {
@@ -206,8 +198,9 @@ struct ath6kl_hif_ops {
 	struct hif_scatter_req *(*scatter_req_get)(struct ath6kl *ar);
 	void (*scatter_req_add)(struct ath6kl *ar,
 				struct hif_scatter_req *s_req);
-	int (*enable_scatter)(struct ath6kl *ar,
-			      struct hif_dev_scat_sup_info *info);
+	int (*enable_scatter)(struct ath6kl *ar);
+	int (*scat_req_rw) (struct ath6kl *ar,
+			    struct hif_scatter_req *scat_req);
 	void (*cleanup_scatter)(struct ath6kl *ar);
 };
 

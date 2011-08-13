@@ -114,10 +114,8 @@ struct wmi {
 	bool ready;
 	u16 stream_exist_for_ac[WMM_NUM_AC];
 	u8 fat_pipe_exist;
-	void *parent_dev;
+	struct ath6kl *parent_dev;
 	struct wmi_stats stat;
-	struct ath6kl_node_table scan_table;
-	u8 bssid[ETH_ALEN];
 	u8 pwr_mode;
 	u8 phy_mode;
 	u8 keep_alive_intvl;
@@ -1933,9 +1931,6 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, struct sk_buff *skb,
 				       u8 *ac);
 
 int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb);
-void ath6kl_wmi_iterate_nodes(struct wmi *wmi,
-			      void (*f) (void *arg, struct bss *),
-			      void *arg);
 struct bss *ath6kl_wmi_find_node(struct wmi *wmi, const u8 *mac_addr);
 void ath6kl_wmi_node_free(struct wmi *wmi, const u8 *mac_addr);
 
@@ -1997,7 +1992,6 @@ int ath6kl_wmi_setpmkid_cmd(struct wmi *wmi, const u8 *bssid,
 			    const u8 *pmkid, bool set);
 int ath6kl_wmi_set_tx_pwr_cmd(struct wmi *wmi, u8 dbM);
 int ath6kl_wmi_get_tx_pwr_cmd(struct wmi *wmi);
-void ath6kl_wmi_get_current_bssid(struct wmi *wmi, u8 *bssid);
 
 int ath6kl_wmi_set_wmm_txop(struct wmi *wmi, enum wmi_txop_cfg cfg);
 int ath6kl_wmi_set_keepalive_cmd(struct wmi *wmi, u8 keep_alive_intvl);
@@ -2018,7 +2012,7 @@ int ath6kl_wmi_set_pvb_cmd(struct wmi *wmi, u16 aid, bool flag);
 int ath6kl_wmi_set_rx_frame_format_cmd(struct wmi *wmi, u8 rx_meta_version,
 				       bool rx_dot11_hdr, bool defrag_on_host);
 
-void *ath6kl_wmi_init(void *devt);
+void *ath6kl_wmi_init(struct ath6kl *devt);
 void ath6kl_wmi_shutdown(struct wmi *wmi);
 
 #endif /* WMI_H */
