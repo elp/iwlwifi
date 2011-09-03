@@ -621,6 +621,7 @@ static void iwl_set_pwr_vmain(struct iwl_trans *trans)
 static int iwl_nic_init(struct iwl_trans *trans)
 {
 	unsigned long flags;
+	struct iwl_priv *priv = priv(trans);
 
 	/* nic_init */
 	spin_lock_irqsave(&trans->shrd->lock, flags);

@@ -1874,5 +1874,4 @@ void iwl_set_hw_rfkill_state(struct iwl_priv *priv, bool state)
 void iwl_nic_config(struct iwl_priv *priv)
 {
 	priv->cfg->lib->nic_config(priv);
-
 }

@@ -926,7 +926,6 @@ void iwlagn_rx_reply_compressed_ba(struct iwl_priv *priv,
 			  0, &reclaimed_skbs);
 	freed = 0;
 	while (!skb_queue_empty(&reclaimed_skbs)) {
-
 		skb = __skb_dequeue(&reclaimed_skbs);
 		hdr = (struct ieee80211_hdr *)skb->data;
 
@@ -956,4 +955,3 @@ void iwlagn_rx_reply_compressed_ba(struct iwl_priv *priv,
 
 	spin_unlock_irqrestore(&priv->shrd->sta_lock, flags);
 }
-
