@@ -66,7 +66,7 @@
 #include <linux/gfp.h>
 
 #include "iwl-trans.h"
-#include "iwl-trans-int-pcie.h"
+#include "iwl-trans-pcie-int.h"
 #include "iwl-csr.h"
 #include "iwl-prph.h"
 #include "iwl-shared.h"
