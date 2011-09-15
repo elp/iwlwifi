@@ -43,6 +43,9 @@
 #define IWL_TX_CRC_SIZE 4
 #define IWL_TX_DELIMITER_SIZE 4
 
+#define IWL_TX_CRC_SIZE 4
+#define IWL_TX_DELIMITER_SIZE 4
+
 /**
  * iwl_trans_txq_update_byte_cnt_tbl - Set up entry in Tx byte-count array
  */
@@ -548,7 +551,7 @@ int iwl_trans_pcie_tx_agg_alloc(struct iwl_trans *trans,
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 	struct iwl_tid_data *tid_data;
 	unsigned long flags;
-	u16 txq_id;
+	int txq_id;
 
 	txq_id = iwlagn_txq_ctx_activate_free(trans);
 	if (txq_id == -1) {
