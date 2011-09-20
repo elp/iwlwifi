@@ -118,6 +118,8 @@ static void iwl_process_scan_complete(struct iwl_priv *priv)
 {
 	bool aborted;
 
+	lockdep_assert_held(&priv->shrd->mutex);
+
 	IWL_DEBUG_SCAN(priv, "Completed scan.\n");
 
 	cancel_delayed_work(&priv->scan_check);
@@ -235,9 +237,21 @@ void iwl_scan_cancel_timeout(struct iwl_priv *priv, unsigned long ms)
 
 	while (time_before_eq(jiffies, timeout)) {
 		if (!test_bit(STATUS_SCAN_HW, &priv->shrd->status))
-			break;
+			goto finished;
 		msleep(20);
 	}
+
+	return;
+
+ finished:
+	/*
+	 * Now STATUS_SCAN_HW is clear. This means that the
+	 * device finished, but the background work is going
+	 * to execute only when we release the lock. Since
+	 * we want to be able to issue a new scan right after
+	 * this function returns, run the complete here.
+	 */
+	iwl_process_scan_complete(priv);
 }
 
 /* Service response to REPLY_SCAN_CMD (0x80) */
