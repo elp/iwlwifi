@@ -2669,8 +2669,7 @@ lq_update:
 
 out:
 	tbl->current_rate = rate_n_flags_from_tbl(priv, tbl, index, is_green);
-	i = index;
-	lq_sta->last_txrate_idx = i;
+	lq_sta->last_txrate_idx = index;
 }
 
 /**
