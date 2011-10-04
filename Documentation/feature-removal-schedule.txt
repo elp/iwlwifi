@@ -600,6 +600,7 @@ Why:	The delaylog mode that has been the default since 2.6.39 has proven
 	stable, and the old code is in the way of additional improvements in
 	the log code.
 Who:	Christoph Hellwig <hch@lst.de>
+
 ----------------------------
 What:	iwlagn alias support
 When:	3.5
