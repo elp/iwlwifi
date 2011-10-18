@@ -86,8 +86,8 @@ do {									\
 #define iwl_print_hex_dump(m, level, p, len)
 #define IWL_DEBUG_QUIET_RFKILL(p, fmt, args...)	\
 do {							\
-	if (!iwl_is_rfkill(p->shrd)			\
-		IWL_ERR(p, fmt, args);			\
+	if (!iwl_is_rfkill(p->shrd))			\
+		IWL_ERR(p, fmt, ##args);		\
 } while (0)
 #endif				/* CONFIG_IWLWIFI_DEBUG */
 
