@@ -1006,22 +1006,19 @@ static int iwl_send_cmd_sync(struct iwl_trans *trans, struct iwl_host_cmd *cmd)
 	IWL_DEBUG_INFO(trans, "Attempting to send sync command %s\n",
 			get_cmd_string(cmd->id));
 
-	if (test_bit(STATUS_EXIT_PENDING, &trans->shrd->status)) {
-		ret = -EBUSY;
-		goto cancel;
-	}
+	if (test_bit(STATUS_EXIT_PENDING, &trans->shrd->status))
+		return -EBUSY;
+
 
 	if (test_bit(STATUS_RF_KILL_HW, &trans->shrd->status)) {
 		IWL_ERR(trans, "Command %s aborted: RF KILL Switch\n",
 			       get_cmd_string(cmd->id));
-		ret = -ECANCELED;
-		goto cancel;
+		return -ECANCELED;
 	}
 	if (test_bit(STATUS_FW_ERROR, &trans->shrd->status)) {
 		IWL_ERR(trans, "Command %s failed: FW Error\n",
 			       get_cmd_string(cmd->id));
-		ret = -EIO;
-		goto cancel;
+		return -EIO;
 	}
 	set_bit(STATUS_HCMD_ACTIVE, &trans->shrd->status);
 	IWL_DEBUG_INFO(trans, "Setting HCMD_ACTIVE for command %s\n",
