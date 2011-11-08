@@ -286,6 +286,13 @@ static int ieee80211_do_open(struct net_device *dev, bool coming_up)
 			netif_carrier_off(dev);
 		else
 			netif_carrier_on(dev);
+
+		/*
+		 * set default queue parameters so drivers don't
+		 * need to initialise the hardware if the hardware
+		 * doesn't start up with sane defaults
+		 */
+		ieee80211_set_wmm_default(sdata);
 	}
 
 	set_bit(SDATA_STATE_RUNNING, &sdata->state);
@@ -329,15 +336,8 @@ static int ieee80211_do_open(struct net_device *dev, bool coming_up)
 	if (coming_up)
 		local->open_count++;
 
-	if (hw_reconf_flags) {
+	if (hw_reconf_flags)
 		ieee80211_hw_config(local, hw_reconf_flags);
-		/*
-		 * set default queue parameters so drivers don't
-		 * need to initialise the hardware if the hardware
-		 * doesn't start up with sane defaults
-		 */
-		ieee80211_set_wmm_default(sdata);
-	}
 
 	ieee80211_recalc_ps(local, -1);
 
@@ -456,7 +456,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata,
 						 BSS_CHANGED_BEACON_ENABLED);
 
 		/* remove beacon */
-		rcu_assign_pointer(sdata->u.ap.beacon, NULL);
+		RCU_INIT_POINTER(sdata->u.ap.beacon, NULL);
 		synchronize_rcu();
 		kfree(old_beacon);
 
@@ -643,7 +643,7 @@ static const struct net_device_ops ieee80211_dataif_ops = {
 	.ndo_stop		= ieee80211_stop,
 	.ndo_uninit		= ieee80211_teardown_sdata,
 	.ndo_start_xmit		= ieee80211_subif_start_xmit,
-	.ndo_set_multicast_list = ieee80211_set_multicast_list,
+	.ndo_set_rx_mode	= ieee80211_set_multicast_list,
 	.ndo_change_mtu 	= ieee80211_change_mtu,
 	.ndo_set_mac_address 	= ieee80211_change_mac,
 	.ndo_select_queue	= ieee80211_netdev_select_queue,
@@ -687,7 +687,7 @@ static const struct net_device_ops ieee80211_monitorif_ops = {
 	.ndo_stop		= ieee80211_stop,
 	.ndo_uninit		= ieee80211_teardown_sdata,
 	.ndo_start_xmit		= ieee80211_monitor_start_xmit,
-	.ndo_set_multicast_list = ieee80211_set_multicast_list,
+	.ndo_set_rx_mode	= ieee80211_set_multicast_list,
 	.ndo_change_mtu 	= ieee80211_change_mtu,
 	.ndo_set_mac_address 	= eth_mac_addr,
 	.ndo_select_queue	= ieee80211_monitor_select_queue,

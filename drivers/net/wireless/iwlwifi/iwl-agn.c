@@ -1678,8 +1678,6 @@ static int iwl_set_hw_params(struct iwl_priv *priv)
 	return priv->cfg->lib->set_hw_params(priv);
 }
 
-
-
 int iwl_probe(struct iwl_bus *bus, const struct iwl_trans_ops *trans_ops,
 		struct iwl_cfg *cfg)
 {

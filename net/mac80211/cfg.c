@@ -63,7 +63,7 @@ static int ieee80211_change_iface(struct wiphy *wiphy,
 
 	if (type == NL80211_IFTYPE_AP_VLAN &&
 	    params && params->use_4addr == 0)
-		rcu_assign_pointer(sdata->u.vlan.sta, NULL);
+		RCU_INIT_POINTER(sdata->u.vlan.sta, NULL);
 	else if (type == NL80211_IFTYPE_STATION &&
 		 params && params->use_4addr >= 0)
 		sdata->u.mgd.use_4addr = params->use_4addr;
@@ -575,7 +575,7 @@ static int ieee80211_config_beacon(struct ieee80211_sub_if_data *sdata,
 
 	sdata->vif.bss_conf.dtim_period = new->dtim_period;
 
-	rcu_assign_pointer(sdata->u.ap.beacon, new);
+	RCU_INIT_POINTER(sdata->u.ap.beacon, new);
 
 	synchronize_rcu();
 
@@ -630,7 +630,7 @@ static int ieee80211_del_beacon(struct wiphy *wiphy, struct net_device *dev)
 	if (!old)
 		return -ENOENT;
 
-	rcu_assign_pointer(sdata->u.ap.beacon, NULL);
+	RCU_INIT_POINTER(sdata->u.ap.beacon, NULL);
 	synchronize_rcu();
 	kfree(old);
 
@@ -922,7 +922,7 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 				return -EBUSY;
 			}
 
-			rcu_assign_pointer(vlansdata->u.vlan.sta, sta);
+			RCU_INIT_POINTER(vlansdata->u.vlan.sta, sta);
 		}
 
 		sta->sdata = vlansdata;
@@ -1394,7 +1394,7 @@ static int ieee80211_set_channel(struct wiphy *wiphy,
 	    (old_oper_type != local->_oper_channel_type))
 		ieee80211_hw_config(local, IEEE80211_CONF_CHANGE_CHANNEL);
 
-	if ((sdata && sdata->vif.type != NL80211_IFTYPE_MONITOR) &&
+	if (sdata && sdata->vif.type != NL80211_IFTYPE_MONITOR &&
 	    old_vif_oper_type != sdata->vif.bss_conf.channel_type)
 		ieee80211_bss_info_change_notify(sdata, BSS_CHANGED_HT);
 
