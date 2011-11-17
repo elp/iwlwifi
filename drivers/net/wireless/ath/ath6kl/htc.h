@@ -119,13 +119,6 @@
 #define HTC_RX_PKT_PART_OF_BUNDLE        (1 << 2)
 #define HTC_RX_PKT_NO_RECYCLE            (1 << 3)
 
-<<<<<<< HEAD
-/* scatter request flags */
-
-#define HTC_SCAT_REQ_FLG_PART_BNDL  (1 << 0)
-
-=======
->>>>>>> upstream
 #define NUM_CONTROL_BUFFERS     8
 #define NUM_CONTROL_TX_BUFFERS  2
 #define NUM_CONTROL_RX_BUFFERS  (NUM_CONTROL_BUFFERS - NUM_CONTROL_TX_BUFFERS)
@@ -400,7 +393,7 @@ struct htc_endpoint_credit_dist {
 	int cred_per_msg;
 
 	/* reserved for HTC use */
-	void *htc_rsvd;
+	struct htc_endpoint *htc_ep;
 
 	/*
 	 * current depth of TX queue , i.e. messages waiting for credits
@@ -421,9 +414,11 @@ enum htc_credit_dist_reason {
 	HTC_CREDIT_DIST_SEEK_CREDITS,
 };
 
-struct htc_credit_state_info {
+struct ath6kl_htc_credit_info {
 	int total_avail_credits;
 	int cur_free_credits;
+
+	/* list of lowest priority endpoints */
 	struct list_head lowestpri_ep_dist;
 };
 
@@ -515,10 +510,13 @@ struct ath6kl_device;
 /* our HTC target state */
 struct htc_target {
 	struct htc_endpoint endpoint[ENDPOINT_MAX];
+
+	/* contains struct htc_endpoint_credit_dist */
 	struct list_head cred_dist_list;
+
 	struct list_head free_ctrl_txbuf;
 	struct list_head free_ctrl_rxbuf;
-	struct htc_credit_state_info *cred_dist_cntxt;
+	struct ath6kl_htc_credit_info *credit_info;
 	int tgt_creds;
 	unsigned int tgt_cred_sz;
 	spinlock_t htc_lock;
@@ -535,29 +533,6 @@ struct htc_target {
 
 	bool tx_bndl_enable;
 	int rx_bndl_enable;
-<<<<<<< HEAD
-};
-
-void *htc_create(struct ath6kl *ar);
-void htc_set_credit_dist(struct htc_target *target,
-			 struct htc_credit_state_info *cred_info,
-			  u16 svc_pri_order[], int len);
-int htc_wait_target(struct htc_target *target);
-int htc_start(struct htc_target *target);
-int htc_conn_service(struct htc_target *target,
-		     struct htc_service_connect_req *req,
-		     struct htc_service_connect_resp *resp);
-int htc_tx(struct htc_target *target, struct htc_packet *packet);
-void htc_stop(struct htc_target *target);
-void htc_cleanup(struct htc_target *target);
-void htc_flush_txep(struct htc_target *target,
-		    enum htc_endpoint_id endpoint, u16 tag);
-void htc_flush_rx_buf(struct htc_target *target);
-void htc_indicate_activity_change(struct htc_target *target,
-				  enum htc_endpoint_id endpoint, bool active);
-int htc_get_rxbuf_num(struct htc_target *target, enum htc_endpoint_id endpoint);
-int htc_add_rxbuf_multiple(struct htc_target *target, struct list_head *pktq);
-=======
 	int max_rx_bndl_sz;
 	int max_tx_bndl_sz;
 
@@ -572,7 +547,7 @@ int htc_add_rxbuf_multiple(struct htc_target *target, struct list_head *pktq);
 
 void *ath6kl_htc_create(struct ath6kl *ar);
 void ath6kl_htc_set_credit_dist(struct htc_target *target,
-				struct htc_credit_state_info *cred_info,
+				struct ath6kl_htc_credit_info *cred_info,
 				u16 svc_pri_order[], int len);
 int ath6kl_htc_wait_target(struct htc_target *target);
 int ath6kl_htc_start(struct htc_target *target);
@@ -593,8 +568,10 @@ int ath6kl_htc_get_rxbuf_num(struct htc_target *target,
 int ath6kl_htc_add_rxbuf_multiple(struct htc_target *target,
 				  struct list_head *pktq);
 int ath6kl_htc_rxmsg_pending_handler(struct htc_target *target,
-				     u32 msg_look_ahead[], int *n_pkts);
->>>>>>> upstream
+				     u32 msg_look_ahead, int *n_pkts);
+
+int ath6kl_credit_setup(void *htc_handle,
+			struct ath6kl_htc_credit_info *cred_info);
 
 static inline void set_htc_pkt_info(struct htc_packet *packet, void *context,
 				    u8 *buf, unsigned int len,
