@@ -162,6 +162,12 @@ int ___ieee80211_stop_tx_ba_session(struct sta_info *sta, u16 tid,
 		return -ENOENT;
 	}
 
+	/* if we're already stopping ignore any new requests to stop */
+	if (test_bit(HT_AGG_STATE_STOPPING, &tid_tx->state)) {
+		spin_unlock_bh(&sta->lock);
+		return -EALREADY;
+	}
+
 	if (test_bit(HT_AGG_STATE_WANT_START, &tid_tx->state)) {
 		/* not even started yet! */
 		ieee80211_assign_tid_tx(sta, tid, NULL);
@@ -170,6 +176,8 @@ int ___ieee80211_stop_tx_ba_session(struct sta_info *sta, u16 tid,
 		return 0;
 	}
 
+	set_bit(HT_AGG_STATE_STOPPING, &tid_tx->state);
+
 	spin_unlock_bh(&sta->lock);
 
 #ifdef CONFIG_MAC80211_HT_DEBUG
@@ -177,9 +185,8 @@ int ___ieee80211_stop_tx_ba_session(struct sta_info *sta, u16 tid,
 	       sta->sta.addr, tid);
 #endif /* CONFIG_MAC80211_HT_DEBUG */
 
-	set_bit(HT_AGG_STATE_STOPPING, &tid_tx->state);
-
 	del_timer_sync(&tid_tx->addba_resp_timer);
+	del_timer_sync(&tid_tx->session_timer);
 
 	/*
 	 * After this packets are no longer handed right through
@@ -187,6 +194,20 @@ int ___ieee80211_stop_tx_ba_session(struct sta_info *sta, u16 tid,
 	 * with locking to ensure proper access.
 	 */
 	clear_bit(HT_AGG_STATE_OPERATIONAL, &tid_tx->state);
+
+	/*
+	 * There might be a few packets being processed right now (on
+	 * another CPU) that have already gotten past the aggregation
+	 * check when it was still OPERATIONAL and consequently have
+	 * IEEE80211_TX_CTL_AMPDU set. In that case, this code might
+	 * call into the driver at the same time or even before the
+	 * TX paths calls into it, which could confuse the driver.
+	 *
+	 * Wait for all currently running TX paths to finish before
+	 * telling the driver. New packets will not go through since
+	 * the aggregation session is no longer OPERATIONAL.
+	 */
+	synchronize_net();
 
 	tid_tx->stop_initiator = initiator;
 	tid_tx->tx_stop = tx;
@@ -349,6 +370,28 @@ void ieee80211_tx_ba_session_handle_start(struct sta_info *sta, int tid)
 				     tid_tx->timeout);
 }
 
+/*
+ * After accepting the AddBA Response we activated a timer,
+ * resetting it after each frame that we send.
+ */
+static void sta_tx_agg_session_timer_expired(unsigned long data)
+{
+	/* not an elegant detour, but there is no choice as the timer passes
+	 * only one argument, and various sta_info are needed here, so init
+	 * flow in sta_info_create gives the TID as data, while the timer_to_id
+	 * array gives the sta through container_of */
+	u8 *ptid = (u8 *)data;
+	u8 *timer_to_id = ptid - *ptid;
+	struct sta_info *sta = container_of(timer_to_id, struct sta_info,
+					 timer_to_tid[0]);
+
+#ifdef CONFIG_MAC80211_HT_DEBUG
+	printk(KERN_DEBUG "tx session timer expired on tid %d\n", (u16)*ptid);
+#endif
+
+	ieee80211_stop_tx_ba_session(&sta->sta, *ptid);
+}
+
 int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid,
 				  u16 timeout)
 {
@@ -418,10 +461,15 @@ int ieee80211_start_tx_ba_session(struct ieee80211_sta *pubsta, u16 tid,
 
 	tid_tx->timeout = timeout;
 
-	/* Tx timer */
+	/* response timer */
 	tid_tx->addba_resp_timer.function = sta_addba_resp_timer_expired;
 	tid_tx->addba_resp_timer.data = (unsigned long)&sta->timer_to_tid[tid];
 	init_timer(&tid_tx->addba_resp_timer);
+
+	/* tx timer */
+	tid_tx->session_timer.function = sta_tx_agg_session_timer_expired;
+	tid_tx->session_timer.data = (unsigned long)&sta->timer_to_tid[tid];
+	init_timer(&tid_tx->session_timer);
 
 	/* assign a dialog token */
 	sta->ampdu_mlme.dialog_token_allocator++;
@@ -527,7 +575,7 @@ void ieee80211_start_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u16 tid)
 	}
 
 	mutex_lock(&local->sta_mtx);
-	sta = sta_info_get(sdata, ra);
+	sta = sta_info_get_bss(sdata, ra);
 	if (!sta) {
 		mutex_unlock(&local->sta_mtx);
 #ifdef CONFIG_MAC80211_HT_DEBUG
@@ -656,7 +704,7 @@ void ieee80211_stop_tx_ba_cb(struct ieee80211_vif *vif, u8 *ra, u8 tid)
 
 	mutex_lock(&local->sta_mtx);
 
-	sta = sta_info_get(sdata, ra);
+	sta = sta_info_get_bss(sdata, ra);
 	if (!sta) {
 #ifdef CONFIG_MAC80211_HT_DEBUG
 		printk(KERN_DEBUG "Could not find station: %pM\n", ra);
@@ -753,11 +801,27 @@ void ieee80211_process_addba_resp(struct ieee80211_local *local,
 		goto out;
 	}
 
-	del_timer(&tid_tx->addba_resp_timer);
+	del_timer_sync(&tid_tx->addba_resp_timer);
 
 #ifdef CONFIG_MAC80211_HT_DEBUG
 	printk(KERN_DEBUG "switched off addBA timer for tid %d\n", tid);
 #endif
+
+	/*
+	 * addba_resp_timer may have fired before we got here, and
+	 * caused WANT_STOP to be set. If the stop then was already
+	 * processed further, STOPPING might be set.
+	 */
+	if (test_bit(HT_AGG_STATE_WANT_STOP, &tid_tx->state) ||
+	    test_bit(HT_AGG_STATE_STOPPING, &tid_tx->state)) {
+#ifdef CONFIG_MAC80211_HT_DEBUG
+		printk(KERN_DEBUG
+		       "got addBA resp for tid %d but we already gave up\n",
+		       tid);
+#endif
+		goto out;
+	}
+
 	/*
 	 * IEEE 802.11-2007 7.3.1.14:
 	 * In an ADDBA Response frame, when the Status Code field
@@ -778,6 +842,11 @@ void ieee80211_process_addba_resp(struct ieee80211_local *local,
 			ieee80211_agg_tx_operational(local, sta, tid);
 
 		sta->ampdu_mlme.addba_req_num[tid] = 0;
+
+		if (tid_tx->timeout)
+			mod_timer(&tid_tx->session_timer,
+				  TU_TO_EXP_TIME(tid_tx->timeout));
+
 	} else {
 		___ieee80211_stop_tx_ba_session(sta, tid, WLAN_BACK_INITIATOR,
 						true);
