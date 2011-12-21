@@ -107,6 +107,10 @@ struct iwl_trans_ops;
 
 extern struct iwl_mod_params iwlagn_mod_params;
 
+#define IWL_DISABLE_HT_ALL	BIT(0)
+#define IWL_DISABLE_HT_TXAGG	BIT(1)
+#define IWL_DISABLE_HT_RXAGG	BIT(2)
+
 /**
  * struct iwl_mod_params
  *
@@ -114,7 +118,8 @@ extern struct iwl_mod_params iwlagn_mod_params;
  *
  * @sw_crypto: using hardware encryption, default = 0
  * @num_of_queues: number of tx queue, HW dependent
- * @disable_11n: 11n capabilities enabled, default = 0
+ * @disable_11n: disable 11n capabilities, default = 0,
+ *	use IWL_DISABLE_HT_* constants
  * @amsdu_size_8K: enable 8K amsdu size, default = 1
  * @antenna: both antennas (use diversity), default = 0
  * @restart_fw: restart firmware, default = 1
@@ -135,7 +140,7 @@ extern struct iwl_mod_params iwlagn_mod_params;
 struct iwl_mod_params {
 	int sw_crypto;
 	int num_of_queues;
-	int disable_11n;
+	unsigned int disable_11n;
 	int amsdu_size_8K;
 	int antenna;
 	int restart_fw;
@@ -174,7 +179,6 @@ struct iwl_mod_params {
  * @ct_kill_exit_threshold: when to reeable the device - in hw dependent unit
  *	relevant for 1000, 6000 and up
  * @wd_timeout: TX queues watchdog timeout
- * @calib_rt_cfg: setup runtime calibrations for the hw
  * @struct iwl_sensitivity_ranges: range of sensitivity values
  */
 struct iwl_hw_params {
@@ -194,7 +198,6 @@ struct iwl_hw_params {
 	u32 ct_kill_exit_threshold;
 	unsigned int wd_timeout;
 
-	u32 calib_rt_cfg;
 	const struct iwl_sensitivity_ranges *sens;
 };
 

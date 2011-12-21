@@ -234,6 +234,8 @@ int iwlagn_mac_setup_register(struct iwl_priv *priv,
 		priv->hw->wiphy->bands[IEEE80211_BAND_5GHZ] =
 			&priv->bands[IEEE80211_BAND_5GHZ];
 
+	hw->wiphy->hw_version = bus_get_hw_id(bus(priv));
+
 	iwl_leds_init(priv);
 
 	ret = ieee80211_register_hw(priv->hw);
@@ -633,6 +635,8 @@ static int iwlagn_mac_ampdu_action(struct ieee80211_hw *hw,
 
 	switch (action) {
 	case IEEE80211_AMPDU_RX_START:
+		if (iwlagn_mod_params.disable_11n & IWL_DISABLE_HT_RXAGG)
+			break;
 		IWL_DEBUG_HT(priv, "start Rx\n");
 		ret = iwl_sta_rx_agg_start(priv, sta, tid, *ssn);
 		break;
@@ -643,6 +647,8 @@ static int iwlagn_mac_ampdu_action(struct ieee80211_hw *hw,
 			ret = 0;
 		break;
 	case IEEE80211_AMPDU_TX_START:
+		if (iwlagn_mod_params.disable_11n & IWL_DISABLE_HT_TXAGG)
+			break;
 		IWL_DEBUG_HT(priv, "start Tx\n");
 		ret = iwlagn_tx_agg_start(priv, vif, sta, tid, ssn);
 		break;
