@@ -784,7 +784,7 @@ static int brcmf_netdev_stop(struct net_device *ndev)
 		return 0;
 
 	/* Set state and stop OS transmissions */
-	drvr->bus_if->drvr_up = 0;
+	drvr->bus_if->drvr_up = false;
 	netif_stop_queue(ndev);
 
 	return 0;
@@ -821,7 +821,7 @@ static int brcmf_netdev_open(struct net_device *ndev)
 	}
 	/* Allow transmit calls */
 	netif_start_queue(ndev);
-	drvr->bus_if->drvr_up = 1;
+	drvr->bus_if->drvr_up = true;
 	if (brcmf_cfg80211_up(drvr->config)) {
 		brcmf_dbg(ERROR, "failed to bring up cfg80211\n");
 		return -1;

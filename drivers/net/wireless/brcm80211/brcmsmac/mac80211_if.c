@@ -1233,7 +1233,7 @@ uint brcms_reset(struct brcms_info *wl)
 	brcms_c_reset(wl->wlc);
 
 	/* dpc will not be rescheduled */
-	wl->resched = 0;
+	wl->resched = false;
 
 	return 0;
 }

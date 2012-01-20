@@ -715,7 +715,7 @@ struct b43legacy_dmaring *b43legacy_setup_dmaring(struct b43legacy_wldev *dev,
 	ring->mmio_base = b43legacy_dmacontroller_base(type, controller_index);
 	ring->index = controller_index;
 	if (for_tx) {
-		ring->tx = 1;
+		ring->tx = true;
 		ring->current_slot = -1;
 	} else {
 		if (ring->index == 0) {
@@ -805,7 +805,7 @@ void b43legacy_dma_free(struct b43legacy_wldev *dev)
 static int b43legacy_dma_set_mask(struct b43legacy_wldev *dev, u64 mask)
 {
 	u64 orig_mask = mask;
-	bool fallback = 0;
+	bool fallback = false;
 	int err;
 
 	/* Try to set the DMA mask. If it fails, try falling back to a
@@ -819,12 +819,12 @@ static int b43legacy_dma_set_mask(struct b43legacy_wldev *dev, u64 mask)
 		}
 		if (mask == DMA_BIT_MASK(64)) {
 			mask = DMA_BIT_MASK(32);
-			fallback = 1;
+			fallback = true;
 			continue;
 		}
 		if (mask == DMA_BIT_MASK(32)) {
 			mask = DMA_BIT_MASK(30);
-			fallback = 1;
+			fallback = true;
 			continue;
 		}
 		b43legacyerr(dev->wl, "The machine/kernel does not support "
@@ -857,7 +857,7 @@ int b43legacy_dma_init(struct b43legacy_wldev *dev)
 #ifdef CONFIG_B43LEGACY_PIO
 		b43legacywarn(dev->wl, "DMA for this device not supported. "
 			"Falling back to PIO\n");
-		dev->__using_pio = 1;
+		dev->__using_pio = true;
 		return -EAGAIN;
 #else
 		b43legacyerr(dev->wl, "DMA for this device not supported and "
@@ -1067,7 +1067,7 @@ static int dma_tx_fragment(struct b43legacy_dmaring *ring,
 	memset(meta, 0, sizeof(*meta));
 
 	meta->skb = skb;
-	meta->is_last_fragment = 1;
+	meta->is_last_fragment = true;
 
 	meta->dmaaddr = map_descbuffer(ring, skb->data, skb->len, 1);
 	/* create a bounce buffer in zone_dma on mapping failure. */
@@ -1183,7 +1183,7 @@ int b43legacy_dma_tx(struct b43legacy_wldev *dev,
 		unsigned int skb_mapping = skb_get_queue_mapping(skb);
 		ieee80211_stop_queue(dev->wl->hw, skb_mapping);
 		dev->wl->tx_queue_stopped[skb_mapping] = 1;
-		ring->stopped = 1;
+		ring->stopped = true;
 		if (b43legacy_debug(dev, B43legacy_DBG_DMAVERBOSE))
 			b43legacydbg(dev->wl, "Stopped TX ring %d\n",
 			       ring->index);
@@ -1293,7 +1293,7 @@ void b43legacy_dma_handle_txstatus(struct b43legacy_wldev *dev,
 	dev->stats.last_tx = jiffies;
 	if (ring->stopped) {
 		B43legacy_WARN_ON(free_slots(ring) < SLOTS_PER_PACKET);
-		ring->stopped = 0;
+		ring->stopped = false;
 	}
 
 	if (dev->wl->tx_queue_stopped[ring->queue_prio]) {
