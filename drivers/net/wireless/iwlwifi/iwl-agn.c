@@ -384,7 +384,6 @@ static void iwl_continuous_event_trace(struct iwl_priv *priv)
 	base = priv->shrd->device_pointers.log_event_table;
 	if (iwlagn_hw_valid_rtc_data_addr(base)) {
 		iwl_read_targ_mem_words(trans(priv), base, &read, sizeof(read));
-
 		capacity = read.capacity;
 		mode = read.mode;
 		num_wraps = read.wrap_counter;
