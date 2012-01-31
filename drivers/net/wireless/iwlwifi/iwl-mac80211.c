@@ -343,8 +343,6 @@ static void iwlagn_mac_stop(struct ieee80211_hw *hw)
 
 	iwl_down(priv);
 
-	flush_workqueue(priv->shrd->workqueue);
-
 	/* User space software may expect getting rfkill changes
 	 * even if interface is down, trans->down will leave the RF
 	 * kill interrupt enabled
