@@ -1314,7 +1314,7 @@ void __devexit iwl_remove(struct iwl_priv * priv)
 	/*This will stop the queues, move the device to low power state */
 	iwl_trans_stop_device(trans(priv));
 
-	iwl_dealloc_ucode(trans(priv));
+	iwl_dealloc_ucode(nic(priv));
 
 	iwl_eeprom_free(priv->shrd);
 
