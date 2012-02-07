@@ -1115,7 +1115,7 @@ static int iwlagn_mac_set_tim(struct ieee80211_hw *hw,
 {
 	struct iwl_priv *priv = hw->priv;
 
-	queue_work(priv->shrd->workqueue, &priv->beacon_update);
+	queue_work(priv->workqueue, &priv->beacon_update);
 
 	return 0;
 }
