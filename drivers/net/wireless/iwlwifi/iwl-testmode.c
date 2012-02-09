@@ -254,7 +254,7 @@ void iwl_testmode_cleanup(struct iwl_priv *priv)
  */
 static int iwl_testmode_ucode(struct ieee80211_hw *hw, struct nlattr **tb)
 {
-	struct iwl_priv *priv = hw->priv;
+	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	struct iwl_host_cmd cmd;
 	struct iwl_rx_packet *pkt;
 	struct sk_buff *skb;
@@ -340,7 +340,7 @@ nla_put_failure:
  */
 static int iwl_testmode_reg(struct ieee80211_hw *hw, struct nlattr **tb)
 {
-	struct iwl_priv *priv = hw->priv;
+	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	u32 ofs, val32, cmd;
 	u8 val8;
 	struct sk_buff *skb;
@@ -457,7 +457,7 @@ cfg_init_calib_error:
  */
 static int iwl_testmode_driver(struct ieee80211_hw *hw, struct nlattr **tb)
 {
-	struct iwl_priv *priv = hw->priv;
+	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	struct iwl_trans *trans = trans(priv);
 	struct sk_buff *skb;
 	unsigned char *rsp_data_ptr = NULL;
@@ -642,7 +642,7 @@ nla_put_failure:
  */
 static int iwl_testmode_trace(struct ieee80211_hw *hw, struct nlattr **tb)
 {
-	struct iwl_priv *priv = hw->priv;
+	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	struct sk_buff *skb;
 	int status = 0;
 	struct device *dev = trans(priv)->dev;
@@ -717,7 +717,7 @@ static int iwl_testmode_trace_dump(struct ieee80211_hw *hw, struct nlattr **tb,
 				   struct sk_buff *skb,
 				   struct netlink_callback *cb)
 {
-	struct iwl_priv *priv = hw->priv;
+	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	int idx, length;
 
 	if (priv->testmode_trace.trace_enabled &&
@@ -761,7 +761,7 @@ static int iwl_testmode_trace_dump(struct ieee80211_hw *hw, struct nlattr **tb,
  */
 static int iwl_testmode_ownership(struct ieee80211_hw *hw, struct nlattr **tb)
 {
-	struct iwl_priv *priv = hw->priv;
+	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	u8 owner;
 
 	if (!tb[IWL_TM_ATTR_UCODE_OWNER]) {
@@ -875,7 +875,7 @@ static int iwl_testmode_indirect_write(struct iwl_priv *priv, u32 addr,
 static int iwl_testmode_indirect_mem(struct ieee80211_hw *hw,
 	struct nlattr **tb)
 {
-	struct iwl_priv *priv = hw->priv;
+	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	u32 addr, size, cmd;
 	unsigned char *buf;
 
@@ -909,7 +909,7 @@ static int iwl_testmode_buffer_dump(struct ieee80211_hw *hw, struct nlattr **tb,
 				   struct sk_buff *skb,
 				   struct netlink_callback *cb)
 {
-	struct iwl_priv *priv = hw->priv;
+	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	int idx, length;
 
 	if (priv->testmode_mem.read_in_progress) {
@@ -960,7 +960,7 @@ static int iwl_testmode_buffer_dump(struct ieee80211_hw *hw, struct nlattr **tb,
 int iwlagn_mac_testmode_cmd(struct ieee80211_hw *hw, void *data, int len)
 {
 	struct nlattr *tb[IWL_TM_ATTR_MAX];
-	struct iwl_priv *priv = hw->priv;
+	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	int result;
 
 	result = nla_parse(tb, IWL_TM_ATTR_MAX - 1, data, len,
@@ -1037,7 +1037,7 @@ int iwlagn_mac_testmode_dump(struct ieee80211_hw *hw, struct sk_buff *skb,
 		      void *data, int len)
 {
 	struct nlattr *tb[IWL_TM_ATTR_MAX];
-	struct iwl_priv *priv = hw->priv;
+	struct iwl_priv *priv = IWL_MAC80211_GET_DVM(hw);
 	int result;
 	u32 cmd;
 
