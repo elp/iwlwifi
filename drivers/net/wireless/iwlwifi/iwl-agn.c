@@ -976,7 +976,6 @@ void iwl_cancel_deferred_work(struct iwl_priv *priv)
 
 	del_timer_sync(&priv->statistics_periodic);
 	del_timer_sync(&priv->ucode_trace);
-	flush_workqueue(priv->workqueue);
 }
 
 static void iwl_init_hw_rates(struct iwl_priv *priv,
