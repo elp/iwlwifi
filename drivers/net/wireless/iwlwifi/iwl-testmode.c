@@ -974,7 +974,7 @@ int iwlagn_mac_testmode_cmd(struct ieee80211_hw *hw, void *data, int len)
 		return -ENOMSG;
 	}
 	/* in case multiple accesses to the device happens */
-	mutex_lock(&priv->shrd->mutex);
+	mutex_lock(&priv->mutex);
 
 	switch (nla_get_u32(tb[IWL_TM_ATTR_COMMAND])) {
 	case IWL_TM_CMD_APP2DEV_UCODE:
@@ -1026,7 +1026,7 @@ int iwlagn_mac_testmode_cmd(struct ieee80211_hw *hw, void *data, int len)
 		break;
 	}
 
-	mutex_unlock(&priv->shrd->mutex);
+	mutex_unlock(&priv->mutex);
 	return result;
 }
 
@@ -1061,7 +1061,7 @@ int iwlagn_mac_testmode_dump(struct ieee80211_hw *hw, struct sk_buff *skb,
 	}
 
 	/* in case multiple accesses to the device happens */
-	mutex_lock(&priv->shrd->mutex);
+	mutex_lock(&priv->mutex);
 	switch (cmd) {
 	case IWL_TM_CMD_APP2DEV_READ_TRACE:
 		IWL_DEBUG_INFO(priv, "uCode trace cmd to driver\n");
@@ -1076,6 +1076,6 @@ int iwlagn_mac_testmode_dump(struct ieee80211_hw *hw, struct sk_buff *skb,
 		break;
 	}
 
-	mutex_unlock(&priv->shrd->mutex);
+	mutex_unlock(&priv->mutex);
 	return result;
 }
