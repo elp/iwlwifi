@@ -269,7 +269,7 @@ static struct iwl_lib_ops iwl6030_lib = {
 	.temperature = iwlagn_temperature,
 };
 
-static struct iwl_base_params iwl6000_base_params = {
+static const struct iwl_base_params iwl6000_base_params = {
 	.eeprom_size = OTP_LOW_IMAGE_SIZE,
 	.num_of_queues = IWLAGN_NUM_QUEUES,
 	.num_of_ampdu_queues = IWLAGN_NUM_AMPDU_QUEUES,
@@ -286,7 +286,7 @@ static struct iwl_base_params iwl6000_base_params = {
 	.shadow_reg_enable = true,
 };
 
-static struct iwl_base_params iwl6050_base_params = {
+static const struct iwl_base_params iwl6050_base_params = {
 	.eeprom_size = OTP_LOW_IMAGE_SIZE,
 	.num_of_queues = IWLAGN_NUM_QUEUES,
 	.num_of_ampdu_queues = IWLAGN_NUM_AMPDU_QUEUES,
@@ -302,7 +302,8 @@ static struct iwl_base_params iwl6050_base_params = {
 	.max_event_log_size = 1024,
 	.shadow_reg_enable = true,
 };
-static struct iwl_base_params iwl6000_g2_base_params = {
+
+static const struct iwl_base_params iwl6000_g2_base_params = {
 	.eeprom_size = OTP_LOW_IMAGE_SIZE,
 	.num_of_queues = IWLAGN_NUM_QUEUES,
 	.num_of_ampdu_queues = IWLAGN_NUM_AMPDU_QUEUES,
@@ -319,12 +320,12 @@ static struct iwl_base_params iwl6000_g2_base_params = {
 	.shadow_reg_enable = true,
 };
 
-static struct iwl_ht_params iwl6000_ht_params = {
+static const struct iwl_ht_params iwl6000_ht_params = {
 	.ht_greenfield_support = true,
 	.use_rts_for_aggregation = true, /* use rts/cts protection */
 };
 
-static struct iwl_bt_params iwl6000_bt_params = {
+static const struct iwl_bt_params iwl6000_bt_params = {
 	/* Due to bluetooth, we transmit 2.4 GHz probes only on antenna A */
 	.advanced_bt_coexist = true,
 	.agg_time_limit = BT_AGG_THRESHOLD_DEF,
