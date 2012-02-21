@@ -160,7 +160,6 @@ struct iwl_mod_params {
  *
  * Holds the module parameters
  *
- * @max_txq_num: Max # Tx queues supported
  * @num_ampdu_queues: num of ampdu queues
  * @tx_chains_num: Number of TX chains
  * @rx_chains_num: Number of RX chains
@@ -176,7 +175,6 @@ struct iwl_mod_params {
  * @struct iwl_sensitivity_ranges: range of sensitivity values
  */
 struct iwl_hw_params {
-	u8  max_txq_num;
 	u8  num_ampdu_queues;
 	u8  tx_chains_num;
 	u8  rx_chains_num;

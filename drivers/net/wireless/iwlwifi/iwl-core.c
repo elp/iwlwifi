@@ -1350,7 +1350,8 @@ void iwl_bg_watchdog(unsigned long data)
 
 	/* monitor and check for other stuck queues */
 	if (iwl_is_any_associated(priv)) {
-		for (cnt = 0; cnt < hw_params(priv).max_txq_num; cnt++) {
+		for (cnt = 0; cnt < cfg(priv)->base_params->num_of_queues;
+		     cnt++) {
 			/* skip as we already checked the command queue */
 			if (cnt == priv->shrd->cmd_queue)
 				continue;
