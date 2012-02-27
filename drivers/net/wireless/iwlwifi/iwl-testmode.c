@@ -130,7 +130,7 @@ struct nla_policy iwl_testmode_gnl_msg_policy[IWL_TM_ATTR_MAX] = {
  * See the struct iwl_rx_packet in iwl-commands.h for the format of the
  * received events from the device
  */
-static inline int get_event_length(struct iwl_rx_mem_buffer *rxb)
+static inline int get_event_length(struct iwl_rx_cmd_buffer *rxb)
 {
 	struct iwl_rx_packet *pkt = rxb_addr(rxb);
 	if (pkt)
@@ -161,7 +161,7 @@ static inline int get_event_length(struct iwl_rx_mem_buffer *rxb)
  */
 
 static void iwl_testmode_ucode_rx_pkt(struct iwl_priv *priv,
-				struct iwl_rx_mem_buffer *rxb)
+				      struct iwl_rx_cmd_buffer *rxb)
 {
 	struct ieee80211_hw *hw = priv->hw;
 	struct sk_buff *skb;

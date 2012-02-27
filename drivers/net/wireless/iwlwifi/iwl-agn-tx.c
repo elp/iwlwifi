@@ -973,7 +973,7 @@ static void iwl_check_abort_status(struct iwl_priv *priv,
 	}
 }
 
-int iwlagn_rx_reply_tx(struct iwl_priv *priv, struct iwl_rx_mem_buffer *rxb,
+int iwlagn_rx_reply_tx(struct iwl_priv *priv, struct iwl_rx_cmd_buffer *rxb,
 			       struct iwl_device_cmd *cmd)
 {
 	struct iwl_rx_packet *pkt = rxb_addr(rxb);
@@ -1104,7 +1104,7 @@ int iwlagn_rx_reply_tx(struct iwl_priv *priv, struct iwl_rx_mem_buffer *rxb,
  * of frames sent via aggregation.
  */
 int iwlagn_rx_reply_compressed_ba(struct iwl_priv *priv,
-				   struct iwl_rx_mem_buffer *rxb,
+				   struct iwl_rx_cmd_buffer *rxb,
 				   struct iwl_device_cmd *cmd)
 {
 	struct iwl_rx_packet *pkt = rxb_addr(rxb);
