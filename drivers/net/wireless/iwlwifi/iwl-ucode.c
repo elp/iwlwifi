@@ -1227,7 +1227,6 @@ static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context)
 		nic->inst_evtlog_size =
 			cfg->base_params->max_event_log_size;
 	nic->inst_errlog_ptr = pieces.inst_errlog_ptr;
-
 	/*
 	 * figure out the offset of chain noise reset and gain commands
 	 * base on the size of standard phy calibration commands table size

@@ -19,6 +19,7 @@
 #include <linux/parser.h>
 #include <linux/bitops.h>
 #include <linux/magic.h>
+#include <linux/compat.h>
 #include "autofs_i.h"
 #include <linux/module.h>
 
@@ -224,6 +225,9 @@ int autofs4_fill_super(struct super_block *s, void *data, int silent)
 	set_autofs_type_indirect(&sbi->type);
 	sbi->min_proto = 0;
 	sbi->max_proto = 0;
+#ifdef CONFIG_COMPAT
+	sbi->compat_daemon = is_compat_task();
+#endif
 	mutex_init(&sbi->wq_mutex);
 	mutex_init(&sbi->pipe_mutex);
 	spin_lock_init(&sbi->fs_lock);
