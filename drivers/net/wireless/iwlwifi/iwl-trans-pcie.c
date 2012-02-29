@@ -82,7 +82,6 @@
 	(((1<<cfg(trans)->base_params->num_of_queues) - 1) &\
 	(~(1<<(trans_pcie)->cmd_queue)))
 
-
 static int iwl_trans_rx_alloc(struct iwl_trans *trans)
 {
 	struct iwl_trans_pcie *trans_pcie =

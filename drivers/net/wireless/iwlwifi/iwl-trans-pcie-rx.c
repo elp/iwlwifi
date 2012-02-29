@@ -503,7 +503,6 @@ static void iwl_rx_handle(struct iwl_trans *trans)
 		rxq->queue[i] = NULL;
 
 		IWL_DEBUG_RX(trans, "rxbuf: r = %d, i = %d (%p)\n", rxb);
-
 		iwl_rx_handle_rxbuf(trans, rxb);
 
 		i = (i + 1) & RX_QUEUE_MASK;
