@@ -72,8 +72,6 @@ struct iwl_notif_wait_data {
 	wait_queue_head_t notif_waitq;
 };
 
-#define UCODE_EXPERIMENTAL_INDEX	100
-
 /**
  * struct iwl_notification_wait - notification wait entry
  * @list: list head for global list
@@ -102,6 +100,7 @@ struct iwl_notification_wait {
 	u8 cmd;
 	bool triggered, aborted;
 };
+
 
 /* caller functions */
 void iwl_notification_wait_init(struct iwl_notif_wait_data *notif_data);
