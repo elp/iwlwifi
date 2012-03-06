@@ -565,4 +565,3 @@ int iwl_run_init_ucode(struct iwl_priv *priv)
 	iwl_trans_stop_device(trans(priv));
 	return ret;
 }
-
