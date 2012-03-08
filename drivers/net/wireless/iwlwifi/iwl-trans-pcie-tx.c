@@ -41,9 +41,6 @@
 #define IWL_TX_CRC_SIZE 4
 #define IWL_TX_DELIMITER_SIZE 4
 
-#define IWL_TX_CRC_SIZE 4
-#define IWL_TX_DELIMITER_SIZE 4
-
 /**
  * iwl_trans_txq_update_byte_cnt_tbl - Set up entry in Tx byte-count array
  */
