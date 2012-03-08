@@ -923,6 +923,9 @@ void iwl_down(struct iwl_priv *priv)
 				STATUS_FW_ERROR |
 			test_bit(STATUS_EXIT_PENDING, &priv->status) <<
 				STATUS_EXIT_PENDING;
+	priv->shrd->status &=
+			test_bit(STATUS_FW_ERROR, &priv->shrd->status) <<
+				STATUS_FW_ERROR;
 
 	dev_kfree_skb(priv->beacon_skb);
 	priv->beacon_skb = NULL;
@@ -1506,7 +1509,7 @@ static struct iwl_op_mode *iwl_op_mode_dvm_start(struct iwl_trans *trans,
 	ucode_flags = fw->ucode_capa.flags;
 
 #ifndef CONFIG_IWLWIFI_P2P
-	ucode_flags &= ~IWL_UCODE_TLV_FLAGS_PAN;
+	ucode_flags &= ~IWL_UCODE_TLV_FLAGS_P2P;
 #endif
 
 	if (ucode_flags & IWL_UCODE_TLV_FLAGS_PAN) {
