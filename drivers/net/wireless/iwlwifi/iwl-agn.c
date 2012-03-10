@@ -1484,6 +1484,7 @@ static struct iwl_op_mode *iwl_op_mode_dvm_start(struct iwl_trans *trans,
 	case IWL_DEVICE_FAMILY_5150:
 		priv->lib = &iwl5150_lib;
 		break;
+	case IWL_DEVICE_FAMILY_6000:
 	case IWL_DEVICE_FAMILY_6005:
 	case IWL_DEVICE_FAMILY_6000i:
 	case IWL_DEVICE_FAMILY_6050:
