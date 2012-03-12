@@ -916,9 +916,6 @@ void iwl_down(struct iwl_priv *priv)
 				STATUS_FW_ERROR |
 			test_bit(STATUS_EXIT_PENDING, &priv->status) <<
 				STATUS_EXIT_PENDING;
-	priv->shrd->status &=
-			test_bit(STATUS_FW_ERROR, &priv->shrd->status) <<
-				STATUS_FW_ERROR;
 
 	dev_kfree_skb(priv->beacon_skb);
 	priv->beacon_skb = NULL;

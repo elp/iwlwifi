@@ -367,7 +367,6 @@ static inline void iwl_enable_interrupts(struct iwl_trans *trans)
 }
 
 static inline void iwl_enable_rfkill_int(struct iwl_trans *trans)
-
 {
 	IWL_DEBUG_ISR(trans, "Enabling rfkill interrupt\n");
 	iwl_write32(trans, CSR_INT_MASK, CSR_INT_BIT_RF_KILL);
