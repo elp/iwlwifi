@@ -593,7 +593,7 @@ static const u8 iwlagn_pan_queue_to_ac[] = {
 	IEEE80211_AC_VO,
 };
 
-static void iwl_init_context(struct iwl_priv *priv, u32 ucode_flags)
+void iwl_init_context(struct iwl_priv *priv, u32 ucode_flags)
 {
 	int i;
 
@@ -660,7 +660,7 @@ static void iwl_init_context(struct iwl_priv *priv, u32 ucode_flags)
 	BUILD_BUG_ON(NUM_IWL_RXON_CTX != 2);
 }
 
-static void iwl_rf_kill_ct_config(struct iwl_priv *priv)
+void iwl_rf_kill_ct_config(struct iwl_priv *priv)
 {
 	struct iwl_ct_kill_config cmd;
 	struct iwl_ct_kill_throttling_config adv_cmd;
@@ -741,7 +741,7 @@ static int iwlagn_send_tx_ant_config(struct iwl_priv *priv, u8 valid_tx_ant)
 	}
 }
 
-static void iwl_send_bt_config(struct iwl_priv *priv)
+void iwl_send_bt_config(struct iwl_priv *priv)
 {
 	struct iwl_bt_cmd bt_cmd = {
 		.lead_time = BT_LEAD_TIME_DEF,
@@ -1096,7 +1096,7 @@ static void iwlagn_disable_roc_work(struct work_struct *work)
  *
  *****************************************************************************/
 
-static void iwl_setup_deferred_work(struct iwl_priv *priv)
+void iwl_setup_deferred_work(struct iwl_priv *priv)
 {
 	priv->workqueue = create_singlethread_workqueue(DRV_NAME);
 
@@ -1344,7 +1344,7 @@ static void iwl_free_geos(struct iwl_priv *priv)
 	clear_bit(STATUS_GEO_CONFIGURED, &priv->status);
 }
 
-static int iwl_init_drv(struct iwl_priv *priv)
+int iwl_init_drv(struct iwl_priv *priv)
 {
 	int ret;
 
@@ -1407,7 +1407,7 @@ err:
 	return ret;
 }
 
-static void iwl_uninit_drv(struct iwl_priv *priv)
+void iwl_uninit_drv(struct iwl_priv *priv)
 {
 	iwl_free_geos(priv);
 	iwl_free_channel_map(priv);
@@ -1420,7 +1420,7 @@ static void iwl_uninit_drv(struct iwl_priv *priv)
 #endif
 }
 
-static void iwl_set_hw_params(struct iwl_priv *priv)
+void iwl_set_hw_params(struct iwl_priv *priv)
 {
 	if (cfg(priv)->ht_params)
 		priv->hw_params.use_rts_for_aggregation =
@@ -1433,7 +1433,7 @@ static void iwl_set_hw_params(struct iwl_priv *priv)
 	priv->lib->set_hw_params(priv);
 }
 
-static void iwl_debug_config(struct iwl_priv *priv)
+void iwl_debug_config(struct iwl_priv *priv)
 {
 	dev_printk(KERN_INFO, trans(priv)->dev, "CONFIG_IWLWIFI_DEBUG "
 #ifdef CONFIG_IWLWIFI_DEBUG
@@ -1746,7 +1746,7 @@ out:
 	return op_mode;
 }
 
-static void iwl_op_mode_dvm_stop(struct iwl_op_mode *op_mode)
+void iwl_op_mode_dvm_stop(struct iwl_op_mode *op_mode)
 {
 	struct iwl_priv *priv = IWL_OP_MODE_GET_DVM(op_mode);
 
@@ -2211,7 +2211,7 @@ static void iwlagn_fw_error(struct iwl_priv *priv, bool ondemand)
 	}
 }
 
-static void iwl_nic_error(struct iwl_op_mode *op_mode)
+void iwl_nic_error(struct iwl_op_mode *op_mode)
 {
 	struct iwl_priv *priv = IWL_OP_MODE_GET_DVM(op_mode);
 
@@ -2224,7 +2224,7 @@ static void iwl_nic_error(struct iwl_op_mode *op_mode)
 	iwlagn_fw_error(priv, false);
 }
 
-static void iwl_cmd_queue_full(struct iwl_op_mode *op_mode)
+void iwl_cmd_queue_full(struct iwl_op_mode *op_mode)
 {
 	struct iwl_priv *priv = IWL_OP_MODE_GET_DVM(op_mode);
 
@@ -2234,7 +2234,7 @@ static void iwl_cmd_queue_full(struct iwl_op_mode *op_mode)
 	}
 }
 
-static void iwl_nic_config(struct iwl_op_mode *op_mode)
+void iwl_nic_config(struct iwl_op_mode *op_mode)
 {
 	struct iwl_priv *priv = IWL_OP_MODE_GET_DVM(op_mode);
 
@@ -2249,7 +2249,7 @@ static void iwl_wimax_active(struct iwl_op_mode *op_mode)
 	IWL_ERR(priv, "RF is used by WiMAX\n");
 }
 
-static void iwl_stop_sw_queue(struct iwl_op_mode *op_mode, int queue)
+void iwl_stop_sw_queue(struct iwl_op_mode *op_mode, int queue)
 {
 	struct iwl_priv *priv = IWL_OP_MODE_GET_DVM(op_mode);
 	int ac = priv->queue_to_ac[queue];
@@ -2268,7 +2268,7 @@ static void iwl_stop_sw_queue(struct iwl_op_mode *op_mode, int queue)
 	ieee80211_stop_queue(priv->hw, ac);
 }
 
-static void iwl_wake_sw_queue(struct iwl_op_mode *op_mode, int queue)
+void iwl_wake_sw_queue(struct iwl_op_mode *op_mode, int queue)
 {
 	struct iwl_priv *priv = IWL_OP_MODE_GET_DVM(op_mode);
 	int ac = priv->queue_to_ac[queue];
@@ -2308,7 +2308,7 @@ void iwlagn_lift_passive_no_rx(struct iwl_priv *priv)
 	priv->passive_no_rx = false;
 }
 
-static void iwl_free_skb(struct iwl_op_mode *op_mode, struct sk_buff *skb)
+void iwl_free_skb(struct iwl_op_mode *op_mode, struct sk_buff *skb)
 {
 	struct ieee80211_tx_info *info;
 
@@ -2317,7 +2317,7 @@ static void iwl_free_skb(struct iwl_op_mode *op_mode, struct sk_buff *skb)
 	dev_kfree_skb_any(skb);
 }
 
-static void iwl_set_hw_rfkill_state(struct iwl_op_mode *op_mode, bool state)
+void iwl_set_hw_rfkill_state(struct iwl_op_mode *op_mode, bool state)
 {
 	struct iwl_priv *priv = IWL_OP_MODE_GET_DVM(op_mode);
 
