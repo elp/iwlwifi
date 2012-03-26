@@ -47,7 +47,6 @@
 #include "iwl-io.h"
 #include "iwl-agn-calib.h"
 #include "iwl-agn.h"
-#include "iwl-shared.h"
 #include "iwl-trans.h"
 #include "iwl-op-mode.h"
 
