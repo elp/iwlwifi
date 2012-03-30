@@ -1831,10 +1831,9 @@ static ssize_t iwl_dbgfs_tx_queue_read(struct file *file,
 
 	bufsz = sizeof(char) * 64 * trans->cfg->base_params->num_of_queues;
 
-	if (!trans_pcie->txq) {
-		IWL_ERR(trans, "txq not ready\n");
+	if (!trans_pcie->txq)
 		return -EAGAIN;
-	}
+
 	buf = kzalloc(bufsz, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
@@ -1895,10 +1894,8 @@ static ssize_t iwl_dbgfs_interrupt_read(struct file *file,
 	ssize_t ret;
 
 	buf = kzalloc(bufsz, GFP_KERNEL);
-	if (!buf) {
-		IWL_ERR(trans, "Can not allocate Buffer\n");
+	if (!buf)
 		return -ENOMEM;
-	}
 
 	pos += scnprintf(buf + pos, bufsz - pos,
 			"Interrupt Statistics Report:\n");
