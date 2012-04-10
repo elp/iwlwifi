@@ -102,6 +102,13 @@ extern struct iwl_lib_ops iwl6030_lib;
 #define STATUS_SCAN_COMPLETE	12
 #define STATUS_POWER_PMI	13
 
+/* The first 11 queues (0-10) are used otherwise */
+#define IWLAGN_FIRST_AMPDU_QUEUE	11
+
+/* AUX (TX during scan dwell) queue */
+#define IWL_AUX_QUEUE		10
+
+
 struct iwl_ucode_capabilities;
 
 extern struct ieee80211_ops iwlagn_hw_ops;

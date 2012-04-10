@@ -244,7 +244,7 @@ enum ieee80211_rssi_event {
  * @channel_type: Channel type for this BSS -- the hardware might be
  *	configured for HT40+ while this BSS only uses no-HT, for
  *	example.
- * @ht_operation_mode: HT operation mode (like in &struct ieee80211_ht_info).
+ * @ht_operation_mode: HT operation mode like in &struct ieee80211_ht_operation.
  *	This field is only valid when the channel type is one of the HT types.
  * @cqm_rssi_thold: Connection quality monitor RSSI threshold, a zero value
  *	implies disabled
@@ -1327,7 +1327,7 @@ static inline struct ieee80211_rate *
 ieee80211_get_tx_rate(const struct ieee80211_hw *hw,
 		      const struct ieee80211_tx_info *c)
 {
-	if (WARN_ON(c->control.rates[0].idx < 0))
+	if (WARN_ON_ONCE(c->control.rates[0].idx < 0))
 		return NULL;
 	return &hw->wiphy->bands[c->band]->bitrates[c->control.rates[0].idx];
 }
