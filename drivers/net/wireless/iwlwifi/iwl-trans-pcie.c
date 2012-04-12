@@ -481,6 +481,8 @@ static void iwl_tx_queue_free(struct iwl_trans *trans, int txq_id)
 
 	del_timer_sync(&txq->stuck_timer);
 
+	del_timer_sync(&txq->stuck_timer);
+
 	/* 0-fill queue descriptor structure */
 	memset(txq, 0, sizeof(*txq));
 }
