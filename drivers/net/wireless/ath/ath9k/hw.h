@@ -923,6 +923,8 @@ void ath9k_hw_set_gpio(struct ath_hw *ah, u32 gpio, u32 val);
 void ath9k_hw_setantenna(struct ath_hw *ah, u32 antenna);
 
 /* General Operation */
+void ath9k_hw_synth_delay(struct ath_hw *ah, struct ath9k_channel *chan,
+			  int hw_delay);
 bool ath9k_hw_wait(struct ath_hw *ah, u32 reg, u32 mask, u32 val, u32 timeout);
 void ath9k_hw_write_array(struct ath_hw *ah, struct ar5416IniArray *array,
 			  int column, unsigned int *writecnt);
@@ -959,7 +961,8 @@ bool ath9k_hw_setpower(struct ath_hw *ah, enum ath9k_power_mode mode);
 #ifdef CONFIG_ATH9K_DEBUGFS
 void ath9k_debug_sync_cause(struct ath_common *common, u32 sync_cause);
 #else
-static void ath9k_debug_sync_cause(struct ath_common *common, u32 sync_cause) {}
+static inline void ath9k_debug_sync_cause(struct ath_common *common,
+					  u32 sync_cause) {}
 #endif
 
 /* Generic hw timer primitives */
@@ -982,7 +985,8 @@ void ath9k_hw_name(struct ath_hw *ah, char *hw_name, size_t len);
 /* PHY */
 void ath9k_hw_get_delta_slope_vals(struct ath_hw *ah, u32 coef_scaled,
 				   u32 *coef_mantissa, u32 *coef_exponent);
-void ath9k_hw_apply_txpower(struct ath_hw *ah, struct ath9k_channel *chan);
+void ath9k_hw_apply_txpower(struct ath_hw *ah, struct ath9k_channel *chan,
+			    bool test);
 
 /*
  * Code Specific to AR5008, AR9001 or AR9002,
