@@ -282,7 +282,7 @@ struct ieee80211_if_ap {
 	u8 tim[sizeof(unsigned long) * BITS_TO_LONGS(IEEE80211_MAX_AID + 1)];
 	struct sk_buff_head ps_bc_buf;
 	atomic_t num_sta_ps; /* number of stations in PS mode */
-	atomic_t num_sta_authorized; /* number of authorized stations */
+	atomic_t num_mcast_sta; /* number of stations receiving multicast */
 	int dtim_count;
 	bool dtim_bc_mc;
 };
@@ -1234,7 +1234,7 @@ void ieee80211_sta_rx_queued_mgmt(struct ieee80211_sub_if_data *sdata,
 				  struct sk_buff *skb);
 void ieee80211_sta_reset_beacon_monitor(struct ieee80211_sub_if_data *sdata);
 void ieee80211_sta_reset_conn_monitor(struct ieee80211_sub_if_data *sdata);
-void ieee80211_mgd_teardown(struct ieee80211_sub_if_data *sdata);
+void ieee80211_mgd_stop(struct ieee80211_sub_if_data *sdata);
 
 /* IBSS code */
 void ieee80211_ibss_notify_scan_completed(struct ieee80211_local *local);
