@@ -102,42 +102,6 @@ extern struct iwl_lib_ops iwl6030_lib;
 #define STATUS_SCAN_COMPLETE	12
 #define STATUS_POWER_PMI	13
 
-/* The first 11 queues (0-10) are used otherwise */
-#define IWLAGN_FIRST_AMPDU_QUEUE	11
-
-/* AUX (TX during scan dwell) queue */
-#define IWL_AUX_QUEUE		10
-
-/* device operations */
-extern struct iwl_lib_ops iwl1000_lib;
-extern struct iwl_lib_ops iwl2000_lib;
-extern struct iwl_lib_ops iwl2030_lib;
-extern struct iwl_lib_ops iwl5000_lib;
-extern struct iwl_lib_ops iwl5150_lib;
-extern struct iwl_lib_ops iwl6000_lib;
-extern struct iwl_lib_ops iwl6030_lib;
-
-
-#define TIME_UNIT		1024
-
-/*****************************************************
-* DRIVER STATUS FUNCTIONS
-******************************************************/
-#define STATUS_RF_KILL_HW	0
-#define STATUS_CT_KILL		1
-#define STATUS_ALIVE		2
-#define STATUS_READY		3
-#define STATUS_GEO_CONFIGURED	4
-#define STATUS_EXIT_PENDING	5
-#define STATUS_STATISTICS	6
-#define STATUS_SCANNING		7
-#define STATUS_SCAN_ABORTING	8
-#define STATUS_SCAN_HW		9
-#define STATUS_FW_ERROR		10
-#define STATUS_CHANNEL_SWITCH_PENDING 11
-#define STATUS_SCAN_COMPLETE	12
-#define STATUS_POWER_PMI	13
-
 struct iwl_ucode_capabilities;
 
 extern struct ieee80211_ops iwlagn_hw_ops;
