@@ -252,9 +252,8 @@ static int vhci_open(struct inode *inode, struct file *file)
 	}
 
 	file->private_data = data;
-	nonseekable_open(inode, file);
 
-	return 0;
+	return nonseekable_open(inode, file);
 }
 
 static int vhci_release(struct inode *inode, struct file *file)
