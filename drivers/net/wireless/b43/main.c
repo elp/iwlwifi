@@ -4864,9 +4864,6 @@ static void b43_op_stop(struct ieee80211_hw *hw)
 		goto out;
 
 	mutex_lock(&wl->mutex);
-	if (!dev)
-		goto out_unlock;
-
 	if (b43_status(dev) >= B43_STAT_STARTED) {
 		dev = b43_wireless_core_stop(dev);
 		if (!dev)

@@ -1418,6 +1418,8 @@ void iwl_set_hw_params(struct iwl_priv *priv)
 	priv->lib->set_hw_params(priv);
 }
 
+
+
 /* show what optional capabilities we have */
 void iwl_option_config(struct iwl_priv *priv)
 {

@@ -1583,7 +1583,6 @@ int ath6kl_init_hw_start(struct ath6kl *ar)
 	return 0;
 
 err_htc_stop:
-
 	ath6kl_htc_stop(ar->htc_target);
 err_cleanup_scatter:
 	ath6kl_hif_cleanup_scatter(ar);

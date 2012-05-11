@@ -79,6 +79,7 @@
 #include "iwl-fh.h"
 #include "iwl-prph.h"
 
+
 /* Periphery registers absolute lower bound. This is used in order to
  * differentiate registery access through HBUS_TARG_PRPH_* and
  * HBUS_TARG_MEM_* accesses.

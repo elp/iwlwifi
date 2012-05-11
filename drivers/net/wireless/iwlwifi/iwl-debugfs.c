@@ -321,6 +321,7 @@ static ssize_t iwl_dbgfs_nvm_read(struct file *file,
 	buf = kzalloc(buf_size, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
+
 	eeprom_ver = iwl_eeprom_query16(priv, EEPROM_VERSION);
 	pos += scnprintf(buf + pos, buf_size - pos, "NVM Type: %s, "
 			"version: 0x%x\n",
