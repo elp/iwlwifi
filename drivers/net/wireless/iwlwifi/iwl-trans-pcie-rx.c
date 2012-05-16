@@ -308,6 +308,7 @@ static void iwlagn_rx_allocate(struct iwl_trans *trans, gfp_t priority)
 		spin_unlock_irqrestore(&rxq->lock, flags);
 
 		BUG_ON(rxb->page);
+		rxb->page = page;
 		/* Get physical address of the RB */
 		rxb->page_dma =
 			dma_map_page(trans->dev, page, 0,
@@ -317,9 +318,6 @@ static void iwlagn_rx_allocate(struct iwl_trans *trans, gfp_t priority)
 		BUG_ON(rxb->page_dma & ~DMA_BIT_MASK(36));
 		/* and also 256 byte aligned! */
 		BUG_ON(rxb->page_dma & DMA_BIT_MASK(8));
-
-		/* Page *must* be mapped before before updating the rxb. */
-		rxb->page = page;
 
 		spin_lock_irqsave(&rxq->lock, flags);
 
