@@ -820,11 +820,13 @@ iwl_parse_eeprom_data(struct device *dev, const struct iwl_cfg *cfg,
 	if (!data)
 		return NULL;
 
-	/* get MAC address */
+	/* get MAC address(es) */
 	tmp = iwl_eeprom_query_addr(eeprom, eeprom_size, EEPROM_MAC_ADDRESS);
 	if (!tmp)
 		goto err_free;
 	memcpy(data->hw_addr, tmp, ETH_ALEN);
+	data->n_hw_addrs = iwl_eeprom_query16(eeprom, eeprom_size,
+					      EEPROM_NUM_MAC_ADDRESS);
 
 	if (iwl_eeprom_read_calib(eeprom, eeprom_size, data))
 		goto err_free;
