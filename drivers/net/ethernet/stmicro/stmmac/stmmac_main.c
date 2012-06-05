@@ -925,6 +925,7 @@ static void stmmac_check_ether_addr(struct stmmac_priv *priv)
 static int stmmac_init_dma_engine(struct stmmac_priv *priv)
 {
 	int pbl = DEFAULT_DMA_PBL, fixed_burst = 0, burst_len = 0;
+	int mixed_burst = 0;
 
 	/* Some DMA parameters can be passed from the platform;
 	 * in case of these are not passed we keep a default
@@ -932,10 +933,11 @@ static int stmmac_init_dma_engine(struct stmmac_priv *priv)
 	if (priv->plat->dma_cfg) {
 		pbl = priv->plat->dma_cfg->pbl;
 		fixed_burst = priv->plat->dma_cfg->fixed_burst;
+		mixed_burst = priv->plat->dma_cfg->mixed_burst;
 		burst_len = priv->plat->dma_cfg->burst_len;
 	}
 
-	return priv->hw->dma->init(priv->ioaddr, pbl, fixed_burst,
+	return priv->hw->dma->init(priv->ioaddr, pbl, fixed_burst, mixed_burst,
 				   burst_len, priv->dma_tx_phy,
 				   priv->dma_rx_phy);
 }
@@ -1465,7 +1467,7 @@ static void stmmac_set_rx_mode(struct net_device *dev)
 	struct stmmac_priv *priv = netdev_priv(dev);
 
 	spin_lock(&priv->lock);
-	priv->hw->mac->set_filter(dev);
+	priv->hw->mac->set_filter(dev, priv->synopsys_id);
 	spin_unlock(&priv->lock);
 }
 
@@ -1638,7 +1640,7 @@ static const struct file_operations stmmac_rings_status_fops = {
 	.open = stmmac_sysfs_ring_open,
 	.read = seq_read,
 	.llseek = seq_lseek,
-	.release = seq_release,
+	.release = single_release,
 };
 
 static int stmmac_sysfs_dma_cap_read(struct seq_file *seq, void *v)
@@ -1710,7 +1712,7 @@ static const struct file_operations stmmac_dma_cap_fops = {
 	.open = stmmac_sysfs_dma_cap_open,
 	.read = seq_read,
 	.llseek = seq_lseek,
-	.release = seq_release,
+	.release = single_release,
 };
 
 static int stmmac_init_fs(struct net_device *dev)
@@ -1806,7 +1808,7 @@ static int stmmac_hw_init(struct stmmac_priv *priv)
 	priv->hw->ring = &ring_mode_ops;
 
 	/* Get and dump the chip ID */
-	stmmac_get_synopsys_id(priv);
+	priv->synopsys_id = stmmac_get_synopsys_id(priv);
 
 	/* Get the HW capability (new GMAC newer than 3.50a) */
 	priv->hw_cap_support = stmmac_get_hw_features(priv);
@@ -1987,6 +1989,7 @@ int stmmac_suspend(struct net_device *ndev)
 {
 	struct stmmac_priv *priv = netdev_priv(ndev);
 	int dis_ic = 0;
+	unsigned long flags;
 
 	if (!ndev || !netif_running(ndev))
 		return 0;
@@ -1994,7 +1997,7 @@ int stmmac_suspend(struct net_device *ndev)
 	if (priv->phydev)
 		phy_stop(priv->phydev);
 
-	spin_lock(&priv->lock);
+	spin_lock_irqsave(&priv->lock, flags);
 
 	netif_device_detach(ndev);
 	netif_stop_queue(ndev);
@@ -2022,18 +2025,19 @@ int stmmac_suspend(struct net_device *ndev)
 		/* Disable clock in case of PWM is off */
 		stmmac_clk_disable(priv);
 	}
-	spin_unlock(&priv->lock);
+	spin_unlock_irqrestore(&priv->lock, flags);
 	return 0;
 }
 
 int stmmac_resume(struct net_device *ndev)
 {
 	struct stmmac_priv *priv = netdev_priv(ndev);
+	unsigned long flags;
 
 	if (!netif_running(ndev))
 		return 0;
 
-	spin_lock(&priv->lock);
+	spin_lock_irqsave(&priv->lock, flags);
 
 	/* Power Down bit, into the PM register, is cleared
 	 * automatically as soon as a magic packet or a Wake-up frame
@@ -2061,7 +2065,7 @@ int stmmac_resume(struct net_device *ndev)
 
 	netif_start_queue(ndev);
 
-	spin_unlock(&priv->lock);
+	spin_unlock_irqrestore(&priv->lock, flags);
 
 	if (priv->phydev)
 		phy_start(priv->phydev);

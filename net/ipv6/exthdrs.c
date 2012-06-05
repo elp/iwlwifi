@@ -75,7 +75,7 @@ int ipv6_find_tlv(struct sk_buff *skb, int offset, int type)
 			return offset;
 
 		switch (opttype) {
-		case IPV6_TLV_PAD0:
+		case IPV6_TLV_PAD1:
 			optlen = 1;
 			break;
 		default:
@@ -96,14 +96,14 @@ EXPORT_SYMBOL_GPL(ipv6_find_tlv);
 /*
  *	Parsing tlv encoded headers.
  *
- *	Parsing function "func" returns 1, if parsing succeed
- *	and 0, if it failed.
+ *	Parsing function "func" returns true, if parsing succeed
+ *	and false, if it failed.
  *	It MUST NOT touch skb->h.
  */
 
 struct tlvtype_proc {
 	int	type;
-	int	(*func)(struct sk_buff *skb, int offset);
+	bool	(*func)(struct sk_buff *skb, int offset);
 };
 
 /*********************
@@ -112,11 +112,11 @@ struct tlvtype_proc {
 
 /* An unknown option is detected, decide what to do */
 
-static int ip6_tlvopt_unknown(struct sk_buff *skb, int optoff)
+static bool ip6_tlvopt_unknown(struct sk_buff *skb, int optoff)
 {
 	switch ((skb_network_header(skb)[optoff] & 0xC0) >> 6) {
 	case 0: /* ignore */
-		return 1;
+		return true;
 
 	case 1: /* drop packet */
 		break;
@@ -129,21 +129,22 @@ static int ip6_tlvopt_unknown(struct sk_buff *skb, int optoff)
 			break;
 	case 2: /* send ICMP PARM PROB regardless and drop packet */
 		icmpv6_param_prob(skb, ICMPV6_UNK_OPTION, optoff);
-		return 0;
+		return false;
 	}
 
 	kfree_skb(skb);
-	return 0;
+	return false;
 }
 
 /* Parse tlv encoded option header (hop-by-hop or destination) */
 
-static int ip6_parse_tlv(struct tlvtype_proc *procs, struct sk_buff *skb)
+static bool ip6_parse_tlv(const struct tlvtype_proc *procs, struct sk_buff *skb)
 {
-	struct tlvtype_proc *curr;
+	const struct tlvtype_proc *curr;
 	const unsigned char *nh = skb_network_header(skb);
 	int off = skb_network_header_len(skb);
 	int len = (skb_transport_header(skb)[1] + 1) << 3;
+	int padlen = 0;
 
 	if (skb_transport_offset(skb) + len > skb_headlen(skb))
 		goto bad;
@@ -156,8 +157,11 @@ static int ip6_parse_tlv(struct tlvtype_proc *procs, struct sk_buff *skb)
 		int i;
 
 		switch (nh[off]) {
-		case IPV6_TLV_PAD0:
+		case IPV6_TLV_PAD1:
 			optlen = 1;
+			padlen++;
+			if (padlen > 7)
+				goto bad;
 			break;
 
 		case IPV6_TLV_PADN:
@@ -166,7 +170,8 @@ static int ip6_parse_tlv(struct tlvtype_proc *procs, struct sk_buff *skb)
 			 * of 8. 7 is therefore the highest valid value.
 			 * See also RFC 4942, Section 2.1.9.5.
 			 */
-			if (optlen > 7)
+			padlen += optlen;
+			if (padlen > 7)
 				goto bad;
 			/* RFC 4942 recommends receiving hosts to
 			 * actively check PadN payload to contain
@@ -186,25 +191,33 @@ static int ip6_parse_tlv(struct tlvtype_proc *procs, struct sk_buff *skb)
 					/* type specific length/alignment
 					   checks will be performed in the
 					   func(). */
-					if (curr->func(skb, off) == 0)
-						return 0;
+					if (curr->func(skb, off) == false)
+						return false;
 					break;
 				}
 			}
 			if (curr->type < 0) {
 				if (ip6_tlvopt_unknown(skb, off) == 0)
-					return 0;
+					return false;
 			}
+			padlen = 0;
 			break;
 		}
 		off += optlen;
 		len -= optlen;
 	}
+	/* This case will not be caught by above check since its padding
+	 * length is smaller than 7:
+	 * 1 byte NH + 1 byte Length + 6 bytes Padding
+	 */
+	if ((padlen == 6) && ((off - skb_network_header_len(skb)) == 8))
+		goto bad;
+
 	if (len == 0)
-		return 1;
+		return true;
 bad:
 	kfree_skb(skb);
-	return 0;
+	return false;
 }
 
 /*****************************
@@ -212,7 +225,7 @@ bad:
  *****************************/
 
 #if defined(CONFIG_IPV6_MIP6) || defined(CONFIG_IPV6_MIP6_MODULE)
-static int ipv6_dest_hao(struct sk_buff *skb, int optoff)
+static bool ipv6_dest_hao(struct sk_buff *skb, int optoff)
 {
 	struct ipv6_destopt_hao *hao;
 	struct inet6_skb_parm *opt = IP6CB(skb);
@@ -266,15 +279,15 @@ static int ipv6_dest_hao(struct sk_buff *skb, int optoff)
 	if (skb->tstamp.tv64 == 0)
 		__net_timestamp(skb);
 
-	return 1;
+	return true;
 
  discard:
 	kfree_skb(skb);
-	return 0;
+	return false;
 }
 #endif
 
-static struct tlvtype_proc tlvprocdestopt_lst[] = {
+static const struct tlvtype_proc tlvprocdestopt_lst[] = {
 #if defined(CONFIG_IPV6_MIP6) || defined(CONFIG_IPV6_MIP6_MODULE)
 	{
 		.type	= IPV6_TLV_HAO,
@@ -579,23 +592,23 @@ static inline struct net *ipv6_skb_net(struct sk_buff *skb)
 
 /* Router Alert as of RFC 2711 */
 
-static int ipv6_hop_ra(struct sk_buff *skb, int optoff)
+static bool ipv6_hop_ra(struct sk_buff *skb, int optoff)
 {
 	const unsigned char *nh = skb_network_header(skb);
 
 	if (nh[optoff + 1] == 2) {
 		IP6CB(skb)->ra = optoff;
-		return 1;
+		return true;
 	}
 	LIMIT_NETDEBUG(KERN_DEBUG "ipv6_hop_ra: wrong RA length %d\n",
 		       nh[optoff + 1]);
 	kfree_skb(skb);
-	return 0;
+	return false;
 }
 
 /* Jumbo payload */
 
-static int ipv6_hop_jumbo(struct sk_buff *skb, int optoff)
+static bool ipv6_hop_jumbo(struct sk_buff *skb, int optoff)
 {
 	const unsigned char *nh = skb_network_header(skb);
 	struct net *net = ipv6_skb_net(skb);
@@ -614,13 +627,13 @@ static int ipv6_hop_jumbo(struct sk_buff *skb, int optoff)
 		IP6_INC_STATS_BH(net, ipv6_skb_idev(skb),
 				 IPSTATS_MIB_INHDRERRORS);
 		icmpv6_param_prob(skb, ICMPV6_HDR_FIELD, optoff+2);
-		return 0;
+		return false;
 	}
 	if (ipv6_hdr(skb)->payload_len) {
 		IP6_INC_STATS_BH(net, ipv6_skb_idev(skb),
 				 IPSTATS_MIB_INHDRERRORS);
 		icmpv6_param_prob(skb, ICMPV6_HDR_FIELD, optoff);
-		return 0;
+		return false;
 	}
 
 	if (pkt_len > skb->len - sizeof(struct ipv6hdr)) {
@@ -632,14 +645,14 @@ static int ipv6_hop_jumbo(struct sk_buff *skb, int optoff)
 	if (pskb_trim_rcsum(skb, pkt_len + sizeof(struct ipv6hdr)))
 		goto drop;
 
-	return 1;
+	return true;
 
 drop:
 	kfree_skb(skb);
-	return 0;
+	return false;
 }
 
-static struct tlvtype_proc tlvprochopopt_lst[] = {
+static const struct tlvtype_proc tlvprochopopt_lst[] = {
 	{
 		.type	= IPV6_TLV_ROUTERALERT,
 		.func	= ipv6_hop_ra,

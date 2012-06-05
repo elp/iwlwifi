@@ -45,8 +45,8 @@ int send_skb_packet(struct sk_buff *skb, struct hard_iface *hard_iface,
 		goto send_skb_err;
 
 	if (!(hard_iface->net_dev->flags & IFF_UP)) {
-		pr_warning("Interface %s is not up - can't send packet via that interface!\n",
-			   hard_iface->net_dev->name);
+		pr_warn("Interface %s is not up - can't send packet via that interface!\n",
+			hard_iface->net_dev->name);
 		goto send_skb_err;
 	}
 
@@ -292,7 +292,7 @@ static void send_outstanding_bcast_packet(struct work_struct *work)
 	/* if we still have some more bcasts to send */
 	if (forw_packet->num_packets < 3) {
 		_add_bcast_packet_to_list(bat_priv, forw_packet,
-					  ((5 * HZ) / 1000));
+					  msecs_to_jiffies(5));
 		return;
 	}
 

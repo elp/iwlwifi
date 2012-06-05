@@ -146,6 +146,11 @@ enum mlx4_alloc_mode {
 	RES_OP_MAP_ICM,
 };
 
+enum mlx4_res_tracker_free_type {
+	RES_TR_FREE_ALL,
+	RES_TR_FREE_SLAVES_ONLY,
+	RES_TR_FREE_STRUCTS_ONLY,
+};
 
 /*
  *Virtual HCR structures.
@@ -871,6 +876,10 @@ void __mlx4_unregister_mac(struct mlx4_dev *dev, u8 port, u64 mac);
 int __mlx4_replace_mac(struct mlx4_dev *dev, u8 port, int qpn, u64 new_mac);
 int __mlx4_write_mtt(struct mlx4_dev *dev, struct mlx4_mtt *mtt,
 		     int start_index, int npages, u64 *page_list);
+int __mlx4_counter_alloc(struct mlx4_dev *dev, u32 *idx);
+void __mlx4_counter_free(struct mlx4_dev *dev, u32 idx);
+int __mlx4_xrcd_alloc(struct mlx4_dev *dev, u32 *xrcdn);
+void __mlx4_xrcd_free(struct mlx4_dev *dev, u32 xrcdn);
 
 void mlx4_start_catas_poll(struct mlx4_dev *dev);
 void mlx4_stop_catas_poll(struct mlx4_dev *dev);
@@ -1027,8 +1036,14 @@ int mlx4_get_slave_from_resource_id(struct mlx4_dev *dev,
 void mlx4_delete_all_resources_for_slave(struct mlx4_dev *dev, int slave_id);
 int mlx4_init_resource_tracker(struct mlx4_dev *dev);
 
-void mlx4_free_resource_tracker(struct mlx4_dev *dev);
+void mlx4_free_resource_tracker(struct mlx4_dev *dev,
+				enum mlx4_res_tracker_free_type type);
 
+int mlx4_QUERY_FW_wrapper(struct mlx4_dev *dev, int slave,
+			  struct mlx4_vhcr *vhcr,
+			  struct mlx4_cmd_mailbox *inbox,
+			  struct mlx4_cmd_mailbox *outbox,
+			  struct mlx4_cmd_info *cmd);
 int mlx4_SET_PORT_wrapper(struct mlx4_dev *dev, int slave,
 			  struct mlx4_vhcr *vhcr,
 			  struct mlx4_cmd_mailbox *inbox,
@@ -1044,6 +1059,11 @@ int mlx4_CLOSE_PORT_wrapper(struct mlx4_dev *dev, int slave,
 			    struct mlx4_cmd_mailbox *inbox,
 			    struct mlx4_cmd_mailbox *outbox,
 			    struct mlx4_cmd_info *cmd);
+int mlx4_QUERY_DEV_CAP_wrapper(struct mlx4_dev *dev, int slave,
+			       struct mlx4_vhcr *vhcr,
+			       struct mlx4_cmd_mailbox *inbox,
+			       struct mlx4_cmd_mailbox *outbox,
+			       struct mlx4_cmd_info *cmd);
 int mlx4_QUERY_PORT_wrapper(struct mlx4_dev *dev, int slave,
 			    struct mlx4_vhcr *vhcr,
 			    struct mlx4_cmd_mailbox *inbox,

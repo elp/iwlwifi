@@ -1171,7 +1171,7 @@ init_chip(struct hfc_multi *hc)
 	hc->DTMFbase = 0x1000;
 	if (test_bit(HFC_CHIP_EXRAM_128, &hc->chip)) {
 		if (debug & DEBUG_HFCMULTI_INIT)
-			printk(KERN_DEBUG "%s: changing to 128K extenal RAM\n",
+			printk(KERN_DEBUG "%s: changing to 128K external RAM\n",
 			       __func__);
 		hc->hw.r_ctrl |= V_EXT_RAM;
 		hc->hw.r_ram_sz = 1;
@@ -1182,7 +1182,7 @@ init_chip(struct hfc_multi *hc)
 	}
 	if (test_bit(HFC_CHIP_EXRAM_512, &hc->chip)) {
 		if (debug & DEBUG_HFCMULTI_INIT)
-			printk(KERN_DEBUG "%s: changing to 512K extenal RAM\n",
+			printk(KERN_DEBUG "%s: changing to 512K external RAM\n",
 			       __func__);
 		hc->hw.r_ctrl |= V_EXT_RAM;
 		hc->hw.r_ram_sz = 2;
@@ -2166,13 +2166,9 @@ next_frame:
 		HFC_wait_nodebug(hc);
 	}
 
-	/* send confirm, since get_net_bframe will not do it with trans */
-	if (bch && test_bit(FLG_TRANSPARENT, &bch->Flags))
-		confirm_Bsend(bch);
-
-	/* check for next frame */
 	dev_kfree_skb(*sp);
-	if (bch && get_next_bframe(bch)) { /* hdlc is confirmed here */
+	/* check for next frame */
+	if (bch && get_next_bframe(bch)) {
 		len = (*sp)->len;
 		goto next_frame;
 	}
@@ -2200,24 +2196,20 @@ hfcmulti_rx(struct hfc_multi *hc, int ch)
 	int f1 = 0, f2 = 0; /* = 0, to make GCC happy */
 	int again = 0;
 	struct	bchannel *bch;
-	struct  dchannel *dch;
+	struct  dchannel *dch = NULL;
 	struct sk_buff	*skb, **sp = NULL;
 	int	maxlen;
 
 	bch = hc->chan[ch].bch;
-	dch = hc->chan[ch].dch;
-	if ((!dch) && (!bch))
-		return;
-	if (dch) {
-		if (!test_bit(FLG_ACTIVE, &dch->Flags))
-			return;
-		sp = &dch->rx_skb;
-		maxlen = dch->maxlen;
-	} else {
+	if (bch) {
 		if (!test_bit(FLG_ACTIVE, &bch->Flags))
 			return;
-		sp = &bch->rx_skb;
-		maxlen = bch->maxlen;
+	} else if (hc->chan[ch].dch) {
+		dch = hc->chan[ch].dch;
+		if (!test_bit(FLG_ACTIVE, &dch->Flags))
+			return;
+	} else {
+		return;
 	}
 next_frame:
 	/* on first AND before getting next valid frame, R_FIFO must be written
@@ -2232,8 +2224,11 @@ next_frame:
 	HFC_wait_nodebug(hc);
 
 	/* ignore if rx is off BUT change fifo (above) to start pending TX */
-	if (hc->chan[ch].rx_off)
+	if (hc->chan[ch].rx_off) {
+		if (bch)
+			bch->dropcnt += poll; /* not exact but fair enough */
 		return;
+	}
 
 	if (dch || test_bit(FLG_HDLC, &bch->Flags)) {
 		f1 = HFC_inb_nodebug(hc, A_F1);
@@ -2264,12 +2259,25 @@ next_frame:
 	if (Zsize <= 0)
 		return;
 
-	if (*sp == NULL) {
-		*sp = mI_alloc_skb(maxlen + 3, GFP_ATOMIC);
-		if (*sp == NULL) {
-			printk(KERN_DEBUG "%s: No mem for rx_skb\n",
-			       __func__);
+	if (bch) {
+		maxlen = bchannel_get_rxbuf(bch, Zsize);
+		if (maxlen < 0) {
+			pr_warning("card%d.B%d: No bufferspace for %d bytes\n",
+				   hc->id + 1, bch->nr, Zsize);
 			return;
+		}
+		sp = &bch->rx_skb;
+		maxlen = bch->maxlen;
+	} else { /* Dchannel */
+		sp = &dch->rx_skb;
+		maxlen = dch->maxlen + 3;
+		if (*sp == NULL) {
+			*sp = mI_alloc_skb(maxlen, GFP_ATOMIC);
+			if (*sp == NULL) {
+				pr_warning("card%d: No mem for dch rx_skb\n",
+					   hc->id + 1);
+				return;
+			}
 		}
 	}
 	/* show activity */
@@ -2285,7 +2293,7 @@ next_frame:
 			       Zsize, z1, z2, (f1 == f2) ? "fragment" : "COMPLETE",
 			       f1, f2, Zsize + (*sp)->len, again);
 		/* HDLC */
-		if ((Zsize + (*sp)->len) > (maxlen + 3)) {
+		if ((Zsize + (*sp)->len) > maxlen) {
 			if (debug & DEBUG_HFCMULTI_FIFO)
 				printk(KERN_DEBUG
 				       "%s(card %d): hdlc-frame too large.\n",
@@ -2347,7 +2355,7 @@ next_frame:
 			if (dch)
 				recv_Dchannel(dch);
 			else
-				recv_Bchannel(bch, MISDN_ID_ANY);
+				recv_Bchannel(bch, MISDN_ID_ANY, false);
 			*sp = skb;
 			again++;
 			goto next_frame;
@@ -2355,32 +2363,14 @@ next_frame:
 		/* there is an incomplete frame */
 	} else {
 		/* transparent */
-		if (Zsize > skb_tailroom(*sp))
-			Zsize = skb_tailroom(*sp);
 		hc->read_fifo(hc, skb_put(*sp, Zsize), Zsize);
-		if (((*sp)->len) < MISDN_COPY_SIZE) {
-			skb = *sp;
-			*sp = mI_alloc_skb(skb->len, GFP_ATOMIC);
-			if (*sp) {
-				memcpy(skb_put(*sp, skb->len),
-				       skb->data, skb->len);
-				skb_trim(skb, 0);
-			} else {
-				printk(KERN_DEBUG "%s: No mem\n", __func__);
-				*sp = skb;
-				skb = NULL;
-			}
-		} else {
-			skb = NULL;
-		}
 		if (debug & DEBUG_HFCMULTI_FIFO)
 			printk(KERN_DEBUG
 			       "%s(card %d): fifo(%d) reading %d bytes "
 			       "(z1=%04x, z2=%04x) TRANS\n",
 			       __func__, hc->id + 1, ch, Zsize, z1, z2);
 		/* only bch is transparent */
-		recv_Bchannel(bch, hc->chan[ch].Zfill);
-		*sp = skb;
+		recv_Bchannel(bch, hc->chan[ch].Zfill, false);
 	}
 }
 
@@ -3482,8 +3472,7 @@ handle_bmsg(struct mISDNchannel *ch, struct sk_buff *skb)
 	struct hfc_multi	*hc = bch->hw;
 	int			ret = -EINVAL;
 	struct mISDNhead	*hh = mISDN_HEAD_P(skb);
-	unsigned int		id;
-	u_long			flags;
+	unsigned long		flags;
 
 	switch (hh->prim) {
 	case PH_DATA_REQ:
@@ -3492,19 +3481,13 @@ handle_bmsg(struct mISDNchannel *ch, struct sk_buff *skb)
 		spin_lock_irqsave(&hc->lock, flags);
 		ret = bchannel_senddata(bch, skb);
 		if (ret > 0) { /* direct TX */
-			id = hh->id; /* skb can be freed */
 			hfcmulti_tx(hc, bch->slot);
 			ret = 0;
 			/* start fifo */
 			HFC_outb_nodebug(hc, R_FIFO, 0);
 			HFC_wait_nodebug(hc);
-			if (!test_bit(FLG_TRANSPARENT, &bch->Flags)) {
-				spin_unlock_irqrestore(&hc->lock, flags);
-				queue_ch_frame(ch, PH_DATA_CNF, id, NULL);
-			} else
-				spin_unlock_irqrestore(&hc->lock, flags);
-		} else
-			spin_unlock_irqrestore(&hc->lock, flags);
+		}
+		spin_unlock_irqrestore(&hc->lock, flags);
 		return ret;
 	case PH_ACTIVATE_REQ:
 		if (debug & DEBUG_HFCMULTI_MSG)
@@ -3594,10 +3577,11 @@ channel_bctrl(struct bchannel *bch, struct mISDN_ctrl_req *cq)
 
 	switch (cq->op) {
 	case MISDN_CTRL_GETOP:
-		cq->op = MISDN_CTRL_HFC_OP | MISDN_CTRL_HW_FEATURES_OP
-			| MISDN_CTRL_RX_OFF | MISDN_CTRL_FILL_EMPTY;
+		ret = mISDN_ctrl_bchannel(bch, cq);
+		cq->op |= MISDN_CTRL_HFC_OP | MISDN_CTRL_HW_FEATURES_OP;
 		break;
 	case MISDN_CTRL_RX_OFF: /* turn off / on rx stream */
+		ret = mISDN_ctrl_bchannel(bch, cq);
 		hc->chan[bch->slot].rx_off = !!cq->p1;
 		if (!hc->chan[bch->slot].rx_off) {
 			/* reset fifo on rx on */
@@ -3610,11 +3594,10 @@ channel_bctrl(struct bchannel *bch, struct mISDN_ctrl_req *cq)
 			printk(KERN_DEBUG "%s: RX_OFF request (nr=%d off=%d)\n",
 			       __func__, bch->nr, hc->chan[bch->slot].rx_off);
 		break;
-	case MISDN_CTRL_FILL_EMPTY: /* fill fifo, if empty */
-		test_and_set_bit(FLG_FILLEMPTY, &bch->Flags);
-		if (debug & DEBUG_HFCMULTI_MSG)
-			printk(KERN_DEBUG "%s: FILL_EMPTY request (nr=%d "
-			       "off=%d)\n", __func__, bch->nr, !!cq->p1);
+	case MISDN_CTRL_FILL_EMPTY:
+		ret = mISDN_ctrl_bchannel(bch, cq);
+		hc->silence = bch->fill[0];
+		memset(hc->silence_data, hc->silence, sizeof(hc->silence_data));
 		break;
 	case MISDN_CTRL_HW_FEATURES: /* fill features structure */
 		if (debug & DEBUG_HFCMULTI_MSG)
@@ -3703,9 +3686,7 @@ channel_bctrl(struct bchannel *bch, struct mISDN_ctrl_req *cq)
 			ret = -EINVAL;
 		break;
 	default:
-		printk(KERN_WARNING "%s: unknown Op %x\n",
-		       __func__, cq->op);
-		ret = -EINVAL;
+		ret = mISDN_ctrl_bchannel(bch, cq);
 		break;
 	}
 	return ret;
@@ -3725,8 +3706,7 @@ hfcm_bctrl(struct mISDNchannel *ch, u_int cmd, void *arg)
 	switch (cmd) {
 	case CLOSE_CHANNEL:
 		test_and_clear_bit(FLG_OPEN, &bch->Flags);
-		if (test_bit(FLG_ACTIVE, &bch->Flags))
-			deactivate_bchannel(bch); /* locked there */
+		deactivate_bchannel(bch); /* locked there */
 		ch->protocol = ISDN_P_NONE;
 		ch->peer = NULL;
 		module_put(THIS_MODULE);
@@ -4140,7 +4120,6 @@ open_bchannel(struct hfc_multi *hc, struct dchannel *dch,
 	}
 	if (test_and_set_bit(FLG_OPEN, &bch->Flags))
 		return -EBUSY; /* b-channel can be only open once */
-	test_and_clear_bit(FLG_FILLEMPTY, &bch->Flags);
 	bch->ch.protocol = rq->protocol;
 	hc->chan[ch].rx_off = 0;
 	rq->ch = &bch->ch;
@@ -4876,7 +4855,7 @@ init_e1_port(struct hfc_multi *hc, struct hm_map *m, int pt)
 		bch->nr = ch;
 		bch->slot = ch;
 		bch->debug = debug;
-		mISDN_initbchannel(bch, MAX_DATA_MEM);
+		mISDN_initbchannel(bch, MAX_DATA_MEM, poll >> 1);
 		bch->hw = hc;
 		bch->ch.send = handle_bmsg;
 		bch->ch.ctrl = hfcm_bctrl;
@@ -4949,7 +4928,7 @@ init_multi_port(struct hfc_multi *hc, int pt)
 		bch->nr = ch + 1;
 		bch->slot = i + ch;
 		bch->debug = debug;
-		mISDN_initbchannel(bch, MAX_DATA_MEM);
+		mISDN_initbchannel(bch, MAX_DATA_MEM, poll >> 1);
 		bch->hw = hc;
 		bch->ch.send = handle_bmsg;
 		bch->ch.ctrl = hfcm_bctrl;

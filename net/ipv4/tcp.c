@@ -593,7 +593,7 @@ static inline void tcp_mark_push(struct tcp_sock *tp, struct sk_buff *skb)
 	tp->pushed_seq = tp->write_seq;
 }
 
-static inline int forced_push(const struct tcp_sock *tp)
+static inline bool forced_push(const struct tcp_sock *tp)
 {
 	return after(tp->write_seq, tp->pushed_seq + (tp->max_window >> 1));
 }
@@ -977,39 +977,6 @@ static inline int select_size(const struct sock *sk, bool sg)
 	return tmp;
 }
 
-static int tcp_send_rcvq(struct sock *sk, struct msghdr *msg, size_t size)
-{
-	struct sk_buff *skb;
-	struct tcphdr *th;
-	bool fragstolen;
-
-	skb = alloc_skb(size + sizeof(*th), sk->sk_allocation);
-	if (!skb)
-		goto err;
-
-	th = (struct tcphdr *)skb_put(skb, sizeof(*th));
-	skb_reset_transport_header(skb);
-	memset(th, 0, sizeof(*th));
-
-	if (memcpy_fromiovec(skb_put(skb, size), msg->msg_iov, size))
-		goto err_free;
-
-	TCP_SKB_CB(skb)->seq = tcp_sk(sk)->rcv_nxt;
-	TCP_SKB_CB(skb)->end_seq = TCP_SKB_CB(skb)->seq + size;
-	TCP_SKB_CB(skb)->ack_seq = tcp_sk(sk)->snd_una - 1;
-
-	if (tcp_queue_rcv(sk, skb, sizeof(*th), &fragstolen)) {
-		WARN_ON_ONCE(fragstolen); /* should not happen */
-		__kfree_skb(skb);
-	}
-	return size;
-
-err_free:
-	kfree_skb(skb);
-err:
-	return -ENOMEM;
-}
-
 int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		size_t size)
 {
@@ -1114,7 +1081,7 @@ new_segment:
 				if (err)
 					goto do_fault;
 			} else {
-				int merge = 0;
+				bool merge = false;
 				int i = skb_shinfo(skb)->nr_frags;
 				struct page *page = sk->sk_sndmsg_page;
 				int off;
@@ -1128,7 +1095,7 @@ new_segment:
 				    off != PAGE_SIZE) {
 					/* We can extend the last page
 					 * fragment. */
-					merge = 1;
+					merge = true;
 				} else if (i == MAX_SKB_FRAGS || !sg) {
 					/* Need to add new fragment and cannot
 					 * do this because interface is non-SG,
@@ -1325,7 +1292,7 @@ static int tcp_peek_sndq(struct sock *sk, struct msghdr *msg, int len)
 void tcp_cleanup_rbuf(struct sock *sk, int copied)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
-	int time_to_ack = 0;
+	bool time_to_ack = false;
 
 	struct sk_buff *skb = skb_peek(&sk->sk_receive_queue);
 
@@ -1351,7 +1318,7 @@ void tcp_cleanup_rbuf(struct sock *sk, int copied)
 		      ((icsk->icsk_ack.pending & ICSK_ACK_PUSHED) &&
 		       !icsk->icsk_ack.pingpong)) &&
 		      !atomic_read(&sk->sk_rmem_alloc)))
-			time_to_ack = 1;
+			time_to_ack = true;
 	}
 
 	/* We send an ACK if we can now advertise a non-zero window
@@ -1373,7 +1340,7 @@ void tcp_cleanup_rbuf(struct sock *sk, int copied)
 			 * "Lots" means "at least twice" here.
 			 */
 			if (new_window && new_window >= 2 * rcv_window_now)
-				time_to_ack = 1;
+				time_to_ack = true;
 		}
 	}
 	if (time_to_ack)
@@ -1505,11 +1472,11 @@ int tcp_read_sock(struct sock *sk, read_descriptor_t *desc,
 				break;
 		}
 		if (tcp_hdr(skb)->fin) {
-			sk_eat_skb(sk, skb, 0);
+			sk_eat_skb(sk, skb, false);
 			++seq;
 			break;
 		}
-		sk_eat_skb(sk, skb, 0);
+		sk_eat_skb(sk, skb, false);
 		if (!desc->count)
 			break;
 		tp->copied_seq = seq;
@@ -1545,7 +1512,7 @@ int tcp_recvmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	int target;		/* Read at least this many bytes */
 	long timeo;
 	struct task_struct *user_recv = NULL;
-	int copied_early = 0;
+	bool copied_early = false;
 	struct sk_buff *skb;
 	u32 urg_hole = 0;
 
@@ -1777,9 +1744,9 @@ do_prequeue:
 		}
 		if ((flags & MSG_PEEK) &&
 		    (peek_seq - copied - urg_hole != tp->copied_seq)) {
-			if (net_ratelimit())
-				printk(KERN_DEBUG "TCP(%s:%d): Application bug, race in MSG_PEEK.\n",
-				       current->comm, task_pid_nr(current));
+			net_dbg_ratelimited("TCP(%s:%d): Application bug, race in MSG_PEEK\n",
+					    current->comm,
+					    task_pid_nr(current));
 			peek_seq = tp->copied_seq;
 		}
 		continue;
@@ -1833,7 +1800,7 @@ do_prequeue:
 				dma_async_memcpy_issue_pending(tp->ucopy.dma_chan);
 
 				if ((offset + used) == skb->len)
-					copied_early = 1;
+					copied_early = true;
 
 			} else
 #endif
@@ -1867,7 +1834,7 @@ skip_copy:
 			goto found_fin_ok;
 		if (!(flags & MSG_PEEK)) {
 			sk_eat_skb(sk, skb, copied_early);
-			copied_early = 0;
+			copied_early = false;
 		}
 		continue;
 
@@ -1876,7 +1843,7 @@ skip_copy:
 		++*seq;
 		if (!(flags & MSG_PEEK)) {
 			sk_eat_skb(sk, skb, copied_early);
-			copied_early = 0;
+			copied_early = false;
 		}
 		break;
 	} while (len > 0);
@@ -2034,10 +2001,10 @@ bool tcp_check_oom(struct sock *sk, int shift)
 	too_many_orphans = tcp_too_many_orphans(sk, shift);
 	out_of_socket_memory = tcp_out_of_memory(sk);
 
-	if (too_many_orphans && net_ratelimit())
-		pr_info("too many orphaned sockets\n");
-	if (out_of_socket_memory && net_ratelimit())
-		pr_info("out of memory -- consider tuning tcp_mem\n");
+	if (too_many_orphans)
+		net_info_ratelimited("too many orphaned sockets\n");
+	if (out_of_socket_memory)
+		net_info_ratelimited("out of memory -- consider tuning tcp_mem\n");
 	return too_many_orphans || out_of_socket_memory;
 }
 
@@ -2203,7 +2170,7 @@ EXPORT_SYMBOL(tcp_close);
 
 /* These states need RST on ABORT according to RFC793 */
 
-static inline int tcp_need_reset(int state)
+static inline bool tcp_need_reset(int state)
 {
 	return (1 << state) &
 	       (TCPF_ESTABLISHED | TCPF_CLOSE_WAIT | TCPF_FIN_WAIT1 |
@@ -2277,7 +2244,7 @@ int tcp_disconnect(struct sock *sk, int flags)
 }
 EXPORT_SYMBOL(tcp_disconnect);
 
-static inline int tcp_can_repair_sock(struct sock *sk)
+static inline bool tcp_can_repair_sock(const struct sock *sk)
 {
 	return capable(CAP_NET_ADMIN) &&
 		((1 << sk->sk_state) & (TCPF_CLOSE | TCPF_ESTABLISHED));
@@ -3204,13 +3171,13 @@ out_free:
 struct tcp_md5sig_pool __percpu *tcp_alloc_md5sig_pool(struct sock *sk)
 {
 	struct tcp_md5sig_pool __percpu *pool;
-	int alloc = 0;
+	bool alloc = false;
 
 retry:
 	spin_lock_bh(&tcp_md5sig_pool_lock);
 	pool = tcp_md5sig_pool;
 	if (tcp_md5sig_users++ == 0) {
-		alloc = 1;
+		alloc = true;
 		spin_unlock_bh(&tcp_md5sig_pool_lock);
 	} else if (!pool) {
 		tcp_md5sig_users--;
@@ -3494,9 +3461,15 @@ extern struct tcp_congestion_ops tcp_reno;
 static __initdata unsigned long thash_entries;
 static int __init set_thash_entries(char *str)
 {
+	ssize_t ret;
+
 	if (!str)
 		return 0;
-	thash_entries = simple_strtoul(str, &str, 0);
+
+	ret = kstrtoul(str, 0, &thash_entries);
+	if (ret)
+		return 0;
+
 	return 1;
 }
 __setup("thash_entries=", set_thash_entries);
@@ -3541,6 +3514,7 @@ void __init tcp_init(void)
 					0,
 					NULL,
 					&tcp_hashinfo.ehash_mask,
+					0,
 					thash_entries ? 0 : 512 * 1024);
 	for (i = 0; i <= tcp_hashinfo.ehash_mask; i++) {
 		INIT_HLIST_NULLS_HEAD(&tcp_hashinfo.ehash[i].chain, i);
@@ -3557,6 +3531,7 @@ void __init tcp_init(void)
 					0,
 					&tcp_hashinfo.bhash_size,
 					NULL,
+					0,
 					64 * 1024);
 	tcp_hashinfo.bhash_size = 1U << tcp_hashinfo.bhash_size;
 	for (i = 0; i < tcp_hashinfo.bhash_size; i++) {

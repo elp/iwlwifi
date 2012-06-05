@@ -58,6 +58,8 @@
 
 #define SLI_PORT_CONTROL_IP_MASK	0x08000000
 
+#define PCICFG_CUST_SCRATCHPAD_CSR	0x1EC
+
 /********* Memory BAR register ************/
 #define PCICFG_MEMBAR_CTRL_INT_CTRL_OFFSET 	0xfc
 /* Host Interrupt Enable, if set interrupts are enabled although "PCI Interrupt
@@ -98,11 +100,13 @@
 #define SLI_INTF_REV_SHIFT			4
 #define SLI_INTF_FT_MASK			0x00000001
 
+#define SLI_INTF_TYPE_2		2
+#define SLI_INTF_TYPE_3		3
 
 /* SLI family */
 #define BE_SLI_FAMILY		0x0
 #define LANCER_A0_SLI_FAMILY	0xA
-
+#define SKYHAWK_SLI_FAMILY      0x2
 
 /********* ISR0 Register offset **********/
 #define CEV_ISR0_OFFSET 			0xC18

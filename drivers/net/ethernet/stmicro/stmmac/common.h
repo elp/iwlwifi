@@ -247,8 +247,8 @@ struct stmmac_desc_ops {
 
 struct stmmac_dma_ops {
 	/* DMA core initialization */
-	int (*init) (void __iomem *ioaddr, int pbl, int fb, int burst_len,
-			u32 dma_tx, u32 dma_rx);
+	int (*init) (void __iomem *ioaddr, int pbl, int fb, int mb,
+		     int burst_len, u32 dma_tx, u32 dma_rx);
 	/* Dump DMA registers */
 	void (*dump_regs) (void __iomem *ioaddr);
 	/* Set tx/rx threshold in the csr6 register
@@ -280,7 +280,7 @@ struct stmmac_ops {
 	/* Handle extra events on specific interrupts hw dependent */
 	void (*host_irq_status) (void __iomem *ioaddr);
 	/* Multicast filter setting */
-	void (*set_filter) (struct net_device *dev);
+	void (*set_filter) (struct net_device *dev, int id);
 	/* Flow control setting */
 	void (*flow_ctrl) (void __iomem *ioaddr, unsigned int duplex,
 			   unsigned int fc, unsigned int pause_time);

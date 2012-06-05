@@ -17,6 +17,8 @@
  * Fred Templin <fred.l.templin@boeing.com>:	isatap support
  */
 
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
 #include <linux/capability.h>
 #include <linux/errno.h>
@@ -702,8 +704,7 @@ static netdev_tx_t ipip6_tunnel_xmit(struct sk_buff *skb,
 			neigh = dst_neigh_lookup(skb_dst(skb), &iph6->daddr);
 
 		if (neigh == NULL) {
-			if (net_ratelimit())
-				printk(KERN_DEBUG "sit: nexthop == NULL\n");
+			net_dbg_ratelimited("sit: nexthop == NULL\n");
 			goto tx_error;
 		}
 
@@ -732,8 +733,7 @@ static netdev_tx_t ipip6_tunnel_xmit(struct sk_buff *skb,
 			neigh = dst_neigh_lookup(skb_dst(skb), &iph6->daddr);
 
 		if (neigh == NULL) {
-			if (net_ratelimit())
-				printk(KERN_DEBUG "sit: nexthop == NULL\n");
+			net_dbg_ratelimited("sit: nexthop == NULL\n");
 			goto tx_error;
 		}
 
@@ -1303,7 +1303,7 @@ static int __init sit_init(void)
 {
 	int err;
 
-	printk(KERN_INFO "IPv6 over IPv4 tunneling driver\n");
+	pr_info("IPv6 over IPv4 tunneling driver\n");
 
 	err = register_pernet_device(&sit_net_ops);
 	if (err < 0)
@@ -1311,7 +1311,7 @@ static int __init sit_init(void)
 	err = xfrm4_tunnel_register(&sit_handler, AF_INET6);
 	if (err < 0) {
 		unregister_pernet_device(&sit_net_ops);
-		printk(KERN_INFO "sit init: Can't add protocol\n");
+		pr_info("%s: can't add protocol\n", __func__);
 	}
 	return err;
 }

@@ -1049,6 +1049,29 @@ static int be_set_vf_tx_rate(struct net_device *netdev,
 	return status;
 }
 
+static int be_find_vfs(struct be_adapter *adapter, int vf_state)
+{
+	struct pci_dev *dev, *pdev = adapter->pdev;
+	int vfs = 0, assigned_vfs = 0, pos, vf_fn;
+	u16 offset, stride;
+
+	pos = pci_find_ext_capability(pdev, PCI_EXT_CAP_ID_SRIOV);
+	pci_read_config_word(pdev, pos + PCI_SRIOV_VF_OFFSET, &offset);
+	pci_read_config_word(pdev, pos + PCI_SRIOV_VF_STRIDE, &stride);
+
+	dev = pci_get_device(pdev->vendor, PCI_ANY_ID, NULL);
+	while (dev) {
+		vf_fn = (pdev->devfn + offset + stride * vfs) & 0xFFFF;
+		if (dev->is_virtfn && dev->devfn == vf_fn) {
+			vfs++;
+			if (dev->dev_flags & PCI_DEV_FLAGS_ASSIGNED)
+				assigned_vfs++;
+		}
+		dev = pci_get_device(pdev->vendor, PCI_ANY_ID, dev);
+	}
+	return (vf_state == ASSIGNED) ? assigned_vfs : vfs;
+}
+
 static void be_eqd_update(struct be_adapter *adapter, struct be_eq_obj *eqo)
 {
 	struct be_rx_stats *stats = rx_stats(&adapter->rx_obj[eqo->idx]);
@@ -1789,9 +1812,9 @@ static void be_tx_queues_destroy(struct be_adapter *adapter)
 
 static int be_num_txqs_want(struct be_adapter *adapter)
 {
-	if (sriov_enabled(adapter) || be_is_mc(adapter) ||
-		lancer_chip(adapter) || !be_physfn(adapter) ||
-		adapter->generation == BE_GEN2)
+	if (sriov_want(adapter) || be_is_mc(adapter) ||
+	    lancer_chip(adapter) || !be_physfn(adapter) ||
+	    adapter->generation == BE_GEN2)
 		return 1;
 	else
 		return MAX_TX_QS;
@@ -2118,7 +2141,7 @@ static void be_msix_disable(struct be_adapter *adapter)
 static uint be_num_rss_want(struct be_adapter *adapter)
 {
 	if ((adapter->function_caps & BE_FUNCTION_CAPS_RSS) &&
-	     adapter->num_vfs == 0 && be_physfn(adapter) &&
+	     !sriov_want(adapter) && be_physfn(adapter) &&
 	     !be_is_mc(adapter))
 		return (adapter->be3_native) ? BE3_MAX_RSS_QS : BE2_MAX_RSS_QS;
 	else
@@ -2128,10 +2151,17 @@ static uint be_num_rss_want(struct be_adapter *adapter)
 static void be_msix_enable(struct be_adapter *adapter)
 {
 #define BE_MIN_MSIX_VECTORS		1
-	int i, status, num_vec;
+	int i, status, num_vec, num_roce_vec = 0;
 
 	/* If RSS queues are not used, need a vec for default RX Q */
 	num_vec = min(be_num_rss_want(adapter), num_online_cpus());
+	if (be_roce_supported(adapter)) {
+		num_roce_vec = min_t(u32, MAX_ROCE_MSIX_VECTORS,
+					(num_online_cpus() + 1));
+		num_roce_vec = min(num_roce_vec, MAX_ROCE_EQS);
+		num_vec += num_roce_vec;
+		num_vec = min(num_vec, MAX_MSIX_VECTORS);
+	}
 	num_vec = max(num_vec, BE_MIN_MSIX_VECTORS);
 
 	for (i = 0; i < num_vec; i++)
@@ -2148,55 +2178,18 @@ static void be_msix_enable(struct be_adapter *adapter)
 	}
 	return;
 done:
-	adapter->num_msix_vec = num_vec;
-	return;
-}
-
-static int be_sriov_enable(struct be_adapter *adapter)
-{
-	be_check_sriov_fn_type(adapter);
-
-#ifdef CONFIG_PCI_IOV
-	if (be_physfn(adapter) && num_vfs) {
-		int status, pos;
-		u16 dev_vfs;
-
-		pos = pci_find_ext_capability(adapter->pdev,
-						PCI_EXT_CAP_ID_SRIOV);
-		pci_read_config_word(adapter->pdev,
-				     pos + PCI_SRIOV_TOTAL_VF, &dev_vfs);
-
-		adapter->num_vfs = min_t(u16, num_vfs, dev_vfs);
-		if (adapter->num_vfs != num_vfs)
-			dev_info(&adapter->pdev->dev,
-				 "Device supports %d VFs and not %d\n",
-				 adapter->num_vfs, num_vfs);
-
-		status = pci_enable_sriov(adapter->pdev, adapter->num_vfs);
-		if (status)
-			adapter->num_vfs = 0;
-
-		if (adapter->num_vfs) {
-			adapter->vf_cfg = kcalloc(num_vfs,
-						sizeof(struct be_vf_cfg),
-						GFP_KERNEL);
-			if (!adapter->vf_cfg)
-				return -ENOMEM;
+	if (be_roce_supported(adapter)) {
+		if (num_vec > num_roce_vec) {
+			adapter->num_msix_vec = num_vec - num_roce_vec;
+			adapter->num_msix_roce_vec =
+				num_vec - adapter->num_msix_vec;
+		} else {
+			adapter->num_msix_vec = num_vec;
+			adapter->num_msix_roce_vec = 0;
 		}
-	}
-#endif
-	return 0;
-}
-
-static void be_sriov_disable(struct be_adapter *adapter)
-{
-#ifdef CONFIG_PCI_IOV
-	if (sriov_enabled(adapter)) {
-		pci_disable_sriov(adapter->pdev);
-		kfree(adapter->vf_cfg);
-		adapter->num_vfs = 0;
-	}
-#endif
+	} else
+		adapter->num_msix_vec = num_vec;
+	return;
 }
 
 static inline int be_msix_vec_get(struct be_adapter *adapter,
@@ -2307,6 +2300,8 @@ static int be_close(struct net_device *netdev)
 	struct be_eq_obj *eqo;
 	int i;
 
+	be_roce_dev_close(adapter);
+
 	be_async_mcc_disable(adapter);
 
 	if (!lancer_chip(adapter))
@@ -2415,6 +2410,7 @@ static int be_open(struct net_device *netdev)
 	if (!status)
 		be_link_status_update(adapter, link_status);
 
+	be_roce_dev_open(adapter);
 	return 0;
 err:
 	be_close(adapter->netdev);
@@ -2500,6 +2496,11 @@ static void be_vf_clear(struct be_adapter *adapter)
 	struct be_vf_cfg *vf_cfg;
 	u32 vf;
 
+	if (be_find_vfs(adapter, ASSIGNED)) {
+		dev_warn(&adapter->pdev->dev, "VFs are assigned to VMs\n");
+		goto done;
+	}
+
 	for_all_vfs(adapter, vf_cfg, vf) {
 		if (lancer_chip(adapter))
 			be_cmd_set_mac_list(adapter, NULL, 0, vf + 1);
@@ -2509,6 +2510,10 @@ static void be_vf_clear(struct be_adapter *adapter)
 
 		be_cmd_if_destroy(adapter, vf_cfg->if_handle, vf + 1);
 	}
+	pci_disable_sriov(adapter->pdev);
+done:
+	kfree(adapter->vf_cfg);
+	adapter->num_vfs = 0;
 }
 
 static int be_clear(struct be_adapter *adapter)
@@ -2538,29 +2543,60 @@ static int be_clear(struct be_adapter *adapter)
 	be_cmd_fw_clean(adapter);
 
 	be_msix_disable(adapter);
-	kfree(adapter->pmac_id);
+	pci_write_config_dword(adapter->pdev, PCICFG_CUST_SCRATCHPAD_CSR, 0);
 	return 0;
 }
 
-static void be_vf_setup_init(struct be_adapter *adapter)
+static int be_vf_setup_init(struct be_adapter *adapter)
 {
 	struct be_vf_cfg *vf_cfg;
 	int vf;
+
+	adapter->vf_cfg = kcalloc(adapter->num_vfs, sizeof(*vf_cfg),
+				  GFP_KERNEL);
+	if (!adapter->vf_cfg)
+		return -ENOMEM;
 
 	for_all_vfs(adapter, vf_cfg, vf) {
 		vf_cfg->if_handle = -1;
 		vf_cfg->pmac_id = -1;
 	}
+	return 0;
 }
 
 static int be_vf_setup(struct be_adapter *adapter)
 {
 	struct be_vf_cfg *vf_cfg;
+	struct device *dev = &adapter->pdev->dev;
 	u32 cap_flags, en_flags, vf;
 	u16 def_vlan, lnk_speed;
-	int status;
+	int status, enabled_vfs;
 
-	be_vf_setup_init(adapter);
+	enabled_vfs = be_find_vfs(adapter, ENABLED);
+	if (enabled_vfs) {
+		dev_warn(dev, "%d VFs are already enabled\n", enabled_vfs);
+		dev_warn(dev, "Ignoring num_vfs=%d setting\n", num_vfs);
+		return 0;
+	}
+
+	if (num_vfs > adapter->dev_num_vfs) {
+		dev_warn(dev, "Device supports %d VFs and not %d\n",
+			 adapter->dev_num_vfs, num_vfs);
+		num_vfs = adapter->dev_num_vfs;
+	}
+
+	status = pci_enable_sriov(adapter->pdev, num_vfs);
+	if (!status) {
+		adapter->num_vfs = num_vfs;
+	} else {
+		/* Platform doesn't support SRIOV though device supports it */
+		dev_warn(dev, "SRIOV enable failed\n");
+		return 0;
+	}
+
+	status = be_vf_setup_init(adapter);
+	if (status)
+		goto err;
 
 	cap_flags = en_flags = BE_IF_FLAGS_UNTAGGED | BE_IF_FLAGS_BROADCAST |
 				BE_IF_FLAGS_MULTICAST;
@@ -2571,9 +2607,11 @@ static int be_vf_setup(struct be_adapter *adapter)
 			goto err;
 	}
 
-	status = be_vf_eth_addr_config(adapter);
-	if (status)
-		goto err;
+	if (!enabled_vfs) {
+		status = be_vf_eth_addr_config(adapter);
+		if (status)
+			goto err;
+	}
 
 	for_all_vfs(adapter, vf_cfg, vf) {
 		status = be_cmd_link_status_query(adapter, NULL, &lnk_speed,
@@ -2630,15 +2668,33 @@ do_none:
 	return status;
 }
 
+/* Routine to query per function resource limits */
+static int be_get_config(struct be_adapter *adapter)
+{
+	int pos;
+	u16 dev_num_vfs;
+
+	pos = pci_find_ext_capability(adapter->pdev, PCI_EXT_CAP_ID_SRIOV);
+	if (pos) {
+		pci_read_config_word(adapter->pdev, pos + PCI_SRIOV_TOTAL_VF,
+				     &dev_num_vfs);
+		adapter->dev_num_vfs = dev_num_vfs;
+	}
+	return 0;
+}
+
 static int be_setup(struct be_adapter *adapter)
 {
 	struct net_device *netdev = adapter->netdev;
+	struct device *dev = &adapter->pdev->dev;
 	u32 cap_flags, en_flags;
 	u32 tx_fc, rx_fc;
 	int status;
 	u8 mac[ETH_ALEN];
 
 	be_setup_init(adapter);
+
+	be_get_config(adapter);
 
 	be_cmd_req_native_mode(adapter);
 
@@ -2718,10 +2774,11 @@ static int be_setup(struct be_adapter *adapter)
 
 	pcie_set_readrq(adapter->pdev, 4096);
 
-	if (sriov_enabled(adapter)) {
-		status = be_vf_setup(adapter);
-		if (status)
-			goto err;
+	if (be_physfn(adapter) && num_vfs) {
+		if (adapter->dev_num_vfs)
+			be_vf_setup(adapter);
+		else
+			dev_warn(dev, "device doesn't support SRIOV\n");
 	}
 
 	be_cmd_get_phy_info(adapter);
@@ -2731,6 +2788,7 @@ static int be_setup(struct be_adapter *adapter)
 	schedule_delayed_work(&adapter->work, msecs_to_jiffies(1000));
 	adapter->flags |= BE_FLAGS_WORKER_SCHEDULED;
 
+	pci_write_config_dword(adapter->pdev, PCICFG_CUST_SCRATCHPAD_CSR, 1);
 	return 0;
 err:
 	be_clear(adapter);
@@ -3194,6 +3252,24 @@ static void be_unmap_pci_bars(struct be_adapter *adapter)
 		iounmap(adapter->csr);
 	if (adapter->db)
 		iounmap(adapter->db);
+	if (adapter->roce_db.base)
+		pci_iounmap(adapter->pdev, adapter->roce_db.base);
+}
+
+static int lancer_roce_map_pci_bars(struct be_adapter *adapter)
+{
+	struct pci_dev *pdev = adapter->pdev;
+	u8 __iomem *addr;
+
+	addr = pci_iomap(pdev, 2, 0);
+	if (addr == NULL)
+		return -ENOMEM;
+
+	adapter->roce_db.base = addr;
+	adapter->roce_db.io_addr = pci_resource_start(pdev, 2);
+	adapter->roce_db.size = 8192;
+	adapter->roce_db.total_size = pci_resource_len(pdev, 2);
+	return 0;
 }
 
 static int be_map_pci_bars(struct be_adapter *adapter)
@@ -3202,11 +3278,18 @@ static int be_map_pci_bars(struct be_adapter *adapter)
 	int db_reg;
 
 	if (lancer_chip(adapter)) {
-		addr = ioremap_nocache(pci_resource_start(adapter->pdev, 0),
-			pci_resource_len(adapter->pdev, 0));
-		if (addr == NULL)
-			return -ENOMEM;
-		adapter->db = addr;
+		if (be_type_2_3(adapter)) {
+			addr = ioremap_nocache(
+					pci_resource_start(adapter->pdev, 0),
+					pci_resource_len(adapter->pdev, 0));
+			if (addr == NULL)
+				return -ENOMEM;
+			adapter->db = addr;
+		}
+		if (adapter->if_type == SLI_INTF_TYPE_3) {
+			if (lancer_roce_map_pci_bars(adapter))
+				goto pci_map_err;
+		}
 		return 0;
 	}
 
@@ -3231,13 +3314,18 @@ static int be_map_pci_bars(struct be_adapter *adapter)
 	if (addr == NULL)
 		goto pci_map_err;
 	adapter->db = addr;
-
+	if (adapter->sli_family == SKYHAWK_SLI_FAMILY) {
+		adapter->roce_db.size = 4096;
+		adapter->roce_db.io_addr =
+				pci_resource_start(adapter->pdev, db_reg);
+		adapter->roce_db.total_size =
+				pci_resource_len(adapter->pdev, db_reg);
+	}
 	return 0;
 pci_map_err:
 	be_unmap_pci_bars(adapter);
 	return -ENOMEM;
 }
-
 
 static void be_ctrl_cleanup(struct be_adapter *adapter)
 {
@@ -3344,6 +3432,8 @@ static void __devexit be_remove(struct pci_dev *pdev)
 	if (!adapter)
 		return;
 
+	be_roce_dev_remove(adapter);
+
 	unregister_netdev(adapter->netdev);
 
 	be_clear(adapter);
@@ -3351,8 +3441,6 @@ static void __devexit be_remove(struct pci_dev *pdev)
 	be_stats_cleanup(adapter);
 
 	be_ctrl_cleanup(adapter);
-
-	be_sriov_disable(adapter);
 
 	pci_set_drvdata(pdev, NULL);
 	pci_release_regions(pdev);
@@ -3367,9 +3455,43 @@ bool be_is_wol_supported(struct be_adapter *adapter)
 		!be_is_wol_excluded(adapter)) ? true : false;
 }
 
-static int be_get_config(struct be_adapter *adapter)
+u32 be_get_fw_log_level(struct be_adapter *adapter)
+{
+	struct be_dma_mem extfat_cmd;
+	struct be_fat_conf_params *cfgs;
+	int status;
+	u32 level = 0;
+	int j;
+
+	memset(&extfat_cmd, 0, sizeof(struct be_dma_mem));
+	extfat_cmd.size = sizeof(struct be_cmd_resp_get_ext_fat_caps);
+	extfat_cmd.va = pci_alloc_consistent(adapter->pdev, extfat_cmd.size,
+					     &extfat_cmd.dma);
+
+	if (!extfat_cmd.va) {
+		dev_err(&adapter->pdev->dev, "%s: Memory allocation failure\n",
+			__func__);
+		goto err;
+	}
+
+	status = be_cmd_get_ext_fat_capabilites(adapter, &extfat_cmd);
+	if (!status) {
+		cfgs = (struct be_fat_conf_params *)(extfat_cmd.va +
+						sizeof(struct be_cmd_resp_hdr));
+		for (j = 0; j < cfgs->module[0].num_modes; j++) {
+			if (cfgs->module[0].trace_lvl[j].mode == MODE_UART)
+				level = cfgs->module[0].trace_lvl[j].dbg_lvl;
+		}
+	}
+	pci_free_consistent(adapter->pdev, extfat_cmd.size, extfat_cmd.va,
+			    extfat_cmd.dma);
+err:
+	return level;
+}
+static int be_get_initial_config(struct be_adapter *adapter)
 {
 	int status;
+	u32 level;
 
 	status = be_cmd_query_fw_cfg(adapter, &adapter->port_num,
 			&adapter->function_mode, &adapter->function_caps);
@@ -3407,10 +3529,13 @@ static int be_get_config(struct be_adapter *adapter)
 	if (be_is_wol_supported(adapter))
 		adapter->wol = true;
 
+	level = be_get_fw_log_level(adapter);
+	adapter->msg_enable = level <= FW_LOG_LEVEL_DEFAULT ? NETIF_MSG_HW : 0;
+
 	return 0;
 }
 
-static int be_dev_family_check(struct be_adapter *adapter)
+static int be_dev_type_check(struct be_adapter *adapter)
 {
 	struct pci_dev *pdev = adapter->pdev;
 	u32 sli_intf = 0, if_type;
@@ -3422,17 +3547,27 @@ static int be_dev_family_check(struct be_adapter *adapter)
 		break;
 	case BE_DEVICE_ID2:
 	case OC_DEVICE_ID2:
-	case OC_DEVICE_ID5:
 		adapter->generation = BE_GEN3;
 		break;
 	case OC_DEVICE_ID3:
 	case OC_DEVICE_ID4:
 		pci_read_config_dword(pdev, SLI_INTF_REG_OFFSET, &sli_intf);
+		adapter->if_type = (sli_intf & SLI_INTF_IF_TYPE_MASK) >>
+						SLI_INTF_IF_TYPE_SHIFT;
 		if_type = (sli_intf & SLI_INTF_IF_TYPE_MASK) >>
 						SLI_INTF_IF_TYPE_SHIFT;
-
 		if (((sli_intf & SLI_INTF_VALID_MASK) != SLI_INTF_VALID) ||
-			if_type != 0x02) {
+			!be_type_2_3(adapter)) {
+			dev_err(&pdev->dev, "SLI_INTF reg val is not valid\n");
+			return -EINVAL;
+		}
+		adapter->sli_family = ((sli_intf & SLI_INTF_FAMILY_MASK) >>
+					 SLI_INTF_FAMILY_SHIFT);
+		adapter->generation = BE_GEN3;
+		break;
+	case OC_DEVICE_ID5:
+		pci_read_config_dword(pdev, SLI_INTF_REG_OFFSET, &sli_intf);
+		if ((sli_intf & SLI_INTF_VALID_MASK) != SLI_INTF_VALID) {
 			dev_err(&pdev->dev, "SLI_INTF reg val is not valid\n");
 			return -EINVAL;
 		}
@@ -3443,6 +3578,9 @@ static int be_dev_family_check(struct be_adapter *adapter)
 	default:
 		adapter->generation = 0;
 	}
+
+	pci_read_config_dword(adapter->pdev, SLI_INTF_REG_OFFSET, &sli_intf);
+	adapter->virtfn = (sli_intf & SLI_INTF_FT_MASK) ? 1 : 0;
 	return 0;
 }
 
@@ -3586,6 +3724,14 @@ reschedule:
 	schedule_delayed_work(&adapter->work, msecs_to_jiffies(1000));
 }
 
+static bool be_reset_required(struct be_adapter *adapter)
+{
+	u32 reg;
+
+	pci_read_config_dword(adapter->pdev, PCICFG_CUST_SCRATCHPAD_CSR, &reg);
+	return reg;
+}
+
 static int __devinit be_probe(struct pci_dev *pdev,
 			const struct pci_device_id *pdev_id)
 {
@@ -3611,7 +3757,7 @@ static int __devinit be_probe(struct pci_dev *pdev,
 	adapter->pdev = pdev;
 	pci_set_drvdata(pdev, adapter);
 
-	status = be_dev_family_check(adapter);
+	status = be_dev_type_check(adapter);
 	if (status)
 		goto free_netdev;
 
@@ -3629,13 +3775,9 @@ static int __devinit be_probe(struct pci_dev *pdev,
 		}
 	}
 
-	status = be_sriov_enable(adapter);
-	if (status)
-		goto free_netdev;
-
 	status = be_ctrl_init(adapter);
 	if (status)
-		goto disable_sriov;
+		goto free_netdev;
 
 	if (lancer_chip(adapter)) {
 		status = lancer_wait_ready(adapter);
@@ -3662,9 +3804,11 @@ static int __devinit be_probe(struct pci_dev *pdev,
 	if (status)
 		goto ctrl_clean;
 
-	status = be_cmd_reset_function(adapter);
-	if (status)
-		goto ctrl_clean;
+	if (be_reset_required(adapter)) {
+		status = be_cmd_reset_function(adapter);
+		if (status)
+			goto ctrl_clean;
+	}
 
 	/* The INTR bit may be set in the card when probed by a kdump kernel
 	 * after a crash.
@@ -3676,7 +3820,7 @@ static int __devinit be_probe(struct pci_dev *pdev,
 	if (status)
 		goto ctrl_clean;
 
-	status = be_get_config(adapter);
+	status = be_get_initial_config(adapter);
 	if (status)
 		goto stats_clean;
 
@@ -3692,6 +3836,8 @@ static int __devinit be_probe(struct pci_dev *pdev,
 	if (status != 0)
 		goto unsetup;
 
+	be_roce_dev_add(adapter);
+
 	dev_info(&pdev->dev, "%s: %s port %d\n", netdev->name, nic_name(pdev),
 		adapter->port_num);
 
@@ -3705,8 +3851,6 @@ stats_clean:
 	be_stats_cleanup(adapter);
 ctrl_clean:
 	be_ctrl_cleanup(adapter);
-disable_sriov:
-	be_sriov_disable(adapter);
 free_netdev:
 	free_netdev(netdev);
 	pci_set_drvdata(pdev, NULL);

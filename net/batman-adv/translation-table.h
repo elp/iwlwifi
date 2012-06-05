@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2007-2012 B.A.T.M.A.N. contributors:
  *
- * Marek Lindner, Simon Wunderlich
+ * Marek Lindner, Simon Wunderlich, Antonio Quartulli
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of version 2 of the GNU General Public
@@ -53,5 +53,7 @@ bool is_ap_isolated(struct bat_priv *bat_priv, uint8_t *src, uint8_t *dst);
 void tt_update_orig(struct bat_priv *bat_priv, struct orig_node *orig_node,
 		    const unsigned char *tt_buff, uint8_t tt_num_changes,
 		    uint8_t ttvn, uint16_t tt_crc);
+bool tt_global_client_is_roaming(struct bat_priv *bat_priv, uint8_t *addr);
+
 
 #endif /* _NET_BATMAN_ADV_TRANSLATION_TABLE_H_ */
