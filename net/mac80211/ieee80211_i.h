@@ -401,7 +401,6 @@ struct ieee80211_mgd_auth_data {
 struct ieee80211_mgd_assoc_data {
 	struct cfg80211_bss *bss;
 	const u8 *supp_rates;
-	const u8 *ht_operation_ie;
 
 	unsigned long timeout;
 	int tries;
@@ -415,6 +414,8 @@ struct ieee80211_mgd_assoc_data {
 	bool have_beacon;
 	bool sent_assoc;
 	bool synced;
+
+	u8 ap_ht_param;
 
 	size_t ie_len;
 	u8 ie[];
