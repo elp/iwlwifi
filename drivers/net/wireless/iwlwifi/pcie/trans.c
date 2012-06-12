@@ -341,7 +341,8 @@ static void iwl_trans_pcie_queue_stuck_timer(unsigned long data)
 		IWL_ERR(trans,
 			"Q %d is %sactive and mapped to fifo %d ra_tid 0x%04x [%d,%d]\n",
 			i, active ? "" : "in", fifo, tbl_dw,
-			iwl_read_prph(trans, SCD_QUEUE_RDPTR(i)),
+			iwl_read_prph(trans,
+				      SCD_QUEUE_RDPTR(i)) & (txq->q.n_bd - 1),
 			iwl_read_prph(trans, SCD_QUEUE_WRPTR(i)));
 	}
 
