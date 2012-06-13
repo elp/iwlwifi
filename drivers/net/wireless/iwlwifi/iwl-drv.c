@@ -778,6 +778,7 @@ static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context)
 	const unsigned int api_min = drv->cfg->ucode_api_min;
 	u32 api_ver;
 	int i;
+	bool load_module = false;
 
 	fw->ucode_capa.max_probe_length = 200;
 	fw->ucode_capa.standard_phy_calibration_size =
@@ -915,7 +916,7 @@ static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context)
 			goto out_unbind;
 		}
 	} else {
-		request_module_nowait("%s", op->name);
+		load_module = true;
 	}
 	mutex_unlock(&iwlwifi_opmode_table_mtx);
 
@@ -925,6 +926,14 @@ static void iwl_ucode_callback(const struct firmware *ucode_raw, void *context)
 	 * are doing the start() above.
 	 */
 	complete(&drv->request_firmware_complete);
+
+	/*
+	 * Load the module last so we don't block anything
+	 * else from proceeding if the module fails to load
+	 * or hangs loading.
+	 */
+	if (load_module)
+		request_module("%s", op->name);
 	return;
 
  try_again:
@@ -958,6 +967,7 @@ struct iwl_drv *iwl_drv_start(struct iwl_trans *trans,
 	drv->cfg = cfg;
 
 	init_completion(&drv->request_firmware_complete);
+	INIT_LIST_HEAD(&drv->list);
 
 	ret = iwl_request_firmware(drv, true);
 
@@ -981,8 +991,15 @@ void iwl_drv_stop(struct iwl_drv *drv)
 	iwl_dealloc_ucode(drv);
 
 	mutex_lock(&iwlwifi_opmode_table_mtx);
-	list_del(&drv->list);
+	/*
+	 * List is empty (this item wasn't added)
+	 * when firmware loading failed -- in that
+	 * case we can't remove it from any list.
+	 */
+	if (!list_empty(&drv->list))
+		list_del(&drv->list);
 	mutex_unlock(&iwlwifi_opmode_table_mtx);
+
 	kfree(drv);
 }
 
