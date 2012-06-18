@@ -51,10 +51,12 @@
 #include "iwl-op-mode.h"
 #include "iwl-drv.h"
 #include "iwl-modparams.h"
+#include "iwl-prph.h"
 
 #include "dev.h"
 #include "calib.h"
 #include "agn.h"
+
 
 /******************************************************************************
  *
@@ -1352,6 +1354,9 @@ static struct iwl_op_mode *iwl_op_mode_dvm_start(struct iwl_trans *trans,
 		trans_cfg.queue_watchdog_timeout = IWL_WATCHDOG_DISABLED;
 	trans_cfg.command_names = iwl_dvm_cmd_strings;
 
+	WARN_ON(sizeof(priv->transport_queue_stop) * BITS_PER_BYTE <
+		priv->cfg->base_params->num_of_queues);
+
 	ucode_flags = fw->ucode_capa.flags;
 
 #ifndef CONFIG_IWLWIFI_P2P
@@ -2073,7 +2078,16 @@ static void iwl_nic_config(struct iwl_op_mode *op_mode)
 		    CSR_HW_IF_CONFIG_REG_BIT_RADIO_SI |
 		    CSR_HW_IF_CONFIG_REG_BIT_MAC_SI);
 
-	priv->lib->nic_config(priv);
+	/* W/A : NIC is stuck in a reset state after Early PCIe power off
+	 * (PCIe power is lost before PERST# is asserted),
+	 * causing ME FW to lose ownership and not being able to obtain it back.
+	 */
+	iwl_set_bits_mask_prph(priv->trans, APMG_PS_CTRL_REG,
+			       APMG_PS_CTRL_EARLY_PWR_OFF_RESET_DIS,
+			       ~APMG_PS_CTRL_EARLY_PWR_OFF_RESET_DIS);
+
+	if (priv->lib->nic_config)
+		priv->lib->nic_config(priv);
 }
 
 static void iwl_wimax_active(struct iwl_op_mode *op_mode)
