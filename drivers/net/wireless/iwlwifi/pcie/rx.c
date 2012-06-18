@@ -871,7 +871,7 @@ void iwl_disable_ict(struct iwl_trans *trans)
 static irqreturn_t iwl_isr(int irq, void *data)
 {
 	struct iwl_trans *trans = data;
-	struct iwl_trans_pcie *trans_pcie;
+	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 	u32 inta, inta_mask;
 #ifdef CONFIG_IWLWIFI_DEBUG
 	u32 inta_fh;
@@ -883,8 +883,6 @@ static irqreturn_t iwl_isr(int irq, void *data)
 		return IRQ_NONE;
 
 	trace_iwlwifi_dev_irq(trans->dev);
-
-	trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 
 	/* Disable (but don't clear!) interrupts here to avoid
 	 *    back-to-back ISRs and sporadic interrupts from our NIC.
