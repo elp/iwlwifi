@@ -492,10 +492,11 @@ static void iwl_tx_queue_free(struct iwl_trans *trans, int txq_id)
 	iwl_tx_queue_unmap(trans, txq_id);
 
 	/* De-alloc array of command/tx buffers */
-
 	if (txq_id == trans_pcie->cmd_queue)
-		for (i = 0; i < txq->q.n_window; i++)
+		for (i = 0; i < txq->q.n_window; i++) {
 			kfree(txq->entries[i].cmd);
+			kfree(txq->entries[i].copy_cmd);
+		}
 
 	/* De-alloc circular buffer of TFDs */
 	if (txq->q.n_bd) {
@@ -1769,7 +1770,7 @@ void iwl_dump_csr(struct iwl_trans *trans)
 #define DEBUGFS_ADD_FILE(name, parent, mode) do {			\
 	if (!debugfs_create_file(#name, mode, parent, trans,		\
 				 &iwl_dbgfs_##name##_ops))		\
-		return -ENOMEM;						\
+		goto err;						\
 } while (0)
 
 /* file operation */
@@ -2033,6 +2034,10 @@ static int iwl_trans_pcie_dbgfs_register(struct iwl_trans *trans,
 	DEBUGFS_ADD_FILE(fh_reg, dir, S_IRUSR);
 	DEBUGFS_ADD_FILE(fw_restart, dir, S_IWUSR);
 	return 0;
+
+err:
+	IWL_ERR(trans, "failed to create the trans debugfs entry\n");
+	return -ENOMEM;
 }
 #else
 static int iwl_trans_pcie_dbgfs_register(struct iwl_trans *trans,
