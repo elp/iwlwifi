@@ -373,6 +373,8 @@ void ath_debug_stat_interrupt(struct ath_softc *sc, enum ath9k_int status)
 		sc->debug.stats.istats.tsfoor++;
 	if (status & ATH9K_INT_MCI)
 		sc->debug.stats.istats.mci++;
+	if (status & ATH9K_INT_GENTIMER)
+		sc->debug.stats.istats.gen_timer++;
 }
 
 static ssize_t read_file_interrupt(struct file *file, char __user *user_buf,
@@ -418,6 +420,7 @@ static ssize_t read_file_interrupt(struct file *file, char __user *user_buf,
 	PR_IS("DTIM", dtim);
 	PR_IS("TSFOOR", tsfoor);
 	PR_IS("MCI", mci);
+	PR_IS("GENTIMER", gen_timer);
 	PR_IS("TOTAL", total);
 
 	len += snprintf(buf + len, mxlen - len,
@@ -1577,6 +1580,8 @@ int ath9k_init_debug(struct ath_hw *ah)
 			    sc->debug.debugfs_phy, sc, &fops_tx_chainmask);
 	debugfs_create_file("disable_ani", S_IRUSR | S_IWUSR,
 			    sc->debug.debugfs_phy, sc, &fops_disable_ani);
+	debugfs_create_bool("paprd", S_IRUSR | S_IWUSR, sc->debug.debugfs_phy,
+			    &sc->sc_ah->config.enable_paprd);
 	debugfs_create_file("regidx", S_IRUSR | S_IWUSR, sc->debug.debugfs_phy,
 			    sc, &fops_regidx);
 	debugfs_create_file("regval", S_IRUSR | S_IWUSR, sc->debug.debugfs_phy,
