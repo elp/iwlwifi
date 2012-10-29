@@ -186,6 +186,8 @@ struct iwl_pcie_tx_queue_entry {
 	struct iwl_device_cmd *cmd;
 	struct iwl_device_cmd *copy_cmd;
 	struct sk_buff *skb;
+	/* buffer to free after command completes */
+	const void *free_buf;
 	struct iwl_cmd_meta meta;
 };
 
@@ -346,6 +348,7 @@ void iwl_txq_free_tfd(struct iwl_trans *trans, struct iwl_tx_queue *txq,
 		      enum dma_data_direction dma_dir);
 int iwl_tx_queue_reclaim(struct iwl_trans *trans, int txq_id, int index,
 			 struct sk_buff_head *skbs);
+void iwl_tx_queue_unmap(struct iwl_trans *trans, int txq_id);
 int iwl_queue_space(const struct iwl_queue *q);
 
 /*****************************************************
