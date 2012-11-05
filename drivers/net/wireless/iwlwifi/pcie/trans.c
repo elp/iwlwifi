@@ -1079,7 +1079,7 @@ static void iwl_trans_txq_set_sched(struct iwl_trans *trans, u32 mask)
 	iwl_write_prph(trans, SCD_TXFACT, mask);
 }
 
-static void iwl_tx_start(struct iwl_trans *trans)
+static void iwl_tx_start(struct iwl_trans *trans, u32 scd_base_addr)
 {
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
 	u32 a;
@@ -1092,6 +1092,10 @@ static void iwl_tx_start(struct iwl_trans *trans)
 
 	trans_pcie->scd_base_addr =
 		iwl_read_prph(trans, SCD_SRAM_BASE_ADDR);
+
+	WARN_ON(scd_base_addr != 0 &&
+		scd_base_addr != trans_pcie->scd_base_addr);
+
 	a = trans_pcie->scd_base_addr + SCD_CONTEXT_MEM_LOWER_BOUND;
 	/* reset conext data memory */
 	for (; a < trans_pcie->scd_base_addr + SCD_CONTEXT_MEM_UPPER_BOUND;
@@ -1137,10 +1141,10 @@ static void iwl_tx_start(struct iwl_trans *trans)
 			    APMG_PCIDEV_STT_VAL_L1_ACT_DIS);
 }
 
-static void iwl_trans_pcie_fw_alive(struct iwl_trans *trans)
+static void iwl_trans_pcie_fw_alive(struct iwl_trans *trans, u32 scd_addr)
 {
 	iwl_reset_ict(trans);
-	iwl_tx_start(trans);
+	iwl_tx_start(trans, scd_addr);
 }
 
 /**
@@ -1246,6 +1250,7 @@ static void iwl_trans_pcie_stop_device(struct iwl_trans *trans)
 	clear_bit(STATUS_INT_ENABLED, &trans_pcie->status);
 	clear_bit(STATUS_DEVICE_ENABLED, &trans_pcie->status);
 	clear_bit(STATUS_TPOWER_PMI, &trans_pcie->status);
+	clear_bit(STATUS_RFKILL, &trans_pcie->status);
 }
 
 static void iwl_trans_pcie_wowlan_suspend(struct iwl_trans *trans)
@@ -2206,7 +2211,7 @@ struct iwl_trans *iwl_trans_pcie_alloc(struct pci_dev *pdev,
 	}
 
 	/* Initialize the wait queue for commands */
-	init_waitqueue_head(&trans->wait_command_queue);
+	init_waitqueue_head(&trans_pcie->wait_command_queue);
 	spin_lock_init(&trans->reg_lock);
 
 	snprintf(trans->dev_cmd_pool_name, sizeof(trans->dev_cmd_pool_name),
