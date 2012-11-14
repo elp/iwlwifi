@@ -700,13 +700,11 @@ static void iwl_apm_config(struct iwl_trans *trans)
 				PCI_CFG_LINK_CTRL_VAL_L1_EN) {
 		/* L1-ASPM enabled; disable(!) L0S */
 		iwl_set_bit(trans, CSR_GIO_REG, CSR_GIO_REG_VAL_L0S_ENABLED);
-		dev_printk(KERN_INFO, trans->dev,
-			   "L1 Enabled; Disabling L0S\n");
+		dev_info(trans->dev, "L1 Enabled; Disabling L0S\n");
 	} else {
 		/* L1-ASPM disabled; enable(!) L0S */
 		iwl_clear_bit(trans, CSR_GIO_REG, CSR_GIO_REG_VAL_L0S_ENABLED);
-		dev_printk(KERN_INFO, trans->dev,
-			   "L1 Disabled; Enabling L0S\n");
+		dev_info(trans->dev, "L1 Disabled; Enabling L0S\n");
 	}
 	trans->pm_support = !(lctl & PCI_CFG_LINK_CTRL_VAL_L0S_EN);
 }
@@ -2159,22 +2157,20 @@ struct iwl_trans *iwl_trans_pcie_alloc(struct pci_dev *pdev,
 							  DMA_BIT_MASK(32));
 		/* both attempts failed: */
 		if (err) {
-			dev_printk(KERN_ERR, &pdev->dev,
-				   "No suitable DMA available.\n");
+			dev_err(&pdev->dev, "No suitable DMA available\n");
 			goto out_pci_disable_device;
 		}
 	}
 
 	err = pci_request_regions(pdev, DRV_NAME);
 	if (err) {
-		dev_printk(KERN_ERR, &pdev->dev,
-			   "pci_request_regions failed\n");
+		dev_err(&pdev->dev, "pci_request_regions failed\n");
 		goto out_pci_disable_device;
 	}
 
 	trans_pcie->hw_base = pci_ioremap_bar(pdev, 0);
 	if (!trans_pcie->hw_base) {
-		dev_printk(KERN_ERR, &pdev->dev, "pci_ioremap_bar failed\n");
+		dev_err(&pdev->dev, "pci_ioremap_bar failed\n");
 		err = -ENODEV;
 		goto out_pci_release_regions;
 	}
@@ -2185,8 +2181,7 @@ struct iwl_trans *iwl_trans_pcie_alloc(struct pci_dev *pdev,
 
 	err = pci_enable_msi(pdev);
 	if (err) {
-		dev_printk(KERN_ERR, &pdev->dev,
-			   "pci_enable_msi failed(0X%x)\n", err);
+		dev_err(&pdev->dev, "pci_enable_msi failed(0X%x)\n", err);
 		/* enable rfkill interrupt: hw bug w/a */
 		pci_read_config_word(pdev, PCI_COMMAND, &pci_cmd);
 		if (pci_cmd & PCI_COMMAND_INTX_DISABLE) {
