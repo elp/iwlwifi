@@ -24,7 +24,7 @@
 #define BCMA_PCI_SLOT_MAX	16
 #define	PCI_CONFIG_SPACE_SIZE	256
 
-bool __devinit bcma_core_pci_is_in_hostmode(struct bcma_drv_pci *pc)
+bool bcma_core_pci_is_in_hostmode(struct bcma_drv_pci *pc)
 {
 	struct bcma_bus *bus = pc->core->bus;
 	u16 chipid_top;
@@ -264,10 +264,9 @@ static int bcma_core_pci_hostmode_write_config(struct pci_bus *bus,
 }
 
 /* return cap_offset if requested capability exists in the PCI config space */
-static u8 __devinit bcma_find_pci_capability(struct bcma_drv_pci *pc,
-					     unsigned int dev,
-					     unsigned int func, u8 req_cap_id,
-					     unsigned char *buf, u32 *buflen)
+static u8 bcma_find_pci_capability(struct bcma_drv_pci *pc, unsigned int dev,
+				   unsigned int func, u8 req_cap_id,
+				   unsigned char *buf, u32 *buflen)
 {
 	u8 cap_id;
 	u8 cap_ptr = 0;
@@ -334,7 +333,7 @@ static u8 __devinit bcma_find_pci_capability(struct bcma_drv_pci *pc,
  * Retry Status (CRS) Completion Status to software then
  * enable the feature.
  */
-static void __devinit bcma_core_pci_enable_crs(struct bcma_drv_pci *pc)
+static void bcma_core_pci_enable_crs(struct bcma_drv_pci *pc)
 {
 	struct bcma_bus *bus = pc->core->bus;
 	u8 cap_ptr, root_ctrl, root_cap, dev;
@@ -381,7 +380,7 @@ static void __devinit bcma_core_pci_enable_crs(struct bcma_drv_pci *pc)
 	}
 }
 
-void __devinit bcma_core_pci_hostmode_init(struct bcma_drv_pci *pc)
+void bcma_core_pci_hostmode_init(struct bcma_drv_pci *pc)
 {
 	struct bcma_bus *bus = pc->core->bus;
 	struct bcma_drv_pci_host *pc_host;
@@ -427,7 +426,7 @@ void __devinit bcma_core_pci_hostmode_init(struct bcma_drv_pci *pc)
 	/* Reset RC */
 	usleep_range(3000, 5000);
 	pcicore_write32(pc, BCMA_CORE_PCI_CTL, BCMA_CORE_PCI_CTL_RST_OE);
-	usleep_range(1000, 2000);
+	msleep(50);
 	pcicore_write32(pc, BCMA_CORE_PCI_CTL, BCMA_CORE_PCI_CTL_RST |
 			BCMA_CORE_PCI_CTL_RST_OE);
 
@@ -488,6 +487,17 @@ void __devinit bcma_core_pci_hostmode_init(struct bcma_drv_pci *pc)
 	msleep(100);
 
 	bcma_core_pci_enable_crs(pc);
+
+	if (bus->chipinfo.id == BCMA_CHIP_ID_BCM4706 ||
+	    bus->chipinfo.id == BCMA_CHIP_ID_BCM4716) {
+		u16 val16;
+		bcma_extpci_read_config(pc, 0, 0, BCMA_CORE_PCI_CFG_DEVCTRL,
+					&val16, sizeof(val16));
+		val16 |= (2 << 5);	/* Max payload size of 512 */
+		val16 |= (2 << 12);	/* MRRS 512 */
+		bcma_extpci_write_config(pc, 0, 0, BCMA_CORE_PCI_CFG_DEVCTRL,
+					 &val16, sizeof(val16));
+	}
 
 	/* Enable PCI bridge BAR0 memory & master access */
 	tmp = PCI_COMMAND_MASTER | PCI_COMMAND_MEMORY;
@@ -577,7 +587,7 @@ int bcma_core_pci_plat_dev_init(struct pci_dev *dev)
 	pr_info("PCI: Fixing up device %s\n", pci_name(dev));
 
 	/* Fix up interrupt lines */
-	dev->irq = bcma_core_mips_irq(pc_host->pdev->core) + 2;
+	dev->irq = bcma_core_irq(pc_host->pdev->core);
 	pci_write_config_byte(dev, PCI_INTERRUPT_LINE, dev->irq);
 
 	return 0;
@@ -596,6 +606,6 @@ int bcma_core_pci_pcibios_map_irq(const struct pci_dev *dev)
 
 	pc_host = container_of(dev->bus->ops, struct bcma_drv_pci_host,
 			       pci_ops);
-	return bcma_core_mips_irq(pc_host->pdev->core) + 2;
+	return bcma_core_irq(pc_host->pdev->core);
 }
 EXPORT_SYMBOL(bcma_core_pci_pcibios_map_irq);
