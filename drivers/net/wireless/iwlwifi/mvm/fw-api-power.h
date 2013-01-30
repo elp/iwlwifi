@@ -5,7 +5,7 @@
  *
  * GPL LICENSE SUMMARY
  *
- * Copyright(c) 2008 - 2013 Intel Corporation. All rights reserved.
+ * Copyright(c) 2012 - 2013 Intel Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of version 2 of the GNU General Public License as
@@ -30,7 +30,7 @@
  *
  * BSD LICENSE
  *
- * Copyright(c) 2005 - 2013 Intel Corporation. All rights reserved.
+ * Copyright(c) 2012 - 2013 Intel Corporation. All rights reserved.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -58,81 +58,83 @@
  * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
  *****************************************************************************/
-#ifndef __iwl_eeprom_parse_h__
-#define __iwl_eeprom_parse_h__
 
-#include <linux/types.h>
-#include <linux/if_ether.h>
-#include "iwl-trans.h"
+#ifndef __fw_api_power_h__
+#define __fw_api_power_h__
 
-struct iwl_nvm_data {
-	int n_hw_addrs;
-	u8 hw_addr[ETH_ALEN];
+/* Power Management Commands, Responses, Notifications */
 
-	u8 calib_version;
-	__le16 calib_voltage;
-
-	__le16 raw_temperature;
-	__le16 kelvin_temperature;
-	__le16 kelvin_voltage;
-	__le16 xtal_calib[2];
-
-	bool sku_cap_band_24GHz_enable;
-	bool sku_cap_band_52GHz_enable;
-	bool sku_cap_11n_enable;
-	bool sku_cap_amt_enable;
-	bool sku_cap_ipan_enable;
-
-	u8 radio_cfg_type;
-	u8 radio_cfg_step;
-	u8 radio_cfg_dash;
-	u8 radio_cfg_pnum;
-	u8 valid_tx_ant, valid_rx_ant;
-
-	u16 nvm_version;
-	s8 max_tx_pwr_half_dbm;
-
-	struct ieee80211_supported_band bands[IEEE80211_NUM_BANDS];
-	struct ieee80211_channel channels[];
+/**
+ * enum iwl_scan_flags - masks for power table command flags
+ * @POWER_FLAGS_POWER_MANAGEMENT_ENA_MSK: '0' Driver disables power management,
+ *		'1' Driver enables PM (use rest of parameters)
+ * @POWER_FLAGS_SLEEP_OVER_DTIM_MSK: '0' PM have to walk up every DTIM,
+ *		'1' PM could sleep over DTIM till listen Interval.
+ * @POWER_FLAGS_LPRX_ENA_MSK: Low Power RX enable.
+ * @POWER_FLAGS_SNOOZE_ENA_MSK: Enable snoozing only if uAPSD is enabled and all
+ *		access categories are both delivery and trigger enabled.
+ * @POWER_FLAGS_BT_SCO_ENA: Enable BT SCO coex only if uAPSD and
+ *		PBW Snoozing enabled
+ * @POWER_FLAGS_ADVANCE_PM_ENA_MSK: Advanced PM (uAPSD) enable mask
+*/
+enum iwl_power_flags {
+	POWER_FLAGS_POWER_MANAGEMENT_ENA_MSK	= BIT(0),
+	POWER_FLAGS_SLEEP_OVER_DTIM_MSK		= BIT(1),
+	POWER_FLAGS_LPRX_ENA_MSK		= BIT(2),
+	POWER_FLAGS_SNOOZE_ENA_MSK		= BIT(3),
+	POWER_FLAGS_BT_SCO_ENA			= BIT(4),
+	POWER_FLAGS_ADVANCE_PM_ENA_MSK		= BIT(5)
 };
 
 /**
- * iwl_parse_eeprom_data - parse EEPROM data and return values
+ * struct iwl_powertable_cmd - Power Table Command
+ * POWER_TABLE_CMD = 0x77 (command, has simple generic response)
  *
- * @dev: device pointer we're parsing for, for debug only
- * @cfg: device configuration for parsing and overrides
- * @eeprom: the EEPROM data
- * @eeprom_size: length of the EEPROM data
- *
- * This function parses all EEPROM values we need and then
- * returns a (newly allocated) struct containing all the
- * relevant values for driver use. The struct must be freed
- * later with iwl_free_nvm_data().
+ * @id_and_color:	MAC contex identifier
+ * @action:		Action on context - no action, add new,
+ *			modify existent, remove
+ * @flags:		Power table command flags from POWER_FLAGS_*
+ * @keep_alive_seconds: Keep alive period in seconds. Default - 25 sec.
+ *			Minimum allowed:- 3 * DTIM
+ * @rx_data_timeout:    Minimum time (usec) from last Rx packet for AM to
+ *			PSM transition - legacy PM
+ * @tx_data_timeout:    Minimum time (usec) from last Tx packet for AM to
+ *			PSM transition - legacy PM
+ * @rx_data_timeout_uapsd: Minimum time (usec) from last Rx packet for AM to
+ *			PSM transition - uAPSD
+ * @tx_data_timeout_uapsd: Minimum time (usec) from last Tx packet for AM to
+ *			PSM transition - uAPSD
+ * @lprx_rssi_threshold: Signal strength up to which LP RX can be enabled.
+ *			Default: 80dbm
+ * @num_skip_dtim:      Number of DTIMs to skip if Skip over DTIM flag is set
+ * @snooze_interval:    TBD
+ * @snooze_window:      TBD
+ * @snooze_step:        TBD
+ * @qndp_tid:           TBD
+ * @uapsd_ac_flags:     TBD
+ * @uapsd_max_sp:       TBD
  */
-struct iwl_nvm_data *
-iwl_parse_eeprom_data(struct device *dev, const struct iwl_cfg *cfg,
-		      const u8 *eeprom, size_t eeprom_size);
+struct iwl_powertable_cmd {
+	/* COMMON_INDEX_HDR_API_S_VER_1 */
+	__le32 id_and_color;
+	__le32 action;
+	__le16 flags;
+	u8 reserved;
+	__le16 keep_alive_seconds;
+	__le32 rx_data_timeout;
+	__le32 tx_data_timeout;
+	__le32 rx_data_timeout_uapsd;
+	__le32 tx_data_timeout_uapsd;
+	u8 lprx_rssi_threshold;
+	u8 num_skip_dtim;
+	__le16 snooze_interval;
+	__le16 snooze_window;
+	u8 snooze_step;
+	u8 qndp_tid;
+	u8 uapsd_ac_flags;
+	u8 uapsd_max_sp;
+} __packed;
 
-/**
- * iwl_free_nvm_data - free NVM data
- * @data: the data to free
- */
-static inline void iwl_free_nvm_data(struct iwl_nvm_data *data)
-{
-	kfree(data);
-}
-
-int iwl_nvm_check_version(struct iwl_nvm_data *data,
-			  struct iwl_trans *trans);
-
-int iwl_init_sband_channels(struct iwl_nvm_data *data,
-			    struct ieee80211_supported_band *sband,
-			    int n_channels, enum ieee80211_band band);
-
-void iwl_init_ht_hw_capab(const struct iwl_cfg *cfg,
-			  struct iwl_nvm_data *data,
-			  struct ieee80211_sta_ht_cap *ht_info,
-			  enum ieee80211_band band);
-
-#endif /* __iwl_eeprom_parse_h__ */
+#endif
