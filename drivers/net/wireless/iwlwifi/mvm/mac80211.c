@@ -210,7 +210,7 @@ int iwl_mvm_mac_setup_register(struct iwl_mvm *mvm)
 	}
 #endif
 
-	ret = iwl_leds_init(mvm);
+	ret = iwl_mvm_leds_init(mvm);
 	if (ret)
 		return ret;
 
@@ -408,7 +408,7 @@ static void iwl_mvm_pm_disable_iterator(void *data, u8 *mac,
 	struct iwl_mvm *mvm = data;
 	int ret;
 
-	ret = iwl_power_disable(mvm, vif);
+	ret = iwl_mvm_power_disable(mvm, vif);
 	if (ret)
 		IWL_ERR(mvm, "failed to disable power management\n");
 }
@@ -418,7 +418,7 @@ static void iwl_mvm_power_update_iterator(void *data, u8 *mac,
 {
 	struct iwl_mvm *mvm = data;
 
-	iwl_power_update_mode(mvm, vif);
+	iwl_mvm_power_update_mode(mvm, vif);
 }
 
 static int iwl_mvm_mac_add_interface(struct ieee80211_hw *hw,
@@ -489,7 +489,7 @@ static int iwl_mvm_mac_add_interface(struct ieee80211_hw *hw,
 	 * Update power state on the new interface. Admittedly, based on
 	 * mac80211 logics this power update will disable power management
 	 */
-	iwl_power_update_mode(mvm, vif);
+	iwl_mvm_power_update_mode(mvm, vif);
 
 	/*
 	 * P2P_DEVICE interface does not have a channel context assigned to it,
@@ -694,7 +694,7 @@ static void iwl_mvm_bss_info_changed_station(struct iwl_mvm *mvm,
 		IWL_DEBUG_MAC80211(mvm, "Currently %d interfaces active\n",
 				   mvm->vif_count);
 		if (mvm->vif_count == 1) {
-			ret = iwl_power_update_mode(mvm, vif);
+			ret = iwl_mvm_power_update_mode(mvm, vif);
 			if (ret)
 				IWL_ERR(mvm, "failed to update power mode\n");
 		}

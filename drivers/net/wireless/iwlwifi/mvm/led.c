@@ -88,7 +88,7 @@ static void iwl_led_brightness_set(struct led_classdev *led_cdev,
 		iwl_mvm_led_disable(mvm);
 }
 
-int iwl_leds_init(struct iwl_mvm *mvm)
+int iwl_mvm_leds_init(struct iwl_mvm *mvm)
 {
 	int mode = iwlwifi_mod_params.led_mode;
 	int ret;
@@ -124,7 +124,7 @@ int iwl_leds_init(struct iwl_mvm *mvm)
 	return 0;
 }
 
-void iwl_leds_exit(struct iwl_mvm *mvm)
+void iwl_mvm_leds_exit(struct iwl_mvm *mvm)
 {
 	if (iwlwifi_mod_params.led_mode == IWL_LED_DISABLE)
 		return;

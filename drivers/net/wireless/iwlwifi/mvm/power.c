@@ -133,7 +133,7 @@ static void iwl_power_build_cmd(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
 	}
 }
 
-int iwl_power_update_mode(struct iwl_mvm *mvm, struct ieee80211_vif *vif)
+int iwl_mvm_power_update_mode(struct iwl_mvm *mvm, struct ieee80211_vif *vif)
 {
 	struct iwl_powertable_cmd cmd = {};
 
@@ -172,7 +172,7 @@ int iwl_power_update_mode(struct iwl_mvm *mvm, struct ieee80211_vif *vif)
 				    sizeof(cmd), &cmd);
 }
 
-int iwl_power_disable(struct iwl_mvm *mvm, struct ieee80211_vif *vif)
+int iwl_mvm_power_disable(struct iwl_mvm *mvm, struct ieee80211_vif *vif)
 {
 	struct iwl_powertable_cmd cmd = {};
 	struct iwl_mvm_vif *mvmvif = iwl_mvm_vif_from_mac80211(vif);

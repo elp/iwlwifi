@@ -474,15 +474,15 @@ static inline int iwl_mvm_dbgfs_register(struct iwl_mvm *mvm,
 #endif /* CONFIG_IWLWIFI_DEBUGFS */
 
 /* rate scaling */
-int iwl_send_lq_cmd(struct iwl_mvm *mvm, struct iwl_lq_cmd *lq,
-		    u8 flags, bool init);
+int iwl_mvm_send_lq_cmd(struct iwl_mvm *mvm, struct iwl_lq_cmd *lq,
+			u8 flags, bool init);
 
 /* power managment */
-int iwl_power_update_mode(struct iwl_mvm *mvm, struct ieee80211_vif *vif);
-int iwl_power_disable(struct iwl_mvm *mvm, struct ieee80211_vif *vif);
+int iwl_mvm_power_update_mode(struct iwl_mvm *mvm, struct ieee80211_vif *vif);
+int iwl_mvm_power_disable(struct iwl_mvm *mvm, struct ieee80211_vif *vif);
 
-int iwl_leds_init(struct iwl_mvm *mvm);
-void iwl_leds_exit(struct iwl_mvm *mvm);
+int iwl_mvm_leds_init(struct iwl_mvm *mvm);
+void iwl_mvm_leds_exit(struct iwl_mvm *mvm);
 
 /* D3 (WoWLAN, NetDetect) */
 int iwl_mvm_suspend(struct ieee80211_hw *hw, struct cfg80211_wowlan *wowlan);

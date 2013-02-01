@@ -443,7 +443,7 @@ void iwl_mvm_dump_nic_error_log(struct iwl_mvm *mvm)
 }
 
 /**
- * iwl_send_lq_cmd() - Send link quality command
+ * iwl_mvm_send_lq_cmd() - Send link quality command
  * @init: This command is sent as part of station initialization right
  *        after station has been added.
  *
@@ -452,8 +452,8 @@ void iwl_mvm_dump_nic_error_log(struct iwl_mvm *mvm)
  * this case to clear the state indicating that station creation is in
  * progress.
  */
-int iwl_send_lq_cmd(struct iwl_mvm *mvm, struct iwl_lq_cmd *lq,
-		    u8 flags, bool init)
+int iwl_mvm_send_lq_cmd(struct iwl_mvm *mvm, struct iwl_lq_cmd *lq,
+			u8 flags, bool init)
 {
 	struct iwl_host_cmd cmd = {
 		.id = LQ_CMD,

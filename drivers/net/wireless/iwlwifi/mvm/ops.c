@@ -449,7 +449,7 @@ static void iwl_op_mode_mvm_stop(struct iwl_op_mode *op_mode)
 	struct iwl_mvm *mvm = IWL_OP_MODE_GET_MVM(op_mode);
 	int i;
 
-	iwl_leds_exit(mvm);
+	iwl_mvm_leds_exit(mvm);
 
 	ieee80211_unregister_hw(mvm->hw);
 
