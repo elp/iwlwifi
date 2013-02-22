@@ -22,7 +22,7 @@
  * USA
  *
  * The full GNU General Public License is included in this distribution
- * in the file called LICENSE.GPL.
+ * in the file called COPYING.
  *
  * Contact Information:
  *  Intel Linux Wireless <ilw@linux.intel.com>
@@ -340,6 +340,9 @@ int iwl_mvm_rm_sta(struct iwl_mvm *mvm,
 
 	if (vif->type == NL80211_IFTYPE_STATION &&
 	    mvmvif->ap_sta_id == mvm_sta->sta_id) {
+		/* flush its queues here since we are freeing mvm_sta */
+		ret = iwl_mvm_flush_tx_path(mvm, mvm_sta->tfd_queue_msk, true);
+
 		/*
 		 * Put a non-NULL since the fw station isn't removed.
 		 * It will be removed after the MAC will be set as
@@ -347,9 +350,6 @@ int iwl_mvm_rm_sta(struct iwl_mvm *mvm,
 		 */
 		rcu_assign_pointer(mvm->fw_id_to_mac_id[mvm_sta->sta_id],
 				   ERR_PTR(-EINVAL));
-
-		/* flush its queues here since we are freeing mvm_sta */
-		ret = iwl_mvm_flush_tx_path(mvm, mvm_sta->tfd_queue_msk, true);
 
 		/* if we are associated - we can't remove the AP STA now */
 		if (vif->bss_conf.assoc)
@@ -822,6 +822,34 @@ int iwl_mvm_sta_tx_agg_stop(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
 	spin_unlock_bh(&mvmsta->lock);
 
 	return err;
+}
+
+int iwl_mvm_sta_tx_agg_flush(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
+			    struct ieee80211_sta *sta, u16 tid)
+{
+	struct iwl_mvm_sta *mvmsta = (void *)sta->drv_priv;
+	struct iwl_mvm_tid_data *tid_data = &mvmsta->tid_data[tid];
+	u16 txq_id;
+
+	/*
+	 * First set the agg state to OFF to avoid calling
+	 * ieee80211_stop_tx_ba_cb in iwl_mvm_check_ratid_empty.
+	 */
+	spin_lock_bh(&mvmsta->lock);
+	txq_id = tid_data->txq_id;
+	IWL_DEBUG_TX_QUEUES(mvm, "Flush AGG: sta %d tid %d q %d state %d\n",
+			    mvmsta->sta_id, tid, txq_id, tid_data->state);
+	tid_data->state = IWL_AGG_OFF;
+	spin_unlock_bh(&mvmsta->lock);
+
+	if (iwl_mvm_flush_tx_path(mvm, BIT(txq_id), true))
+		IWL_ERR(mvm, "Couldn't flush the AGG queue\n");
+
+	iwl_trans_txq_disable(mvm->trans, tid_data->txq_id);
+	mvm->queue_to_mac80211[tid_data->txq_id] =
+				IWL_INVALID_MAC80211_QUEUE;
+
+	return 0;
 }
 
 static int iwl_mvm_set_fw_key_idx(struct iwl_mvm *mvm)

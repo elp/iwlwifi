@@ -22,7 +22,7 @@
  * USA
  *
  * The full GNU General Public License is included in this distribution
- * in the file called LICENSE.GPL.
+ * in the file called COPYING.
  *
  * Contact Information:
  *  Intel Linux Wireless <ilw@linux.intel.com>
@@ -105,7 +105,7 @@ static const struct ieee80211_iface_combination iwl_mvm_iface_combinations[] = {
 int iwl_mvm_mac_setup_register(struct iwl_mvm *mvm)
 {
 	struct ieee80211_hw *hw = mvm->hw;
-	int num_mac, ret;
+	int num_mac, ret, i;
 
 	/* Tell mac80211 our characteristics */
 	hw->flags = IEEE80211_HW_SIGNAL_DBM |
@@ -156,11 +156,15 @@ int iwl_mvm_mac_setup_register(struct iwl_mvm *mvm)
 	memcpy(mvm->addresses[0].addr, mvm->nvm_data->hw_addr, ETH_ALEN);
 	hw->wiphy->addresses = mvm->addresses;
 	hw->wiphy->n_addresses = 1;
-	num_mac = mvm->nvm_data->n_hw_addrs;
-	if (num_mac > 1) {
-		memcpy(mvm->addresses[1].addr, mvm->addresses[0].addr,
+
+	/* Extract additional MAC addresses if available */
+	num_mac = (mvm->nvm_data->n_hw_addrs > 1) ?
+		min(IWL_MVM_MAX_ADDRESSES, mvm->nvm_data->n_hw_addrs) : 1;
+
+	for (i = 1; i < num_mac; i++) {
+		memcpy(mvm->addresses[i].addr, mvm->addresses[i-1].addr,
 		       ETH_ALEN);
-		mvm->addresses[1].addr[5]++;
+		mvm->addresses[i].addr[5]++;
 		hw->wiphy->n_addresses++;
 	}
 
@@ -273,12 +277,18 @@ static int iwl_mvm_mac_ampdu_action(struct ieee80211_hw *hw,
 		ret = iwl_mvm_sta_rx_agg(mvm, sta, tid, 0, false);
 		break;
 	case IEEE80211_AMPDU_TX_START:
+		if (iwlwifi_mod_params.disable_11n & IWL_DISABLE_HT_TXAGG) {
+			ret = -EINVAL;
+			break;
+		}
 		ret = iwl_mvm_sta_tx_agg_start(mvm, vif, sta, tid, ssn);
 		break;
 	case IEEE80211_AMPDU_TX_STOP_CONT:
+		ret = iwl_mvm_sta_tx_agg_stop(mvm, vif, sta, tid);
+		break;
 	case IEEE80211_AMPDU_TX_STOP_FLUSH:
 	case IEEE80211_AMPDU_TX_STOP_FLUSH_CONT:
-		ret = iwl_mvm_sta_tx_agg_stop(mvm, vif, sta, tid);
+		ret = iwl_mvm_sta_tx_agg_flush(mvm, vif, sta, tid);
 		break;
 	case IEEE80211_AMPDU_TX_OPERATIONAL:
 		ret = iwl_mvm_sta_tx_agg_oper(mvm, vif, sta, tid, buf_size);

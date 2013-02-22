@@ -22,7 +22,7 @@
  * USA
  *
  * The full GNU General Public License is included in this distribution
- * in the file called LICENSE.GPL.
+ * in the file called COPYING.
  *
  * Contact Information:
  *  Intel Linux Wireless <ilw@linux.intel.com>
@@ -749,7 +749,7 @@ void iwl_init_ht_hw_capab(const struct iwl_cfg *cfg,
 	}
 
 	ht_info->ht_supported = true;
-	ht_info->cap = 0;
+	ht_info->cap = IEEE80211_HT_CAP_DSSSCCK40;
 
 	if (iwlwifi_mod_params.amsdu_size_8K)
 		ht_info->cap |= IEEE80211_HT_CAP_MAX_AMSDU;

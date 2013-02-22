@@ -22,7 +22,7 @@
  * USA
  *
  * The full GNU General Public License is included in this distribution
- * in the file called LICENSE.GPL.
+ * in the file called COPYING.
  *
  * Contact Information:
  *  Intel Linux Wireless <ilw@linux.intel.com>
@@ -79,7 +79,7 @@
 #include "fw-api.h"
 
 #define IWL_INVALID_MAC80211_QUEUE	0xff
-#define IWL_MVM_MAX_ADDRESSES		2
+#define IWL_MVM_MAX_ADDRESSES		5
 #define IWL_RSSI_OFFSET 44
 
 enum iwl_mvm_tx_fifo {
