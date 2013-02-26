@@ -658,6 +658,11 @@ int iwl_mvm_suspend(struct ieee80211_hw *hw, struct cfg80211_wowlan *wowlan)
 	/* We reprogram keys and shouldn't allocate new key indices */
 	memset(mvm->fw_key_table, 0, sizeof(mvm->fw_key_table));
 
+	mvm->ptk_ivlen = 0;
+	mvm->ptk_icvlen = 0;
+	mvm->ptk_ivlen = 0;
+	mvm->ptk_icvlen = 0;
+
 	/*
 	 * The D3 firmware still hardcodes the AP station ID for the
 	 * BSS we're associated with as 0. As a result, we have to move
