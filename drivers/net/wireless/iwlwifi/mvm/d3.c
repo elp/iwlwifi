@@ -61,6 +61,7 @@
  *
  *****************************************************************************/
 
+#include <linux/etherdevice.h>
 #include <net/cfg80211.h>
 #include <net/ipv6.h>
 #include "iwl-modparams.h"
