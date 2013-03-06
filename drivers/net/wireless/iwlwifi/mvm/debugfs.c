@@ -367,7 +367,7 @@ static ssize_t iwl_dbgfs_bt_notif_read(struct file *file, char __user *user_buf,
 	BT_MBOX_PRINT(3, SCO_STATE, false);
 	BT_MBOX_PRINT(3, SNIFF_STATE, false);
 	BT_MBOX_PRINT(3, A2DP_STATE, false);
-	BT_MBOX_PRINT(3, ACP_STATE, false);
+	BT_MBOX_PRINT(3, ACL_STATE, false);
 	BT_MBOX_PRINT(3, MSTR_STATE, false);
 	BT_MBOX_PRINT(3, OBX_STATE, false);
 	BT_MBOX_PRINT(3, OPEN_CON_2, false);
