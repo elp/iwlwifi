@@ -334,6 +334,10 @@ struct iwl_mvm {
 #ifdef CONFIG_PM_SLEEP
 	int gtk_ivlen, gtk_icvlen, ptk_ivlen, ptk_icvlen;
 #endif
+
+	/* BT-Coex */
+	u8 bt_kill_msk;
+	struct iwl_bt_coex_profile_notif last_bt_notif;
 };
 
 /* Extract MVM priv from op_mode and _hw */
@@ -503,5 +507,12 @@ void iwl_mvm_ipv6_addr_change(struct ieee80211_hw *hw,
 			      struct inet6_dev *idev);
 void iwl_mvm_set_default_unicast_key(struct ieee80211_hw *hw,
 				     struct ieee80211_vif *vif, int idx);
+
+/* BT Coex */
+int iwl_send_bt_prio_tbl(struct iwl_mvm *mvm);
+int iwl_send_bt_init_conf(struct iwl_mvm *mvm);
+int iwl_mvm_rx_bt_coex_notif(struct iwl_mvm *mvm,
+			     struct iwl_rx_cmd_buffer *rxb,
+			     struct iwl_device_cmd *cmd);
 
 #endif /* __IWL_MVM_H__ */
