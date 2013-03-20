@@ -174,7 +174,7 @@ int iwl_mvm_mac_setup_register(struct iwl_mvm *mvm)
 	hw->wiphy->n_iface_combinations =
 		ARRAY_SIZE(iwl_mvm_iface_combinations);
 
-	hw->wiphy->max_remain_on_channel_duration = 500;
+	hw->wiphy->max_remain_on_channel_duration = 10000;
 	hw->max_listen_interval = IWL_CONN_MAX_LISTEN_INTERVAL;
 
 	/* Extract MAC address */
@@ -1161,7 +1161,7 @@ static int iwl_mvm_roc(struct ieee80211_hw *hw,
 				       &chandef, 1, 1);
 
 	/* Schedule the time events */
-	ret = iwl_mvm_start_p2p_roc(mvm, vif, duration);
+	ret = iwl_mvm_start_p2p_roc(mvm, vif, duration, type);
 
 	mutex_unlock(&mvm->mutex);
 	IWL_DEBUG_MAC80211(mvm, "leave\n");
