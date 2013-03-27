@@ -301,8 +301,8 @@ static ssize_t iwl_dbgfs_power_down_d3_allow_write(struct file *file,
 }
 
 static ssize_t iwl_dbgfs_mac_params_read(struct file *file,
-				     char __user *user_buf,
-				     size_t count, loff_t *ppos)
+					 char __user *user_buf,
+					 size_t count, loff_t *ppos)
 {
 	struct ieee80211_vif *vif = file->private_data;
 	struct iwl_mvm_vif *mvmvif = iwl_mvm_vif_from_mac80211(vif);
