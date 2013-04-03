@@ -479,10 +479,8 @@ void iwl_mvm_cancel_scan(struct iwl_mvm *mvm);
 /* MVM debugfs */
 #ifdef CONFIG_IWLWIFI_DEBUGFS
 int iwl_mvm_dbgfs_register(struct iwl_mvm *mvm, struct dentry *dbgfs_dir);
-void iwl_mvm_vif_dbgfs_register(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
-				struct dentry *dbgfs_dir);
-void iwl_mvm_vif_dbgfs_clean(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
-			     struct dentry *dbgfs_dir);
+void iwl_mvm_vif_dbgfs_register(struct iwl_mvm *mvm, struct ieee80211_vif *vif);
+void iwl_mvm_vif_dbgfs_clean(struct iwl_mvm *mvm, struct ieee80211_vif *vif);
 #else
 static inline int iwl_mvm_dbgfs_register(struct iwl_mvm *mvm,
 					 struct dentry *dbgfs_dir)
@@ -490,13 +488,11 @@ static inline int iwl_mvm_dbgfs_register(struct iwl_mvm *mvm,
 	return 0;
 }
 static inline void
-iwl_mvm_vif_dbgfs_register(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
-			   struct dentry *dbgfs_dir)
+iwl_mvm_vif_dbgfs_register(struct iwl_mvm *mvm, struct ieee80211_vif *vif)
 {
 }
 static inline void
-iwl_mvm_vif_dbgfs_clean(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
-			struct dentry *dbgfs_dir)
+iwl_mvm_vif_dbgfs_clean(struct iwl_mvm *mvm, struct ieee80211_vif *vif)
 {
 }
 #endif /* CONFIG_IWLWIFI_DEBUGFS */
