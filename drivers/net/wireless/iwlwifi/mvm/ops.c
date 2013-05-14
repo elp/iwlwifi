@@ -293,6 +293,7 @@ static const char *iwl_mvm_cmd_strings[REPLY_MAX] = {
 	CMD(BT_PROFILE_NOTIFICATION),
 	CMD(BT_CONFIG),
 	CMD(MCAST_FILTER_CMD),
+	CMD(REPLY_BEACON_FILTERING_CMD),
 };
 #undef CMD
 
@@ -442,6 +443,10 @@ static void iwl_op_mode_mvm_stop(struct iwl_op_mode *op_mode)
 	ieee80211_unregister_hw(mvm->hw);
 
 	kfree(mvm->scan_cmd);
+
+#if defined(CONFIG_PM_SLEEP) && defined(CONFIG_IWLWIFI_DEBUGFS)
+	kfree(mvm->d3_resume_sram);
+#endif
 
 	iwl_trans_stop_hw(mvm->trans, true);
 

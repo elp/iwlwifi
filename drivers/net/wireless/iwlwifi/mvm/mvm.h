@@ -109,6 +109,7 @@ extern struct iwl_mvm_mod_params iwlmvm_mod_params;
 struct iwl_mvm_phy_ctxt {
 	u16 id;
 	u16 color;
+	u32 ref;
 
 	/*
 	 * TODO: This should probably be removed. Currently here only for rate
@@ -266,6 +267,12 @@ struct iwl_mvm {
 
 	unsigned long status;
 
+	/*
+	 * for beacon filtering -
+	 * currently only one interface can be supported
+	 */
+	struct iwl_mvm_vif *bf_allowed_vif;
+
 	enum iwl_ucode_type cur_ucode;
 	bool ucode_loaded;
 	bool init_ucode_run;
@@ -313,7 +320,7 @@ struct iwl_mvm {
 	bool prevent_power_down_d3;
 #endif
 
-	struct iwl_mvm_phy_ctxt phy_ctxt_roc;
+	struct iwl_mvm_phy_ctxt phy_ctxts[NUM_PHY_CTX];
 
 	struct list_head time_event_list;
 	spinlock_t time_event_lock;
@@ -338,6 +345,10 @@ struct iwl_mvm {
 
 #ifdef CONFIG_PM_SLEEP
 	int gtk_ivlen, gtk_icvlen, ptk_ivlen, ptk_icvlen;
+#ifdef CONFIG_IWLWIFI_DEBUGFS
+	bool store_d3_resume_sram;
+	void *d3_resume_sram;
+#endif
 #endif
 
 	/* BT-Coex */
@@ -443,8 +454,10 @@ int iwl_mvm_phy_ctxt_add(struct iwl_mvm *mvm, struct iwl_mvm_phy_ctxt *ctxt,
 int iwl_mvm_phy_ctxt_changed(struct iwl_mvm *mvm, struct iwl_mvm_phy_ctxt *ctxt,
 			     struct cfg80211_chan_def *chandef,
 			     u8 chains_static, u8 chains_dynamic);
-void iwl_mvm_phy_ctxt_remove(struct iwl_mvm *mvm,
-			     struct iwl_mvm_phy_ctxt *ctxt);
+void iwl_mvm_phy_ctxt_ref(struct iwl_mvm *mvm,
+			  struct iwl_mvm_phy_ctxt *ctxt);
+void iwl_mvm_phy_ctxt_unref(struct iwl_mvm *mvm,
+			    struct iwl_mvm_phy_ctxt *ctxt);
 
 /* MAC (virtual interface) programming */
 int iwl_mvm_mac_ctxt_init(struct iwl_mvm *mvm, struct ieee80211_vif *vif);
@@ -533,5 +546,11 @@ int iwl_mvm_rx_bt_coex_notif(struct iwl_mvm *mvm,
 void iwl_mvm_bt_rssi_event(struct iwl_mvm *mvm, struct ieee80211_vif *vif,
 			   enum ieee80211_rssi_event rssi_event);
 void iwl_mvm_bt_coex_vif_assoc(struct iwl_mvm *mvm, struct ieee80211_vif *vif);
+
+/* beacon filtering */
+int iwl_mvm_enable_beacon_filter(struct iwl_mvm *mvm,
+				 struct ieee80211_vif *vif);
+int iwl_mvm_disable_beacon_filter(struct iwl_mvm *mvm,
+				  struct ieee80211_vif *vif);
 
 #endif /* __IWL_MVM_H__ */
