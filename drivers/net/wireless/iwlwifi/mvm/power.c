@@ -283,5 +283,5 @@ int iwl_mvm_disable_beacon_filter(struct iwl_mvm *mvm,
 	if (!ret)
 		mvmvif->bf_enabled = false;
 
-	return iwl_mvm_beacon_filter_send_cmd(mvm, &cmd);
+	return ret;
 }
