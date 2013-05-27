@@ -101,19 +101,21 @@ enum iwl_power_flags {
  * @tx_data_timeout:    Minimum time (usec) from last Tx packet for AM to
  *			PSM transition - legacy PM
  * @sleep_interval:	not in use
- * @keep_alive_beacons:	not in use
+ * @skip_dtim_periods:	Number of DTIM periods to skip if Skip over DTIM flag
+ *			is set. For example, if it is required to skip over
+ *			one DTIM, this value need to be set to 2 (DTIM periods).
  * @lprx_rssi_threshold: Signal strength up to which LP RX can be enabled.
  *			Default: 80dbm
  */
 struct iwl_powertable_cmd {
-	/* PM_POWER_TABLE_CMD_API_S_VER_5 */
+	/* PM_POWER_TABLE_CMD_API_S_VER_6 */
 	__le16 flags;
 	u8 keep_alive_seconds;
 	u8 debug_flags;
 	__le32 rx_data_timeout;
 	__le32 tx_data_timeout;
 	__le32 sleep_interval[IWL_POWER_VEC_SIZE];
-	__le32 keep_alive_beacons;
+	__le32 skip_dtim_periods;
 	__le32 lprx_rssi_threshold;
 } __packed;
 
@@ -192,5 +194,14 @@ struct iwl_beacon_filter_cmd {
 #define IWL_BA_ESCAPE_TIMER_MIN 0
 
 #define IWL_BA_ENABLE_BEACON_ABORT_DEFAULT 1
+
+#define IWL_BF_CMD_CONFIG_DEFAULTS					\
+	.bf_energy_delta = IWL_BF_ENERGY_DELTA_DEFAULT,			\
+	.bf_roaming_energy_delta = IWL_BF_ROAMING_ENERGY_DELTA_DEFAULT,	\
+	.bf_roaming_state = IWL_BF_ROAMING_STATE_DEFAULT,		\
+	.bf_temperature_delta = IWL_BF_TEMPERATURE_DELTA_DEFAULT,	\
+	.bf_debug_flag = IWL_BF_DEBUG_FLAG_DEFAULT,			\
+	.bf_escape_timer = cpu_to_le32(IWL_BF_ESCAPE_TIMER_DEFAULT),	\
+	.ba_escape_timer = cpu_to_le32(IWL_BA_ESCAPE_TIMER_DEFAULT)
 
 #endif
