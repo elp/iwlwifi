@@ -76,6 +76,7 @@
 #define DTS_DIODE_VALID(flags)		(flags & DTS_DIODE_REG_FLAGS_PASS_ONCE)
 #define MIN_TEMPERATURE			0
 #define MAX_TEMPERATURE			125
+#define TEMPERATURE_ERROR		(MAX_TEMPERATURE + 1)
 #define PTAT_DIGITAL_VALUE_MIN_VALUE	0
 #define PTAT_DIGITAL_VALUE_MAX_VALUE	0xFF
 #define DTS_VREFS_NUM			5
@@ -227,7 +228,7 @@ static bool dts_read_ptat_avg_results(struct iwl_mvm *mvm,
 	 * fill vrefs fields, based on the avgVrefs results
 	 * and the diode value
 	 */
-	return dts_get_adjacent_vrefs(mvm, avg_ptat) &
+	return dts_get_adjacent_vrefs(mvm, avg_ptat) &&
 		DTS_DIODE_VALID(avg_ptat->bits.flags);
 }
 
@@ -253,7 +254,7 @@ static s32 calculate_nic_temperature(union dts_diode_results avg_ptat,
 
 	if (vrefs_diff < CALC_VREFS_MIN_DIFF ||
 	    vrefs_diff > CALC_VREFS_MAX_DIFF)
-		return MIN_TEMPERATURE - 1;
+		return TEMPERATURE_ERROR;
 
 	/* calculate the result: */
 	tmp_result =
@@ -290,18 +291,18 @@ static s32 check_nic_temperature(struct iwl_mvm *mvm)
 
 	volt_band_gap = iwl_mvm_dts_get_volt_band_gap(mvm);
 
-	do {
-		/* disable DTS */
-		iwl_write_prph(mvm->trans, SHR_MISC_WFM_DTS_EN, 0);
+	/* disable DTS */
+	iwl_write_prph(mvm->trans, SHR_MISC_WFM_DTS_EN, 0);
 
-		/* SV initialization */
-		iwl_write_prph(mvm->trans, SHR_MISC_WFM_DTS_EN, 1);
-		iwl_write_prph(mvm->trans, DTSC_CFG_MODE,
-			       DTSC_CFG_MODE_PERIODIC);
+	/* SV initialization */
+	iwl_write_prph(mvm->trans, SHR_MISC_WFM_DTS_EN, 1);
+	iwl_write_prph(mvm->trans, DTSC_CFG_MODE,
+		       DTSC_CFG_MODE_PERIODIC);
 
-		/* wait for results */
-		msleep(100);
-	} while (!dts_read_ptat_avg_results(mvm, &avg_ptat));
+	/* wait for results */
+	msleep(100);
+	if (!dts_read_ptat_avg_results(mvm, &avg_ptat))
+		return TEMPERATURE_ERROR;
 
 	/* disable DTS */
 	iwl_write_prph(mvm->trans, SHR_MISC_WFM_DTS_EN, 0);
