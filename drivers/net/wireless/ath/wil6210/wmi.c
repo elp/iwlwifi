@@ -409,7 +409,7 @@ static void wmi_evt_connect(struct wil6210_priv *wil, int id, void *d, int len)
 
 	if ((wdev->iftype == NL80211_IFTYPE_STATION) ||
 	    (wdev->iftype == NL80211_IFTYPE_P2P_CLIENT)) {
-		if (wdev->sme_state != CFG80211_SME_CONNECTING) {
+		if (!test_bit(wil_status_fwconnecting, &wil->status)) {
 			wil_err(wil, "Not in connecting state\n");
 			return;
 		}
@@ -433,6 +433,7 @@ static void wmi_evt_connect(struct wil6210_priv *wil, int id, void *d, int len)
 
 		cfg80211_new_sta(ndev, evt->bssid, &sinfo, GFP_KERNEL);
 	}
+	clear_bit(wil_status_fwconnecting, &wil->status);
 	set_bit(wil_status_fwconnected, &wil->status);
 
 	/* FIXME FW can transmit only ucast frames to peer */
@@ -728,7 +729,7 @@ int wmi_pcp_start(struct wil6210_priv *wil, int bi, u8 wmi_nettype, u8 chan)
 		.bcon_interval = cpu_to_le16(bi),
 		.network_type = wmi_nettype,
 		.disable_sec_offload = 1,
-		.channel = chan,
+		.channel = chan - 1,
 	};
 	struct {
 		struct wil6210_mbox_hdr_wmi wmi;
