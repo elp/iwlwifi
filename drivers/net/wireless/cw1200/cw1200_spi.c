@@ -13,7 +13,6 @@
  * published by the Free Software Foundation.
  */
 
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/gpio.h>
 #include <linux/delay.h>
@@ -436,6 +435,7 @@ static int cw1200_spi_disconnect(struct spi_device *func)
 	return 0;
 }
 
+#ifdef CONFIG_PM
 static int cw1200_spi_suspend(struct device *dev, pm_message_t state)
 {
 	struct sbus_priv *self = spi_get_drvdata(to_spi_device(dev));
@@ -451,6 +451,7 @@ static int cw1200_spi_resume(struct device *dev)
 {
 	return 0;
 }
+#endif
 
 static struct spi_driver spi_driver = {
 	.probe		= cw1200_spi_probe,
@@ -459,22 +460,11 @@ static struct spi_driver spi_driver = {
 		.name		= "cw1200_wlan_spi",
 		.bus            = &spi_bus_type,
 		.owner          = THIS_MODULE,
+#ifdef CONFIG_PM
 		.suspend        = cw1200_spi_suspend,
 		.resume         = cw1200_spi_resume,
+#endif
 	},
 };
 
-/* Init Module function -> Called by insmod */
-static int __init cw1200_spi_init(void)
-{
-	return spi_register_driver(&spi_driver);
-}
-
-/* Called at Driver Unloading */
-static void __exit cw1200_spi_exit(void)
-{
-	spi_unregister_driver(&spi_driver);
-}
-
-module_init(cw1200_spi_init);
-module_exit(cw1200_spi_exit);
+module_spi_driver(spi_driver);
