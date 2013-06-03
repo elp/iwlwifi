@@ -13,7 +13,6 @@
  * published by the Free Software Foundation.
  */
 
-#include <linux/version.h>
 #include <linux/module.h>
 #include <linux/gpio.h>
 #include <linux/delay.h>
@@ -25,8 +24,8 @@
 #include <linux/device.h>
 
 #include "cw1200.h"
-#include "sbus.h"
-#include <linux/cw1200_platform.h>
+#include "hwbus.h"
+#include <linux/platform_data/net-cw1200.h>
 #include "hwio.h"
 
 MODULE_AUTHOR("Solomon Peachy <speachy@sagrad.com>");
@@ -36,7 +35,7 @@ MODULE_ALIAS("spi:cw1200_wlan_spi");
 
 /* #define SPI_DEBUG */
 
-struct sbus_priv {
+struct hwbus_priv {
 	struct spi_device	*func;
 	struct cw1200_common	*core;
 	const struct cw1200_platform_data_spi *pdata;
@@ -59,7 +58,7 @@ struct sbus_priv {
 
 */
 
-static int cw1200_spi_memcpy_fromio(struct sbus_priv *self,
+static int cw1200_spi_memcpy_fromio(struct hwbus_priv *self,
 				     unsigned int addr,
 				     void *dst, int count)
 {
@@ -120,7 +119,7 @@ static int cw1200_spi_memcpy_fromio(struct sbus_priv *self,
 	return ret;
 }
 
-static int cw1200_spi_memcpy_toio(struct sbus_priv *self,
+static int cw1200_spi_memcpy_toio(struct hwbus_priv *self,
 				   unsigned int addr,
 				   const void *src, int count)
 {
@@ -188,7 +187,7 @@ static int cw1200_spi_memcpy_toio(struct sbus_priv *self,
 	return rval;
 }
 
-static void cw1200_spi_lock(struct sbus_priv *self)
+static void cw1200_spi_lock(struct hwbus_priv *self)
 {
 	unsigned long flags;
 
@@ -210,7 +209,7 @@ static void cw1200_spi_lock(struct sbus_priv *self)
 	return;
 }
 
-static void cw1200_spi_unlock(struct sbus_priv *self)
+static void cw1200_spi_unlock(struct hwbus_priv *self)
 {
 	unsigned long flags;
 
@@ -222,7 +221,7 @@ static void cw1200_spi_unlock(struct sbus_priv *self)
 
 static irqreturn_t cw1200_spi_irq_handler(int irq, void *dev_id)
 {
-	struct sbus_priv *self = dev_id;
+	struct hwbus_priv *self = dev_id;
 
 	if (self->core) {
 		cw1200_irq_handler(self->core);
@@ -232,7 +231,7 @@ static irqreturn_t cw1200_spi_irq_handler(int irq, void *dev_id)
 	}
 }
 
-static int cw1200_spi_irq_subscribe(struct sbus_priv *self)
+static int cw1200_spi_irq_subscribe(struct hwbus_priv *self)
 {
 	int ret;
 
@@ -256,7 +255,7 @@ exit:
 	return ret;
 }
 
-static int cw1200_spi_irq_unsubscribe(struct sbus_priv *self)
+static int cw1200_spi_irq_unsubscribe(struct hwbus_priv *self)
 {
 	int ret = 0;
 
@@ -269,12 +268,10 @@ static int cw1200_spi_irq_unsubscribe(struct sbus_priv *self)
 
 static int cw1200_spi_off(const struct cw1200_platform_data_spi *pdata)
 {
-	const struct resource *reset = pdata->reset;
-
-	if (reset) {
-		gpio_set_value(reset->start, 0);
+	if (pdata->reset) {
+		gpio_set_value(pdata->reset, 0);
 		msleep(30); /* Min is 2 * CLK32K cycles */
-		gpio_free(reset->start);
+		gpio_free(pdata->reset);
 	}
 
 	if (pdata->power_ctrl)
@@ -287,19 +284,16 @@ static int cw1200_spi_off(const struct cw1200_platform_data_spi *pdata)
 
 static int cw1200_spi_on(const struct cw1200_platform_data_spi *pdata)
 {
-	const struct resource *reset = pdata->reset;
-	const struct resource *powerup = pdata->reset;
-
 	/* Ensure I/Os are pulled low */
-	if (reset) {
-		gpio_request(reset->start, reset->name);
-		gpio_direction_output(reset->start, 0);
+	if (pdata->reset) {
+		gpio_request(pdata->reset, "cw1200_wlan_reset");
+		gpio_direction_output(pdata->reset, 0);
 	}
-	if (powerup) {
-		gpio_request(powerup->start, powerup->name);
-		gpio_direction_output(powerup->start, 0);
+	if (pdata->powerup) {
+		gpio_request(pdata->powerup, "cw1200_wlan_powerup");
+		gpio_direction_output(pdata->powerup, 0);
 	}
-	if (reset || powerup)
+	if (pdata->reset || pdata->powerup)
 		msleep(10); /* Settle time? */
 
 	/* Enable 3v3 and 1v8 to hardware */
@@ -320,31 +314,31 @@ static int cw1200_spi_on(const struct cw1200_platform_data_spi *pdata)
 	}
 
 	/* Enable POWERUP signal */
-	if (powerup) {
-		gpio_set_value(powerup->start, 1);
+	if (pdata->powerup) {
+		gpio_set_value(pdata->powerup, 1);
 		msleep(250); /* or more..? */
 	}
 	/* Enable RSTn signal */
-	if (reset) {
-		gpio_set_value(reset->start, 1);
+	if (pdata->reset) {
+		gpio_set_value(pdata->reset, 1);
 		msleep(50); /* Or more..? */
 	}
 	return 0;
 }
 
-static size_t cw1200_spi_align_size(struct sbus_priv *self, size_t size)
+static size_t cw1200_spi_align_size(struct hwbus_priv *self, size_t size)
 {
 	return size & 1 ? size + 1 : size;
 }
 
-static int cw1200_spi_pm(struct sbus_priv *self, bool suspend)
+static int cw1200_spi_pm(struct hwbus_priv *self, bool suspend)
 {
 	return irq_set_irq_wake(self->func->irq, suspend);
 }
 
-static struct sbus_ops cw1200_spi_sbus_ops = {
-	.sbus_memcpy_fromio	= cw1200_spi_memcpy_fromio,
-	.sbus_memcpy_toio	= cw1200_spi_memcpy_toio,
+static struct hwbus_ops cw1200_spi_hwbus_ops = {
+	.hwbus_memcpy_fromio	= cw1200_spi_memcpy_fromio,
+	.hwbus_memcpy_toio	= cw1200_spi_memcpy_toio,
 	.lock			= cw1200_spi_lock,
 	.unlock			= cw1200_spi_unlock,
 	.align_size		= cw1200_spi_align_size,
@@ -356,7 +350,7 @@ static int cw1200_spi_probe(struct spi_device *func)
 {
 	const struct cw1200_platform_data_spi *plat_data =
 		func->dev.platform_data;
-	struct sbus_priv *self;
+	struct hwbus_priv *self;
 	int status;
 
 	/* Sanity check speed */
@@ -390,7 +384,7 @@ static int cw1200_spi_probe(struct spi_device *func)
 
 	self = kzalloc(sizeof(*self), GFP_KERNEL);
 	if (!self) {
-		pr_err("Can't allocate SPI sbus_priv.");
+		pr_err("Can't allocate SPI hwbus_priv.");
 		return -ENOMEM;
 	}
 
@@ -402,7 +396,7 @@ static int cw1200_spi_probe(struct spi_device *func)
 
 	status = cw1200_spi_irq_subscribe(self);
 
-	status = cw1200_core_probe(&cw1200_spi_sbus_ops,
+	status = cw1200_core_probe(&cw1200_spi_hwbus_ops,
 				   self, &func->dev, &self->core,
 				   self->pdata->ref_clk,
 				   self->pdata->macaddr,
@@ -421,7 +415,7 @@ static int cw1200_spi_probe(struct spi_device *func)
 /* Disconnect Function to be called by SPI stack when device is disconnected */
 static int cw1200_spi_disconnect(struct spi_device *func)
 {
-	struct sbus_priv *self = spi_get_drvdata(func);
+	struct hwbus_priv *self = spi_get_drvdata(func);
 
 	if (self) {
 		cw1200_spi_irq_unsubscribe(self);
@@ -436,9 +430,10 @@ static int cw1200_spi_disconnect(struct spi_device *func)
 	return 0;
 }
 
+#ifdef CONFIG_PM
 static int cw1200_spi_suspend(struct device *dev, pm_message_t state)
 {
-	struct sbus_priv *self = spi_get_drvdata(to_spi_device(dev));
+	struct hwbus_priv *self = spi_get_drvdata(to_spi_device(dev));
 
 	if (!cw1200_can_suspend(self->core))
 		return -EAGAIN;
@@ -451,6 +446,7 @@ static int cw1200_spi_resume(struct device *dev)
 {
 	return 0;
 }
+#endif
 
 static struct spi_driver spi_driver = {
 	.probe		= cw1200_spi_probe,
@@ -459,22 +455,11 @@ static struct spi_driver spi_driver = {
 		.name		= "cw1200_wlan_spi",
 		.bus            = &spi_bus_type,
 		.owner          = THIS_MODULE,
+#ifdef CONFIG_PM
 		.suspend        = cw1200_spi_suspend,
 		.resume         = cw1200_spi_resume,
+#endif
 	},
 };
 
-/* Init Module function -> Called by insmod */
-static int __init cw1200_spi_init(void)
-{
-	return spi_register_driver(&spi_driver);
-}
-
-/* Called at Driver Unloading */
-static void __exit cw1200_spi_exit(void)
-{
-	spi_unregister_driver(&spi_driver);
-}
-
-module_init(cw1200_spi_init);
-module_exit(cw1200_spi_exit);
+module_spi_driver(spi_driver);

@@ -31,7 +31,7 @@
 
 #include "cw1200.h"
 #include "txrx.h"
-#include "sbus.h"
+#include "hwbus.h"
 #include "fwio.h"
 #include "hwio.h"
 #include "bh.h"
@@ -234,8 +234,10 @@ static const struct ieee80211_ops cw1200_ops = {
 	.get_stats		= cw1200_get_stats,
 	.ampdu_action		= cw1200_ampdu_action,
 	.flush			= cw1200_flush,
+#ifdef CONFIG_PM
 	.suspend		= cw1200_wow_suspend,
 	.resume			= cw1200_wow_resume,
+#endif
 	/* Intentionally not offloaded:					*/
 	/*.channel_switch	= cw1200_channel_switch,		*/
 	/*.remain_on_channel	= cw1200_remain_on_channel,		*/
@@ -292,10 +294,12 @@ static struct ieee80211_hw *cw1200_init_common(const u8 *macaddr,
 					  BIT(NL80211_IFTYPE_P2P_CLIENT) |
 					  BIT(NL80211_IFTYPE_P2P_GO);
 
+#ifdef CONFIG_PM
 	/* Support only for limited wowlan functionalities */
 	hw->wiphy->wowlan.flags = WIPHY_WOWLAN_ANY |
 		WIPHY_WOWLAN_DISCONNECT;
 	hw->wiphy->wowlan.n_patterns = 0;
+#endif
 
 	hw->wiphy->flags |= WIPHY_FLAG_AP_UAPSD;
 
@@ -419,18 +423,22 @@ static int cw1200_register_common(struct ieee80211_hw *dev)
 		goto done;
 #endif
 
+#ifdef CONFIG_PM
 	err = cw1200_pm_init(&priv->pm_state, priv);
 	if (err) {
 		pr_err("Cannot init PM. (%d).\n",
 		       err);
 		return err;
 	}
+#endif
 
 	err = ieee80211_register_hw(dev);
 	if (err) {
 		pr_err("Cannot register device (%d).\n",
 		       err);
+#ifdef CONFIG_PM
 		cw1200_pm_deinit(&priv->pm_state);
+#endif
 		return err;
 	}
 
@@ -482,7 +490,9 @@ static void cw1200_unregister_common(struct ieee80211_hw *dev)
 		cw1200_queue_deinit(&priv->tx_queue[i]);
 
 	cw1200_queue_stats_deinit(&priv->tx_queue_stats);
+#ifdef CONFIG_PM
 	cw1200_pm_deinit(&priv->pm_state);
+#endif
 }
 
 /* Clock is in KHz */
@@ -518,8 +528,8 @@ u32 cw1200_dpll_from_clk(u16 clk_khz)
 	}
 }
 
-int cw1200_core_probe(const struct sbus_ops *sbus_ops,
-		      struct sbus_priv *sbus,
+int cw1200_core_probe(const struct hwbus_ops *hwbus_ops,
+		      struct hwbus_priv *hwbus,
 		      struct device *pdev,
 		      struct cw1200_common **core,
 		      int ref_clk, const u8 *macaddr,
@@ -546,8 +556,8 @@ int cw1200_core_probe(const struct sbus_ops *sbus_ops,
 	if (cw1200_sdd_path)
 		priv->sdd_path = cw1200_sdd_path;
 
-	priv->sbus_ops = sbus_ops;
-	priv->sbus_priv = sbus;
+	priv->hwbus_ops = hwbus_ops;
+	priv->hwbus_priv = hwbus;
 	priv->pdev = pdev;
 	SET_IEEE80211_DEV(priv->hw, pdev);
 
@@ -606,9 +616,9 @@ EXPORT_SYMBOL_GPL(cw1200_core_probe);
 void cw1200_core_release(struct cw1200_common *self)
 {
 	/* Disable device interrupts */
-	self->sbus_ops->lock(self->sbus_priv);
+	self->hwbus_ops->lock(self->hwbus_priv);
 	__cw1200_irq_enable(self, 0);
-	self->sbus_ops->unlock(self->sbus_priv);
+	self->hwbus_ops->unlock(self->hwbus_priv);
 
 	/* And then clean up */
 	cw1200_unregister_common(self->hw);
