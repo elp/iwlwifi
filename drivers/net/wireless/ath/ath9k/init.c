@@ -778,6 +778,8 @@ void ath9k_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw)
 	if (AR_SREV_9160_10_OR_LATER(sc->sc_ah) || ath9k_modparam_nohwcrypt)
 		hw->flags |= IEEE80211_HW_MFP_CAPABLE;
 
+	hw->wiphy->features |= NL80211_FEATURE_ACTIVE_MONITOR;
+
 	hw->wiphy->interface_modes =
 		BIT(NL80211_IFTYPE_P2P_GO) |
 		BIT(NL80211_IFTYPE_P2P_CLIENT) |
@@ -797,21 +799,17 @@ void ath9k_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw)
 	hw->wiphy->flags |= WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL;
 
 #ifdef CONFIG_PM_SLEEP
-
 	if ((ah->caps.hw_caps & ATH9K_HW_WOW_DEVICE_CAPABLE) &&
 	    device_can_wakeup(sc->dev)) {
-
 		hw->wiphy->wowlan.flags = WIPHY_WOWLAN_MAGIC_PKT |
 					  WIPHY_WOWLAN_DISCONNECT;
 		hw->wiphy->wowlan.n_patterns = MAX_NUM_USER_PATTERN;
 		hw->wiphy->wowlan.pattern_min_len = 1;
 		hw->wiphy->wowlan.pattern_max_len = MAX_PATTERN_SIZE;
-
 	}
 
 	atomic_set(&sc->wow_sleep_proc_intr, -1);
 	atomic_set(&sc->wow_got_bmiss_intr, -1);
-
 #endif
 
 	hw->queues = 4;
