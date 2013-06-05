@@ -189,7 +189,8 @@ static int ieee80211_verify_mac(struct ieee80211_sub_if_data *sdata, u8 *addr,
 		if (iter == sdata)
 			continue;
 
-		if (iter->vif.type == NL80211_IFTYPE_MONITOR)
+		if (sdata->vif.type == NL80211_IFTYPE_MONITOR &&
+		    !(sdata->u.mntr_flags & MONITOR_FLAG_ACTIVE))
 			continue;
 
 		m = iter->vif.addr;
