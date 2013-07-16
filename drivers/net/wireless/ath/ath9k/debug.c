@@ -69,7 +69,7 @@ static ssize_t write_file_debug(struct file *file, const char __user *user_buf,
 		return -EFAULT;
 
 	buf[len] = '\0';
-	if (strict_strtoul(buf, 0, &mask))
+	if (kstrtoul(buf, 0, &mask))
 		return -EINVAL;
 
 	common->debug_mask = mask;
@@ -114,7 +114,7 @@ static ssize_t write_file_tx_chainmask(struct file *file, const char __user *use
 		return -EFAULT;
 
 	buf[len] = '\0';
-	if (strict_strtoul(buf, 0, &mask))
+	if (kstrtoul(buf, 0, &mask))
 		return -EINVAL;
 
 	ah->txchainmask = mask;
@@ -157,7 +157,7 @@ static ssize_t write_file_rx_chainmask(struct file *file, const char __user *use
 		return -EFAULT;
 
 	buf[len] = '\0';
-	if (strict_strtoul(buf, 0, &mask))
+	if (kstrtoul(buf, 0, &mask))
 		return -EINVAL;
 
 	ah->rxchainmask = mask;
@@ -244,7 +244,7 @@ static ssize_t write_file_ani(struct file *file,
 		return -EFAULT;
 
 	buf[len] = '\0';
-	if (strict_strtoul(buf, 0, &ani))
+	if (kstrtoul(buf, 0, &ani))
 		return -EINVAL;
 
 	if (ani < 0 || ani > 1)
@@ -300,7 +300,7 @@ static ssize_t write_file_ant_diversity(struct file *file,
 		goto exit;
 
 	buf[len] = '\0';
-	if (strict_strtoul(buf, 0, &antenna_diversity))
+	if (kstrtoul(buf, 0, &antenna_diversity))
 		return -EINVAL;
 
 	common->antenna_diversity = !!antenna_diversity;
@@ -1270,7 +1270,7 @@ static ssize_t write_file_regidx(struct file *file, const char __user *user_buf,
 		return -EFAULT;
 
 	buf[len] = '\0';
-	if (strict_strtoul(buf, 0, &regidx))
+	if (kstrtoul(buf, 0, &regidx))
 		return -EINVAL;
 
 	sc->debug.regidx = regidx;
@@ -1315,7 +1315,7 @@ static ssize_t write_file_regval(struct file *file, const char __user *user_buf,
 		return -EFAULT;
 
 	buf[len] = '\0';
-	if (strict_strtoul(buf, 0, &regval))
+	if (kstrtoul(buf, 0, &regval))
 		return -EINVAL;
 
 	ath9k_ps_wakeup(sc);
