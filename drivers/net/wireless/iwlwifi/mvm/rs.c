@@ -270,20 +270,22 @@ static inline u8 rs_is_valid_ant(u8 valid_antenna, u8 ant_type)
  *	removes the old data from the statistics. All data that is older than
  *	TID_MAX_TIME_DIFF, will be deleted.
  */
-static void rs_tl_rm_old_stats(struct iwl_traffic_load *tl, u32 curr_time)
+static void rs_tl_rm_old_stats(struct iwl_traffic_load *tl, u32 now)
 {
-	/* The oldest age we want to keep */
-	u32 oldest_time = curr_time - TID_MAX_TIME_DIFF;
-
-	while (tl->queue_count &&
-	       (tl->time_stamp < oldest_time)) {
+	while (tl->total &&
+	       TIME_WRAP_AROUND(tl->time_stamp, now) > TID_MAX_TIME_DIFF) {
 		tl->total -= tl->packet_count[tl->head];
 		tl->packet_count[tl->head] = 0;
 		tl->time_stamp += TID_QUEUE_CELL_SPACING;
-		tl->queue_count--;
 		tl->head++;
 		if (tl->head >= TID_QUEUE_MAX_SIZE)
 			tl->head = 0;
+	}
+
+	/* re-initialize window if no packets are left */
+	if (!tl->total) {
+		tl->time_stamp = now;
+		tl->head = 0;
 	}
 }
 
@@ -297,7 +299,7 @@ static u8 rs_tl_add_packet(struct iwl_lq_sta *lq_data,
 	u32 curr_time = jiffies_to_msecs(jiffies);
 	u32 time_diff;
 	s32 index;
-	struct iwl_traffic_load *tl = NULL;
+	struct iwl_traffic_load *tl;
 	u8 tid;
 
 	if (ieee80211_is_data_qos(hdr->frame_control)) {
@@ -314,30 +316,20 @@ static u8 rs_tl_add_packet(struct iwl_lq_sta *lq_data,
 
 	curr_time -= curr_time % TID_ROUND_VALUE;
 
-	/* Happens only for the first packet. Initialize the data */
-	if (!(tl->queue_count)) {
-		tl->total = 1;
-		tl->time_stamp = curr_time;
-		tl->queue_count = 1;
-		tl->head = 0;
-		tl->packet_count[0] = 1;
-		return IWL_MAX_TID_COUNT;
-	}
+	/* Initialize data and remove old stats if needed */
+	rs_tl_rm_old_stats(tl, curr_time);
 
 	time_diff = TIME_WRAP_AROUND(tl->time_stamp, curr_time);
 	index = time_diff / TID_QUEUE_CELL_SPACING;
 
-	/* The history is too long: remove data that is older than */
-	/* TID_MAX_TIME_DIFF */
-	if (index >= TID_QUEUE_MAX_SIZE)
-		rs_tl_rm_old_stats(tl, curr_time);
+	/* make sure the index is valid */
+	if (WARN_ON_ONCE(index >= TID_QUEUE_MAX_SIZE))
+		return IWL_MAX_TID_COUNT;
 
 	index = (tl->head + index) % TID_QUEUE_MAX_SIZE;
 	tl->packet_count[index] = tl->packet_count[index] + 1;
 	tl->total = tl->total + 1;
 
-	if ((index + 1) > tl->queue_count)
-		tl->queue_count = index + 1;
 
 	return tid;
 }
@@ -373,8 +365,6 @@ static void rs_program_fix_rate(struct iwl_mvm *mvm,
 static u32 rs_tl_get_load(struct iwl_lq_sta *lq_data, u8 tid)
 {
 	u32 curr_time = jiffies_to_msecs(jiffies);
-	u32 time_diff;
-	s32 index;
 	struct iwl_traffic_load *tl = NULL;
 
 	if (tid >= IWL_MAX_TID_COUNT)
@@ -384,16 +374,7 @@ static u32 rs_tl_get_load(struct iwl_lq_sta *lq_data, u8 tid)
 
 	curr_time -= curr_time % TID_ROUND_VALUE;
 
-	if (!(tl->queue_count))
-		return 0;
-
-	time_diff = TIME_WRAP_AROUND(tl->time_stamp, curr_time);
-	index = time_diff / TID_QUEUE_CELL_SPACING;
-
-	/* The history is too long: remove data that is older than */
-	/* TID_MAX_TIME_DIFF */
-	if (index >= TID_QUEUE_MAX_SIZE)
-		rs_tl_rm_old_stats(tl, curr_time);
+	rs_tl_rm_old_stats(tl, curr_time);
 
 	return tl->total;
 }

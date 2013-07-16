@@ -296,8 +296,6 @@ struct iwl_traffic_load {
 						 * slice */
 	u32 total;			/* total num of packets during the
 					 * last TID_MAX_TIME_DIFF */
-	u8 queue_count;			/* number of queues that has
-					 * been used since the last cleanup */
 	u8 head;			/* start of the circular buffer */
 };
 
