@@ -223,8 +223,6 @@ int iwl_mvm_mac_setup_register(struct iwl_mvm *mvm)
 
 	if (iwlmvm_mod_params.power_scheme != IWL_POWER_SCHEME_CAM)
 		hw->wiphy->flags |= WIPHY_FLAG_PS_ON_BY_DEFAULT;
-	else
-		hw->wiphy->flags &= ~WIPHY_FLAG_PS_ON_BY_DEFAULT;
 
 	hw->wiphy->features |= NL80211_FEATURE_P2P_GO_CTWIN |
 			       NL80211_FEATURE_P2P_GO_OPPPS;
@@ -1210,37 +1208,36 @@ static int iwl_mvm_roc(struct ieee80211_hw *hw,
 
 	mutex_lock(&mvm->mutex);
 
-	for (i = 0; i < NUM_PHY_CTX; i++) {
-		phy_ctxt = &mvm->phy_ctxts[i];
-		if (phy_ctxt->ref == 0 || mvmvif->phy_ctxt == phy_ctxt)
-			continue;
-
-		if (phy_ctxt->ref && channel == phy_ctxt->channel) {
-			/*
-			 * Unbind the P2P_DEVICE from the current PHY context,
-			 * and if the PHY context is not used remove it.
-			 */
-			ret = iwl_mvm_binding_remove_vif(mvm, vif);
-			if (WARN(ret, "Failed unbinding P2P_DEVICE\n"))
-				goto out_unlock;
-
-			iwl_mvm_phy_ctxt_unref(mvm, mvmvif->phy_ctxt);
-
-			/* Bind the P2P_DEVICE to the current PHY Context */
-			mvmvif->phy_ctxt = phy_ctxt;
-
-			ret = iwl_mvm_binding_add_vif(mvm, vif);
-			if (WARN(ret, "Failed binding P2P_DEVICE\n"))
-				goto out_unlock;
-
-			iwl_mvm_phy_ctxt_ref(mvm, mvmvif->phy_ctxt);
-			goto schedule_time_event;
-		}
-	}
-
 	/* Need to update the PHY context only if the ROC channel changed */
 	if (channel == mvmvif->phy_ctxt->channel)
 		goto schedule_time_event;
+
+	for (i = 0; i < NUM_PHY_CTX; i++) {
+		phy_ctxt = &mvm->phy_ctxts[i];
+		if (phy_ctxt->ref == 0 || mvmvif->phy_ctxt == phy_ctxt ||
+		    channel != phy_ctxt->channel)
+			continue;
+
+		/*
+		 * Unbind the P2P_DEVICE from the current PHY context,
+		 * and if the PHY context is not used remove it.
+		 */
+		ret = iwl_mvm_binding_remove_vif(mvm, vif);
+		if (WARN(ret, "Failed unbinding P2P_DEVICE\n"))
+			goto out_unlock;
+
+		iwl_mvm_phy_ctxt_unref(mvm, mvmvif->phy_ctxt);
+
+		/* Bind the P2P_DEVICE to the current PHY Context */
+		mvmvif->phy_ctxt = phy_ctxt;
+
+		ret = iwl_mvm_binding_add_vif(mvm, vif);
+		if (WARN(ret, "Failed binding P2P_DEVICE\n"))
+			goto out_unlock;
+
+		iwl_mvm_phy_ctxt_ref(mvm, mvmvif->phy_ctxt);
+		goto schedule_time_event;
+	}
 
 	cfg80211_chandef_create(&chandef, channel, NL80211_CHAN_NO_HT);
 

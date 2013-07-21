@@ -434,6 +434,8 @@ struct agg_tx_status {
 #define TX_RES_RATE_TABLE_COLOR_MSK 0x70
 #define TX_RES_INV_RATE_INDEX_MSK 0x80
 
+#define IWL_MVM_TX_RES_GET_COL(_tlc_info) \
+	(((_tlc_info) & TX_RES_RATE_TABLE_COLOR_MSK) >> 4)
 #define IWL_MVM_TX_RES_GET_TID(_ra_tid) ((_ra_tid) & 0x0f)
 #define IWL_MVM_TX_RES_GET_RA(_ra_tid) ((_ra_tid) >> 4)
 

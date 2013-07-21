@@ -567,6 +567,7 @@ static void iwl_mvm_rx_tx_cmd_single(struct iwl_mvm *mvm,
 	struct sk_buff_head skbs;
 	u8 skb_freed = 0;
 	u16 next_reclaimed, seq_ctl;
+	long tlc_info;
 
 	__skb_queue_head_init(&skbs);
 
@@ -614,6 +615,10 @@ static void iwl_mvm_rx_tx_cmd_single(struct iwl_mvm *mvm,
 			struct ieee80211_hdr *hdr = (void *)skb->data;
 			seq_ctl = le16_to_cpu(hdr->seq_ctrl);
 		}
+
+		/* TODO: add some BUILD_BUG_ON */
+		tlc_info = tx_resp->tlc_info;
+		info->rate_driver_data[1] = (void *)tlc_info;
 
 		ieee80211_tx_status_ni(mvm->hw, skb);
 	}

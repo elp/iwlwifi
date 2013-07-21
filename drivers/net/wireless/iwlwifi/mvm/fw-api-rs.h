@@ -267,6 +267,10 @@ enum {
 /* Link quality command flags, only this one is available */
 #define  LQ_FLAG_SET_STA_TLC_RTS_MSK	BIT(0)
 
+/* Rate table coloring for TX command response */
+#define  LINK_QUAL_FLAGS_TABLE_COLOR_POS (1)
+#define  LINK_QUAL_FLAGS_TABLE_COLOR_MSK (7 << LINK_QUAL_FLAGS_TABLE_COLOR_POS)
+
 /**
  * struct iwl_lq_cmd - link quality command
  * @sta_id: station to update

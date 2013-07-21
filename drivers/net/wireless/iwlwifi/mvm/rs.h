@@ -322,6 +322,7 @@ struct iwl_lq_sta {
 
 	u8 action_counter;	/* # mode-switch actions tried */
 	u8 is_green;
+	u8 color;
 	enum ieee80211_band band;
 
 	/* The following are bitmaps of rates; IWL_RATE_6M_MASK, etc. */

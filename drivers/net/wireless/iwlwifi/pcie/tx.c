@@ -74,7 +74,7 @@ static int iwl_queue_space(const struct iwl_queue *q)
 		s += q->n_window;
 	/* keep some reserve to not confuse empty and full situations */
 	s -= 2;
-	if (s < 0)
+	if (WARN_ON_ONCE(s < 0))
 		s = 0;
 	return s;
 }
@@ -105,6 +105,10 @@ static int iwl_queue_init(struct iwl_queue *q, int count, int slots_num, u32 id)
 	q->high_mark = q->n_window / 8;
 	if (q->high_mark < 2)
 		q->high_mark = 2;
+
+	/* make sure we can actually reach the low_mark */
+	if (WARN_ON(count < q->low_mark))
+		return -EINVAL;
 
 	q->write_ptr = 0;
 	q->read_ptr = 0;
@@ -1443,8 +1447,8 @@ void iwl_pcie_hcmd_complete(struct iwl_trans *trans,
 				 get_cmd_string(trans_pcie, cmd->hdr.cmd));
 		}
 		clear_bit(STATUS_HCMD_ACTIVE, &trans_pcie->status);
-		IWL_DEBUG_INFO(trans, "Clearing HCMD_ACTIVE for command %s\n",
-			       get_cmd_string(trans_pcie, cmd->hdr.cmd));
+		IWL_DEBUG_INFO(trans, "Clearing HCMD_ACTIVE for command %s (0x%x)\n",
+			       get_cmd_string(trans_pcie, cmd->hdr.cmd), cmd->hdr.cmd);
 		wake_up(&trans_pcie->wait_command_queue);
 	}
 

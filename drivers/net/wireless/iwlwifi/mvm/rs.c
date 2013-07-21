@@ -274,6 +274,8 @@ static void rs_tl_rm_old_stats(struct iwl_traffic_load *tl, u32 now)
 {
 	while (tl->total &&
 	       TIME_WRAP_AROUND(tl->time_stamp, now) > TID_MAX_TIME_DIFF) {
+		printk("%s: head=%d, packet_count = %d total=%d\n", __func__,
+			tl->head, tl->packet_count[tl->head], tl->total);
 		tl->total -= tl->packet_count[tl->head];
 		tl->packet_count[tl->head] = 0;
 		tl->time_stamp += TID_QUEUE_CELL_SPACING;
@@ -293,7 +295,8 @@ static void rs_tl_rm_old_stats(struct iwl_traffic_load *tl, u32 now)
  *	increment traffic load value for tid and also remove
  *	any old values if passed the certain time period
  */
-static u8 rs_tl_add_packet(struct iwl_lq_sta *lq_data,
+static u8 rs_tl_add_packet(struct iwl_mvm *mvm,
+			   struct iwl_lq_sta *lq_data,
 			   struct ieee80211_hdr *hdr)
 {
 	u32 curr_time = jiffies_to_msecs(jiffies);
@@ -330,6 +333,9 @@ static u8 rs_tl_add_packet(struct iwl_lq_sta *lq_data,
 	tl->packet_count[index] = tl->packet_count[index] + 1;
 	tl->total = tl->total + 1;
 
+	IWL_DEBUG_RATE(mvm,
+		"tid:%d packet_count: %d head: %d index: %d total:%d\n",
+		tid, tl->packet_count[index], tl->head, index, tl->total);
 
 	return tid;
 }
@@ -602,7 +608,8 @@ static int rs_get_tbl_info_from_mcs(const u32 rate_n_flags,
 	tbl->max_search = IWL_MAX_SEARCH;
 
 	/* legacy rate format */
-	if (!(rate_n_flags & RATE_MCS_HT_MSK)) {
+	if (!(rate_n_flags & RATE_MCS_HT_MSK) &&
+	    !(rate_n_flags & RATE_MCS_VHT_MSK)) {
 		if (num_of_ant == 1) {
 			if (band == IEEE80211_BAND_5GHZ)
 				tbl->lq_type = LQ_A;
@@ -672,6 +679,11 @@ static int rs_toggle_antenna(u32 valid_ant, u32 *rate_n_flags,
  */
 static bool rs_use_green(struct ieee80211_sta *sta)
 {
+	struct iwl_mvm_sta *sta_priv = (void *)sta->drv_priv;
+return false;
+	return (sta->ht_cap.cap & IEEE80211_HT_CAP_GRN_FLD)/* &&
+		!(ctx->ht.non_gf_sta_present)*/;
+#if 0
 	/*
 	 * There's a bug somewhere in this code that causes the
 	 * scaling to get stuck because GF+SGI can't be combined
@@ -680,6 +692,7 @@ static bool rs_use_green(struct ieee80211_sta *sta)
 	 * GF APs since we can always receive GF transmissions.
 	 */
 	return false;
+#endif
 }
 
 /**
@@ -798,6 +811,7 @@ static u32 rs_get_lower_rate(struct iwl_lq_sta *lq_sta,
 	if (is_legacy(tbl->lq_type)) {
 		/* supp_rates has no CCK bits in A mode */
 		if (lq_sta->band == IEEE80211_BAND_5GHZ)
+			// WTF - the "<<" makes no sense
 			rate_mask  = (u16)(rate_mask &
 			   (lq_sta->supp_rates << IWL_FIRST_OFDM_RATE));
 		else
@@ -848,6 +862,7 @@ static void rs_tx_status(void *mvm_r, struct ieee80211_supported_band *sband,
 	struct iwl_mvm *mvm = IWL_OP_MODE_GET_MVM(op_mode);
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	enum mac80211_rate_control_flags mac_flags;
+	u8 tlc_info;
 	u32 tx_rate;
 	struct iwl_scale_tbl_info tbl_type;
 	struct iwl_scale_tbl_info *curr_tbl, *other_tbl, *tmp_tbl;
@@ -888,6 +903,9 @@ static void rs_tx_status(void *mvm_r, struct ieee80211_supported_band *sband,
 		rs_index -= IWL_FIRST_OFDM_RATE;
 	mac_flags = info->status.rates[0].flags;
 	mac_index = info->status.rates[0].idx;
+	IWL_DEBUG_RATE(mvm, "mac_index %d rs_index %d tx_rate 0x%x\n",
+		       mac_index, rs_index, tx_rate);
+
 	/* For HT packets, map MCS to PLCP */
 	if (mac_flags & IEEE80211_TX_RC_MCS) {
 		/* Remove # of streams */
@@ -901,6 +919,16 @@ static void rs_tx_status(void *mvm_r, struct ieee80211_supported_band *sband,
 		if (info->band == IEEE80211_BAND_2GHZ)
 			mac_index += IWL_FIRST_OFDM_RATE;
 	}
+
+	tlc_info = (long)info->rate_driver_data[1];
+	if (!(info->flags & IEEE80211_TX_CTL_AMPDU) &&
+	    lq_sta->color != IWL_MVM_TX_RES_GET_COL(tlc_info))
+		IWL_DEBUG_RATE(mvm, "mis match: tlc_info: 0x%x, color: 0x%x (cur: 0x%x) (A:%d)\n",
+			tlc_info,
+			IWL_MVM_TX_RES_GET_COL(tlc_info),
+			lq_sta->color,
+			!!(info->flags & IEEE80211_TX_CTL_AMPDU));
+		
 	/* Here we actually compare this rate to the latest LQ command */
 	if ((mac_index < 0) ||
 	    (tbl_type.is_SGI != !!(mac_flags & IEEE80211_TX_RC_SHORT_GI)) ||
@@ -960,6 +988,8 @@ static void rs_tx_status(void *mvm_r, struct ieee80211_supported_band *sband,
 		rs_stay_in_table(lq_sta, true);
 		goto done;
 	}
+	IWL_DEBUG_RATE(mvm, "actual - lq:%x, ant:%x, SGI:%d\n",
+		tbl_type.lq_type, tbl_type.ant_type, tbl_type.is_SGI);
 
 	/*
 	 * Updating the frame history depends on whether packets were
@@ -1370,8 +1400,7 @@ static int rs_move_legacy_other(struct iwl_mvm *mvm,
 	struct iwl_scale_tbl_info *search_tbl =
 				&(lq_sta->lq_info[(1 - lq_sta->active_tbl)]);
 	struct iwl_rate_scale_data *window = &(tbl->win[index]);
-	u32 sz = (sizeof(struct iwl_scale_tbl_info) -
-		  (sizeof(struct iwl_rate_scale_data) * IWL_RATE_COUNT));
+	u32 sz = offsetof(struct iwl_scale_tbl_info, win);
 	u8 start_action;
 	u8 valid_tx_ant = iwl_fw_valid_tx_ant(mvm->fw);
 	u8 tx_chains_num = num_of_ant(valid_tx_ant);
@@ -2070,6 +2099,7 @@ static void rs_update_rate_tbl(struct iwl_mvm *mvm,
 	/* Update uCode's rate table. */
 	rate = rate_n_flags_from_tbl(mvm, tbl, index, is_green);
 	rs_fill_link_cmd(mvm, lq_sta, rate);
+//	IWL_DEBUG_RATE(mvm,"update: n_flags: 0x%x\n", lq_sta->lq.
 	iwl_mvm_send_lq_cmd(mvm, &lq_sta->lq, CMD_ASYNC, false);
 }
 
@@ -2116,7 +2146,7 @@ static void rs_rate_scale_perform(struct iwl_mvm *mvm,
 
 	lq_sta->supp_rates = sta->supp_rates[lq_sta->band];
 
-	tid = rs_tl_add_packet(lq_sta, hdr);
+	tid = rs_tl_add_packet(mvm, lq_sta, hdr);
 	if ((tid != IWL_MAX_TID_COUNT) &&
 	    (lq_sta->tx_agg_tid_en & (1 << tid))) {
 		tid_data = &sta_priv->tid_data[tid];
@@ -2229,8 +2259,7 @@ static void rs_rate_scale_perform(struct iwl_mvm *mvm,
 	}
 	/* Else we have enough samples; calculate estimate of
 	 * actual average throughput */
-	if (window->average_tpt != ((window->success_ratio *
-			tbl->expected_tpt[index] + 64) / 128)) {
+	if (WARN_ON(window->average_tpt == IWL_INVALID_VALUE)) {
 		IWL_ERR(mvm,
 			"expected_tpt should have been calculated by now\n");
 		window->average_tpt = ((window->success_ratio *
@@ -2305,6 +2334,9 @@ static void rs_rate_scale_perform(struct iwl_mvm *mvm,
 		low_tpt = tbl->win[low].average_tpt;
 	if (high != IWL_RATE_INVALID)
 		high_tpt = tbl->win[high].average_tpt;
+
+	IWL_DEBUG_RATE(mvm, "current[%d]=%d, low[%d]=%d, high[%d]=%d\n",
+		index, current_tpt, low, low_tpt, high, high_tpt);
 
 	scale_action = 0;
 
@@ -2500,6 +2532,20 @@ lq_update:
 	}
 
 out:
+
+#ifdef CONFIG_MAC80211_DEBUGFS
+	/* start ba session in case of fixed rate */
+	if (lq_sta->dbg_fixed_rate &&
+	    tid != IWL_MAX_TID_COUNT &&
+	    lq_sta->tx_agg_tid_en & BIT(tid)) {
+		tid_data = &sta_priv->tid_data[tid];
+		if (tid_data->state == IWL_AGG_OFF) {
+			IWL_DEBUG_RATE(mvm, "try to aggregate tid %d\n", tid);
+			rs_tl_turn_on_agg(mvm, tid, lq_sta, sta);
+		}
+	}
+#endif
+
 	tbl->current_rate = rate_n_flags_from_tbl(mvm, tbl, index, is_green);
 	lq_sta->last_txrate_idx = index;
 }
@@ -2877,6 +2923,10 @@ static void rs_fill_link_cmd(struct iwl_mvm *mvm,
 	 */
 	if (mvm && BT_MBOX_MSG(&mvm->last_bt_notif, 3, TRAFFIC_LOAD) >= 2)
 		lq_cmd->agg_time_limit = cpu_to_le16(1200);
+
+	lq_sta->color = (lq_sta->color + 1) & 0x7;
+	lq_cmd->flags &= ~LINK_QUAL_FLAGS_TABLE_COLOR_MSK;
+	lq_cmd->flags |= lq_sta->color << LINK_QUAL_FLAGS_TABLE_COLOR_POS;
 }
 
 static void *rs_alloc(struct ieee80211_hw *hw, struct dentry *debugfsdir)
