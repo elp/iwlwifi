@@ -195,24 +195,28 @@ enum iwl_dbgfs_bf_mask {
 	MVM_DEBUGFS_BF_ENERGY_DELTA = BIT(0),
 	MVM_DEBUGFS_BF_ROAMING_ENERGY_DELTA = BIT(1),
 	MVM_DEBUGFS_BF_ROAMING_STATE = BIT(2),
-	MVM_DEBUGFS_BF_TEMPERATURE_DELTA = BIT(3),
-	MVM_DEBUGFS_BF_ENABLE_BEACON_FILTER = BIT(4),
-	MVM_DEBUGFS_BF_DEBUG_FLAG = BIT(5),
-	MVM_DEBUGFS_BF_ESCAPE_TIMER = BIT(6),
-	MVM_DEBUGFS_BA_ESCAPE_TIMER = BIT(7),
-	MVM_DEBUGFS_BA_ENABLE_BEACON_ABORT = BIT(8),
+	MVM_DEBUGFS_BF_TEMP_THRESHOLD = BIT(3),
+	MVM_DEBUGFS_BF_TEMP_FAST_FILTER = BIT(4),
+	MVM_DEBUGFS_BF_TEMP_SLOW_FILTER = BIT(5),
+	MVM_DEBUGFS_BF_ENABLE_BEACON_FILTER = BIT(6),
+	MVM_DEBUGFS_BF_DEBUG_FLAG = BIT(7),
+	MVM_DEBUGFS_BF_ESCAPE_TIMER = BIT(8),
+	MVM_DEBUGFS_BA_ESCAPE_TIMER = BIT(9),
+	MVM_DEBUGFS_BA_ENABLE_BEACON_ABORT = BIT(10),
 };
 
 struct iwl_dbgfs_bf {
-	u8 bf_energy_delta;
-	u8 bf_roaming_energy_delta;
-	u8 bf_roaming_state;
-	u8 bf_temperature_delta;
-	u8 bf_enable_beacon_filter;
-	u8 bf_debug_flag;
+	u32 bf_energy_delta;
+	u32 bf_roaming_energy_delta;
+	u32 bf_roaming_state;
+	u32 bf_temp_threshold;
+	u32 bf_temp_fast_filter;
+	u32 bf_temp_slow_filter;
+	u32 bf_enable_beacon_filter;
+	u32 bf_debug_flag;
 	u32 bf_escape_timer;
 	u32 ba_escape_timer;
-	u8 ba_enable_beacon_abort;
+	u32 ba_enable_beacon_abort;
 	int mask;
 };
 #endif
@@ -473,6 +477,9 @@ struct iwl_mvm {
 	 * IMPORTANT: this variable counts all interfaces except P2P device.
 	 */
 	u8 vif_count;
+
+	/* -1 for always, 0 for never, >0 for that many times */
+	s8 restart_fw;
 
 	struct led_classdev led;
 
