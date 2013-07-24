@@ -235,6 +235,14 @@ static void mwifiex_pcie_remove(struct pci_dev *pdev)
 	kfree(card);
 }
 
+static void mwifiex_pcie_shutdown(struct pci_dev *pdev)
+{
+	user_rmmod = 1;
+	mwifiex_pcie_remove(pdev);
+
+	return;
+}
+
 static DEFINE_PCI_DEVICE_TABLE(mwifiex_ids) = {
 	{
 		PCIE_VENDOR_ID_MARVELL, PCIE_DEVICE_ID_MARVELL_88W8766P,
@@ -268,6 +276,7 @@ static struct pci_driver __refdata mwifiex_pcie = {
 		.pm = &mwifiex_pcie_pm_ops,
 	},
 #endif
+	.shutdown = mwifiex_pcie_shutdown,
 };
 
 /*
@@ -1933,7 +1942,7 @@ mwifiex_check_fw_status(struct mwifiex_adapter *adapter, u32 poll_num)
 			ret = 0;
 			break;
 		} else {
-			mdelay(100);
+			msleep(100);
 			ret = -1;
 		}
 	}
@@ -1945,12 +1954,10 @@ mwifiex_check_fw_status(struct mwifiex_adapter *adapter, u32 poll_num)
 		else if (!winner_status) {
 			dev_err(adapter->dev, "PCI-E is the winner\n");
 			adapter->winner = 1;
-			ret = -1;
 		} else {
 			dev_err(adapter->dev,
 				"PCI-E is not the winner <%#x,%d>, exit dnld\n",
 				ret, adapter->winner);
-			ret = 0;
 		}
 	}
 
