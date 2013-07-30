@@ -139,8 +139,11 @@ static int iwl_hwrate_to_plcp_idx(u32 rate_n_flags)
 		if ((idx >= IWL_FIRST_OFDM_RATE) && (idx <= IWL_LAST_OFDM_RATE))
 			return idx;
 
-	/* legacy rate format, search for match in table */
+	} else if (rate_n_flags & RATE_MCS_VHT_MSK) {
+		/* VHT rate format */
+		return IWL_RATE_MIMO2_60M_PLCP;
 	} else {
+		/* legacy rate format, search for match in table */
 		for (idx = 0; idx < ARRAY_SIZE(iwl_rates); idx++)
 			if (iwl_rates[idx].plcp ==
 					rs_extract_rate(rate_n_flags))
@@ -488,16 +491,8 @@ static int rs_get_tbl_info_from_mcs(const u32 rate_n_flags,
 	tbl->lq_type = LQ_NONE;
 	tbl->max_search = IWL_MAX_SEARCH;
 
-	/* legacy rate format */
-	if (!(rate_n_flags & RATE_MCS_HT_MSK)) {
-		if (num_of_ant == 1) {
-			if (band == IEEE80211_BAND_5GHZ)
-				tbl->lq_type = LQ_A;
-			else
-				tbl->lq_type = LQ_G;
-		}
 	/* HT rate format */
-	} else {
+	if (rate_n_flags & RATE_MCS_HT_MSK) {
 		if (rate_n_flags & RATE_MCS_SGI_MSK)
 			tbl->is_SGI = 1;
 
@@ -517,7 +512,19 @@ static int rs_get_tbl_info_from_mcs(const u32 rate_n_flags,
 		} else {
 			WARN_ON_ONCE(num_of_ant == 3);
 		}
+	} else if (rate_n_flags & RATE_MCS_VHT_MSK) {
+		tbl->lq_type = LQ_MIMO2;
+		tbl->is_SGI = 1;
+	} else {
+		/* Legacy rate format */
+		if (num_of_ant == 1) {
+			if (band == IEEE80211_BAND_5GHZ)
+				tbl->lq_type = LQ_A;
+			else
+				tbl->lq_type = LQ_G;
+		}
 	}
+
 	return 0;
 }
 
@@ -2088,6 +2095,20 @@ lq_update:
 	}
 
 out:
+
+#ifdef CONFIG_MAC80211_DEBUGFS
+	/* start ba session in case of fixed rate */
+	if (lq_sta->dbg_fixed_rate &&
+	    tid != IWL_MAX_TID_COUNT &&
+	    lq_sta->tx_agg_tid_en & BIT(tid)) {
+		tid_data = &sta_priv->tid_data[tid];
+		if (tid_data->state == IWL_AGG_OFF) {
+			IWL_DEBUG_RATE(mvm, "try to aggregate tid %d\n", tid);
+			rs_tl_turn_on_agg(mvm, tid, lq_sta, sta);
+		}
+	}
+#endif
+
 	tbl->current_rate = rate_n_flags_from_tbl(mvm, tbl, index, is_green);
 	lq_sta->last_txrate_idx = index;
 }
